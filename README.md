@@ -24,7 +24,8 @@ HTTP/2 server for the client). See `CLAUDE.md` for the full status.
 > (`Expect: 100-continue`, 103 Early Hints), an RFC 9110 semantics
 > layer (GET/HEAD/OPTIONS, conditional
 > requests, Range requests, proactive content negotiation with `Vary`,
-> opt-in on-the-fly gzip/brotli/deflate compression),
+> opt-in on-the-fly gzip/brotli/deflate compression), cleartext h2c
+> (prior-knowledge, no TLS — server and client),
 > authentication (RFC 9110 §11 framework with Basic/Bearer, plus mutual TLS on
 > server and client), and an RFC 9111 client-side cache (freshness, conditional
 > revalidation, `Vary`, shared/private semantics) all work end-to-end (verified
@@ -45,8 +46,9 @@ dotnet build HTTP2.slnx
 dotnet run --project Demo/HTTP2.Demo.csproj
 ```
 
-The server listens on `https://localhost:8443` with a self-signed certificate
-generated at startup.
+The demo listens on `https://localhost:8443` (HTTP/2 over TLS, self-signed cert
+generated at startup) and additionally on `http://localhost:8080` (cleartext
+HTTP/2 — "h2c" — with prior knowledge, no TLS).
 
 ## Test
 
@@ -57,11 +59,19 @@ suite (builds, starts the demo host, drives every harness) with:
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-Current status: **55/55 harness runs pass**, and the stack scores **146/146 on
+Current status: **64/64 harness runs pass**, and the stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
-conformance suite) — see [`tests/README.md`](tests/README.md) for the layout
-and [`CLAUDE.md`](CLAUDE.md) for the h2spec conformance breakdown. Ad-hoc `curl`
-checks against the demo host:
+conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
+the h2spec run with a single command —
+
+```powershell
+pwsh tests/h2spec.ps1   # builds, starts the demo, runs h2spec on both transports
+```
+
+— see [`tests/TestingAgainst_h2spec.md`](tests/TestingAgainst_h2spec.md) for the
+full h2spec walkthrough, [`tests/README.md`](tests/README.md) for the harness
+layout, and [`CLAUDE.md`](CLAUDE.md) for the conformance breakdown. Ad-hoc
+`curl` checks against the demo host:
 
 ```bash
 curl --http2 -k https://localhost:8443/
@@ -84,10 +94,15 @@ curl --http2 -k -H 'Accept: application/json' https://localhost:8443/files/greet
 curl --http2 -k -i https://localhost:8443/secret                             # -> 401 + WWW-Authenticate
 curl --http2 -k -u alice:secret https://localhost:8443/secret                # -> 200
 curl --http2 -k -H 'authorization: Bearer valid-token-123' https://localhost:8443/secret  # -> 200
+
+# cleartext h2c (prior knowledge — no TLS), on :8080:
+curl --http2-prior-knowledge http://localhost:8080/
+curl --http2-prior-knowledge http://localhost:8080/echo -d "Hello h2c!"
 ```
 
 `-k` skips certificate verification (self-signed). `--http2` forces HTTP/2 over
-TLS via ALPN. Note: the curl bundled with Windows has no HTTP/2 support and
+TLS via ALPN; `--http2-prior-knowledge` speaks cleartext HTTP/2 directly (no
+Upgrade, no TLS). Note: the curl bundled with Windows has no HTTP/2 support and
 silently falls back to HTTP/1.1.
 
 ## Project layout

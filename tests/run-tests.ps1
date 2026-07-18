@@ -103,14 +103,17 @@ Invoke-Harness -Label "h2wsclient"       -Project "h2wsclient"
 Invoke-Harness -Label "h2flowbatch"      -Project "h2flowbatch"
 Invoke-Harness -Label "h2compress"       -Project "h2compress"
 Invoke-Harness -Label "h2interim"        -Project "h2interim"
+Invoke-Harness -Label "h2c"              -Project "h2c"
 
 # ---------------------------------------------------------------------------
 # Demo-driven harnesses — need the Demo host on :8443
 # ---------------------------------------------------------------------------
 Section "Starting Demo host on :8443"
 
-# Free the port if a stale demo is still bound (rebuilds lock the exe otherwise).
-Get-NetTCPConnection -LocalPort 8443 -State Listen -ErrorAction SilentlyContinue |
+# Free the ports if a stale demo is still bound (rebuilds lock the exe
+# otherwise, and a failed bind faults the demo's whole listener set). The demo
+# serves both the TLS listener on 8443 and the cleartext h2c listener on 8080.
+Get-NetTCPConnection -LocalPort 8443, 8080 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
 $demo = Start-Process -FilePath "dotnet" `
@@ -161,7 +164,7 @@ try {
 finally {
     Section "Stopping Demo host"
     if ($demo -and -not $demo.HasExited) { Stop-Process -Id $demo.Id -Force -ErrorAction SilentlyContinue }
-    Get-NetTCPConnection -LocalPort 8443 -State Listen -ErrorAction SilentlyContinue |
+    Get-NetTCPConnection -LocalPort 8443, 8080 -State Listen -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
 

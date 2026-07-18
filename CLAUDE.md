@@ -29,6 +29,8 @@ curl --http2 -k https://localhost:8443/
 curl --http2 -k https://localhost:8443/echo -d "Hello HTTP/2!"
 curl --http2 -k https://localhost:8443/large   # 128 KiB — exercises flow control
 curl --http2 -k https://localhost:8443/slow    # 2 s handler — exercises multiplexing
+# cleartext h2c (prior knowledge — no TLS), on :8080:
+curl --http2-prior-knowledge http://localhost:8080/
 ```
 
 Note: the stock Windows curl (Schannel build) has no HTTP/2 support and silently
@@ -65,21 +67,21 @@ Core never references the role-specific projects.
 |---|---|
 | `HTTP2Connection.cs` | Connection preface, SETTINGS handshake, the frame dispatch loop, request assembly, CONNECT tunneling (`HTTP2Tunnel` implements `IHTTP2Tunnel`), the priority-aware DATA writer loop (RFC 9218), streaming dispatch + response trailers, Slowloris/idle timeouts |
 | `HTTP2StreamAdapters.cs` | `HTTP2RequestStream`/`HTTP2ResponseStream` — server-side impls of the Core streaming seam over one `HTTP2Stream` |
-| `HTTP2Server.cs` | `TcpListener` + `SslStream` with ALPN `h2` negotiation, TLS-handshake timeout, HTTP/1.1 fallback stub |
+| `HTTP2Server.cs` | `TcpListener` + `SslStream` with ALPN `h2` negotiation, TLS-handshake timeout, HTTP/1.1 fallback stub; optional `Cleartext` mode (h2c prior-knowledge, no TLS) |
 
 **`Client/`** — references `Core`:
 
 | File | Responsibility |
 |---|---|
 | `HTTP2ClientConnection.cs` | Client-role connection: sends the preface, allocates odd request streams, sends requests + assembles `HTTP2Response`s |
-| `HTTP2Client.cs` | Dialer: TCP connect + TLS/ALPN `h2` handshake, the client-side counterpart of `HTTP2Server` |
+| `HTTP2Client.cs` | Dialer: TCP connect + TLS/ALPN `h2` handshake (or optional `Cleartext` h2c prior-knowledge), the client-side counterpart of `HTTP2Server` |
 | `HTTP2CachingClient.cs` | RFC 9111 cache (store + origin wiring) in front of a client connection — serves fresh hits, revalidates stale entries, keys by `Vary` |
 
 **`Demo/`** — references `Server` + `Client`:
 
 | File | Responsibility |
 |---|---|
-| `Program.cs` | Demo host + self-signed cert + example request/connect/resource handlers (the app-logic plug-in point) |
+| `Program.cs` | Demo host (TLS `h2` on :8443 + cleartext `h2c` on :8080) + self-signed cert + example request/connect/resource handlers (the app-logic plug-in point) |
 
 All four projects share the `org.GraphDefined.Vanaheimr.Hermod.HTTP2` namespace
 (the Vanaheimr/Hermod convention).
@@ -1447,6 +1449,77 @@ POST — the production-client interop proof. Full regression **63/63** (the asy
 `HandleHeaders`/`CompleteHeaders` refactor left every existing request/attack
 path unchanged) and h2spec still **146/146**.
 
+**h2c — cleartext HTTP/2 with prior knowledge** (done 2026-07-18): HTTP/2 over
+plain TCP with no TLS and no ALPN — the client is expected to have prior
+knowledge and sends the connection preface directly (RFC 9113 §3.3). The RFC
+7540 `Upgrade: h2c` negotiation was **removed** in RFC 9113 §3.1 and is
+deliberately not implemented — only prior-knowledge. Chiefly useful behind a
+TLS-terminating proxy, on a trusted internal hop, or for local
+tooling/testing. The whole change hangs off one observation: `HTTP2Connection`
+and `HTTP2ClientConnection` only ever use the `Stream` base API
+(`ReadAsync`/`WriteAsync`/`FlushAsync`), so nothing below the transport had to
+change:
+
+- **Transport generalization.** Both connections' transport field was retyped
+  `SslStream` → `Stream` (renamed `sslStream` → `transportStream`) and their
+  constructors now take a `Stream`. TLS passes an `SslStream` exactly as
+  before; h2c passes the raw `NetworkStream`. No other connection code changed
+  — framing, HPACK, flow control, the writer loop, streaming, tunnels all run
+  identically over either transport.
+- **Server.** `HTTP2Server` gained a `Cleartext` flag (and its `Certificate`
+  parameter became nullable, guarded: a non-cleartext server still requires a
+  cert). When set, `HandleConnectionAsync` skips the `SslStream`/ALPN branch
+  entirely and runs the connection straight over the `NetworkStream` (mTLS is
+  unavailable — there's no TLS layer). The TLS and cleartext paths share a new
+  `RunConnectionAsync` helper (connection construction + `activeConnections`
+  tracking for graceful shutdown), so both get GOAWAY-on-stop for free.
+- **Client.** `HTTP2Client.ConnectAsync` gained a `Cleartext` flag: it opens a
+  plain TCP connection and hands `tcp.GetStream()` straight to
+  `HTTP2ClientConnection` (the TLS-only `ValidateServerCertificate` /
+  `ClientCertificate` params are ignored in this mode). Cleartext requests use
+  `:scheme = http`.
+- **Demo.** Now also serves cleartext h2c on port 8080 (both loopbacks,
+  `Certificate: null, Cleartext: true`), alongside the TLS listener on 8443 —
+  so the demo itself demonstrates h2c and tools like curl
+  (`--http2-prior-knowledge`) and h2spec can drive it without TLS.
+
+**A pre-existing HPACK robustness bug found and fixed along the way** (in
+`Core/HPACK.cs`, unrelated to h2c but surfaced by running h2spec against the
+new cleartext listener with the demo's log actually drained): a truncated
+header block — one that ends exactly where an integer prefix byte or a string
+literal's length byte is expected — made `DecodeInteger`/`DecodeString`
+dereference `Data[Offset]` one past the end and throw an unhandled
+`IndexOutOfRangeException` (caught only by the connection's catch-all, so it
+was logged as an "Unexpected error" and closed the connection with the wrong
+signal). Both now bounds-check first and raise a proper connection
+`COMPRESSION_ERROR`, the RFC-correct response to a truncated block. Being in
+`Core`, the fix hardens the client's decoder too. (This was latent behind the
+same class of malformed input h2spec exercises; TLS h2spec had been hitting it
+all along, swallowed by the catch-all — it never failed a conformance test,
+just produced the wrong error type and log line.)
+
+**Test-run gotcha, not a bug:** driving h2spec against the demo while its
+stdout/stderr is *not* being drained (e.g. `Start-Process -WindowStyle Hidden`
+with no redirect) can deadlock the demo — h2spec's flood of malformed cases
+makes the demo log thousands of lines, the OS console pipe buffer fills with no
+reader, and the demo blocks in `Console.WriteLine` and stops accepting, which
+looks exactly like a server crash (later connections time out, especially the
+IPv6 `::1` ones). Redirect the demo's output to a file when running h2spec.
+
+Verified with a new self-contained `h2c` harness (12/12) covering all three
+interop legs, mirroring the TLS paths: our client → our server (both cleartext:
+GET, POST /echo byte-exact incl. a UTF-8/emoji payload, GET /large — 128 KiB
+under flow control with no TLS, and 3-way multiplexing); **.NET `HttpClient`**
+in prior-knowledge mode (`http://` + exact HTTP/2) → our server (GET/POST, the
+production-client interop proof for cleartext); and our client →
+**.NET Kestrel** configured for cleartext h2c (`HttpProtocols.Http2` with no
+`UseHttps`): GET (Kestrel's real HPACK/Huffman decoded), POST /echo byte-exact,
+concurrent requests. h2spec was additionally run over the demo's cleartext
+listener: **146/146** (equal to the TLS run), with zero `IndexOutOfRange`
+occurrences after the HPACK fix. Full regression **64/64** (h2c added) and
+h2spec over TLS still **146/146** — the transport generalization left the TLS
+path byte-identical.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -1545,10 +1618,11 @@ A, B, C, D, and E are all done, plus client-side RFC 9218 priority signaling,
 the full h2spec-conformance track (146/146), the full HPACK encoder,
 Slowloris/timeout hardening, client robustness, streaming bodies + response
 trailers, a WebSocket/CONNECT-capable client, WINDOW_UPDATE batching +
-larger flow-control windows, and on-the-fly content coding (gzip/brotli/
-deflate), and 1xx interim responses (`Expect: 100-continue`, 103 Early Hints).
-What's left is optional Tier-2 polish: h2c (cleartext prior-knowledge), or a
-neutral home for the demo — as interest dictates.
+larger flow-control windows, on-the-fly content coding (gzip/brotli/
+deflate), 1xx interim responses (`Expect: 100-continue`, 103 Early Hints), and
+h2c (cleartext prior-knowledge — see the h2c entry under Current State). Every
+Tier-1 and Tier-2 item from the original weighted analysis is now done. The
+only remaining candidate is a neutral home for the demo — as interest dictates.
 
 ## Conventions
 - English for code, identifiers, comments, and commit messages.

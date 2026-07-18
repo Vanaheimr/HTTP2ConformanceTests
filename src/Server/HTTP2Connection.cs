@@ -158,7 +158,7 @@ public sealed class HTTP2Connection
     #endregion
 
 
-    private readonly SslStream            sslStream;
+    private readonly Stream               transportStream;
     private readonly HTTP2RequestHandler  requestHandler;
     private readonly HTTP2ConnectHandler? connectHandler;
     private readonly HTTP2StreamingHandler? streamingHandler;
@@ -297,8 +297,15 @@ public sealed class HTTP2Connection
     /// </summary>
     private readonly TaskCompletionSource  settingsAckReceived = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <param name="TransportStream">
+    /// The byte transport for this connection: an <see cref="SslStream"/> for
+    /// HTTP/2-over-TLS ("h2"), or a raw <see cref="System.Net.Sockets.NetworkStream"/>
+    /// for cleartext HTTP/2 ("h2c", prior-knowledge — RFC 9113 §3.3). The
+    /// connection only ever uses the <see cref="Stream"/> base API, so it is
+    /// oblivious to which transport it runs on.
+    /// </param>
     public HTTP2Connection(
-        SslStream            SslStream,
+        Stream               TransportStream,
         HTTP2RequestHandler  RequestHandler,
         HTTP2ConnectHandler? ConnectHandler     = null,
         CancellationToken    CancellationToken  = default,
@@ -306,7 +313,7 @@ public sealed class HTTP2Connection
         HTTP2Timeouts?       Timeouts           = null,
         HTTP2StreamingHandler? StreamingHandler = null)
     {
-        this.sslStream         = SslStream;
+        this.transportStream   = TransportStream;
         this.requestHandler    = RequestHandler;
         this.connectHandler    = ConnectHandler;
         this.streamingHandler  = StreamingHandler;
@@ -557,7 +564,7 @@ public sealed class HTTP2Connection
 
             try
             {
-                read = await sslStream.ReadAsync(
+                read = await transportStream.ReadAsync(
                            Buffer.AsMemory(offset, Buffer.Length - offset),
                            timeoutCts.Token
                        );
@@ -590,8 +597,8 @@ public sealed class HTTP2Connection
 
         try
         {
-            await sslStream.WriteAsync(bytes, cancellationToken);
-            await sslStream.FlushAsync(cancellationToken);
+            await transportStream.WriteAsync(bytes, cancellationToken);
+            await transportStream.FlushAsync(cancellationToken);
         }
         finally
         {
@@ -614,9 +621,9 @@ public sealed class HTTP2Connection
         try
         {
             foreach (var frame in Frames)
-                await sslStream.WriteAsync(frame.Serialize(), cancellationToken);
+                await transportStream.WriteAsync(frame.Serialize(), cancellationToken);
 
-            await sslStream.FlushAsync(cancellationToken);
+            await transportStream.FlushAsync(cancellationToken);
         }
         finally
         {
@@ -2342,9 +2349,9 @@ public sealed class HTTP2Connection
             var headerFrames = BuildHeaderFrames(StreamId, headerBlock, EndStream);
 
             foreach (var frame in headerFrames)
-                await sslStream.WriteAsync(frame.Serialize(), cancellationToken);
+                await transportStream.WriteAsync(frame.Serialize(), cancellationToken);
 
-            await sslStream.FlushAsync(cancellationToken);
+            await transportStream.FlushAsync(cancellationToken);
         }
         finally
         {
@@ -2722,7 +2729,7 @@ public sealed class HTTP2Connection
 
             while (drained < 256 * 1024)
             {
-                var n = await sslStream.ReadAsync(buffer, drainCts.Token);
+                var n = await transportStream.ReadAsync(buffer, drainCts.Token);
                 if (n == 0)
                     break;
                 drained += n;

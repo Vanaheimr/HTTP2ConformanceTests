@@ -19,9 +19,9 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **55/55 harness runs pass** (each self-reports its own check
+Current status: **64/64 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 51/51, h2clienttest 14/14, h2authtest 18/18,
-h2cachetest 23/23, h2clientpriority 15/15).
+h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 ## The harnesses
 
@@ -30,6 +30,7 @@ h2cachetest 23/23, h2clientpriority 15/15).
 | `h2hufftest`       | self-contained | HPACK Huffman decode: RFC 7541 Appendix B, 5000-round fuzz, §5.2 padding edge cases |
 | `h2hpackenc`       | self-contained | HPACK encoder: static/dynamic-table indexing, Huffman coding, size-update signaling (round-trips via our decoder) |
 | `h2interim`        | self-contained | 1xx interim responses: automatic 100-continue + 103 Early Hints, vs. our client + .NET HttpClient (7 checks) |
+| `h2c`              | self-contained | cleartext HTTP/2 (prior knowledge, no TLS): our client ↔ our server, .NET HttpClient prior-knowledge, and .NET Kestrel h2c (12 checks) |
 | `h2streamtest`     | self-contained | `HTTP2StreamManager` unit tests: pruning, window adjust, ID reuse |
 | `h2shutdowntest`   | self-contained | graceful `GOAWAY` shutdown timing (own server + port) |
 | `h2timeout`        | self-contained | Slowloris/timeout hardening: handshake, preface, partial header block, withheld payload, SETTINGS-ACK timeouts |
@@ -55,17 +56,16 @@ h2cachetest 23/23, h2clientpriority 15/15).
 ## h2spec conformance
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2
-conformance suite (RFC 9113 + RFC 7541). It is an external binary and is *not*
-vendored here — download the release and point it at the running Demo host:
+conformance suite (RFC 9113 + RFC 7541). This stack passes **146 / 146** over
+*both* the TLS (`h2`, :8443) and cleartext (`h2c`, :8080) listeners. The easiest
+way to reproduce it:
 
 ```powershell
-# 1. start the demo host
-dotnet run --project src/Demo/HTTP2.Demo.csproj
-# 2. in another shell, against the TLS listener (self-signed -> -k):
-h2spec -t -k -h localhost -p 8443 -P /echo
+pwsh tests/h2spec.ps1        # build, start demo, run h2spec on both, stop demo
 ```
 
-Result (h2spec 2.6.0): **146 / 146 pass, 0 skipped, 0 failed.** The initial run
-scored 136/146; all 10 failures were closed in the h2spec-conformance track —
-see [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry for the per-category
-breakdown.
+For the full walkthrough — installing h2spec, running individual sections,
+interpreting output, and the two gotchas (`127.0.0.1` not `localhost`; drain the
+demo's console output) — see **[TestingAgainst_h2spec.md](TestingAgainst_h2spec.md)**.
+The conformance history (the initial 136/146 and the six categories that closed
+the 10 failures) is in [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry.

@@ -166,6 +166,12 @@ public sealed class HPACKDecoder
     private static int DecodeInteger(ReadOnlySpan<byte> Data, ref int Offset, int PrefixBits)
     {
 
+        // A truncated header block (the prefix byte is missing entirely) is a
+        // compression error, not an unhandled IndexOutOfRangeException.
+        if (Offset >= Data.Length)
+            throw new HTTP2ConnectionException(HTTP2ErrorCode.COMPRESSION_ERROR,
+                                               "HPACK truncated integer");
+
         var maxPrefix  = (1 << PrefixBits) - 1;
         var value      = Data[Offset] & maxPrefix;
         Offset++;
@@ -207,6 +213,13 @@ public sealed class HPACKDecoder
     /// </summary>
     private static string DecodeString(ReadOnlySpan<byte> Data, ref int Offset)
     {
+
+        // The length prefix byte carries the Huffman flag; if the block ends
+        // exactly here (a header field whose value literal is truncated away),
+        // that's a compression error rather than an IndexOutOfRangeException.
+        if (Offset >= Data.Length)
+            throw new HTTP2ConnectionException(HTTP2ErrorCode.COMPRESSION_ERROR,
+                                               "HPACK truncated string literal");
 
         var huffman = (Data[Offset] & 0x80) != 0;
         var length  = DecodeInteger(Data, ref Offset, 7);

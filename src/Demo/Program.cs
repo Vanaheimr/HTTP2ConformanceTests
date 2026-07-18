@@ -17,17 +17,19 @@ public static class Program
     public static async Task Main(string[] args)
     {
 
-        var port = 8443;
-        var cert = CreateSelfSignedCertificate("localhost");
+        var port  = 8443;   // HTTP/2 over TLS ("h2")
+        var portC = 8080;   // cleartext HTTP/2 with prior knowledge ("h2c")
+        var cert  = CreateSelfSignedCertificate("localhost");
 
         Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
         Console.WriteLine("║   HTTP/2 Server — pure SslStream + binary framing       ║");
         Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
-        Console.WriteLine($"║   Listening on https://localhost:{port}                   ║");
+        Console.WriteLine($"║   TLS  (h2):  https://localhost:{port}                     ║");
+        Console.WriteLine($"║   h2c       :  http://localhost:{portC}  (prior knowledge)  ║");
         Console.WriteLine("║                                                          ║");
         Console.WriteLine("║   Test with:                                             ║");
         Console.WriteLine($"║     curl --http2 -k https://localhost:{port}/             ║");
-        Console.WriteLine($"║     curl --http2 -k https://localhost:{port}/echo -d Hi   ║");
+        Console.WriteLine($"║     curl --http2-prior-knowledge http://localhost:{portC}/ ║");
         Console.WriteLine("║                                                          ║");
         Console.WriteLine("║   Press Ctrl+C to stop.                                  ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
@@ -39,18 +41,29 @@ public static class Program
         var server4 = new HTTP2Server(IPAddress.Loopback,     port, cert, HandleRequest, HandleConnect);
         var server6 = new HTTP2Server(IPAddress.IPv6Loopback, port, cert, HandleRequest, HandleConnect);
 
+        // Cleartext h2c listeners (prior knowledge, RFC 9113 §3.3): same handlers,
+        // no TLS. Pass Certificate: null with Cleartext: true. Useful behind a
+        // TLS-terminating proxy, or for tooling like `h2spec` / curl's
+        // `--http2-prior-knowledge`.
+        var server4c = new HTTP2Server(IPAddress.Loopback,     portC, Certificate: null, RequestHandler: HandleRequest, ConnectHandler: HandleConnect, Cleartext: true);
+        var server6c = new HTTP2Server(IPAddress.IPv6Loopback, portC, Certificate: null, RequestHandler: HandleRequest, ConnectHandler: HandleConnect, Cleartext: true);
+
         // Ctrl+C triggers a graceful shutdown (GOAWAY to every connected peer)
         // instead of the runtime's default abrupt process kill.
         Console.CancelKeyPress += (_, e) =>
         {
             e.Cancel = true;
             Console.WriteLine("\n[HTTP/2] Ctrl+C received — shutting down gracefully...");
-            _ = Task.Run(() => Task.WhenAll(server4.StopAsync(), server6.StopAsync()));
+            _ = Task.Run(() => Task.WhenAll(
+                server4.StopAsync(),  server6.StopAsync(),
+                server4c.StopAsync(), server6c.StopAsync()));
         };
 
         await Task.WhenAll(
             server4.RunAsync(),
-            server6.RunAsync()
+            server6.RunAsync(),
+            server4c.RunAsync(),
+            server6c.RunAsync()
         );
 
         Console.WriteLine("[HTTP/2] Shutdown complete.");

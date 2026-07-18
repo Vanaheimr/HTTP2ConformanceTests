@@ -28,7 +28,8 @@ public sealed class HTTP2Server
 {
 
     private readonly IPEndPoint           endpoint;
-    private readonly X509Certificate2     certificate;
+    private readonly X509Certificate2?    certificate;
+    private readonly bool                 cleartext;
     private readonly HTTP2RequestHandler  requestHandler;
     private readonly HTTP2ConnectHandler? connectHandler;
     private readonly bool                 requireClientCertificate;
@@ -58,19 +59,35 @@ public sealed class HTTP2Server
     /// while <paramref name="RequireClientCertificate"/> is true, the platform's
     /// default chain validation applies.
     /// </param>
+    /// <param name="Cleartext">
+    /// Serve HTTP/2 in cleartext ("h2c") with no TLS — the client is expected to
+    /// have prior knowledge and sends the HTTP/2 connection preface directly over
+    /// plain TCP (RFC 9113 §3.3). No ALPN negotiation and no
+    /// <paramref name="Certificate"/> are involved (the RFC 7540 <c>Upgrade:
+    /// h2c</c> dance was removed in RFC 9113 §3.1 and is not implemented). Chiefly
+    /// useful behind a TLS-terminating proxy or for local testing. When true,
+    /// <paramref name="Certificate"/> may be null and mTLS is unavailable.
+    /// </param>
     public HTTP2Server(
         IPAddress            Address,
         int                  Port,
-        X509Certificate2     Certificate,
+        X509Certificate2?    Certificate,
         HTTP2RequestHandler  RequestHandler,
         HTTP2ConnectHandler? ConnectHandler = null,
         bool                 RequireClientCertificate  = false,
         RemoteCertificateValidationCallback? ValidateClientCertificate = null,
         HTTP2Timeouts?       Timeouts = null,
-        HTTP2StreamingHandler? StreamingHandler = null)
+        HTTP2StreamingHandler? StreamingHandler = null,
+        bool                 Cleartext = false)
     {
+
+        if (!Cleartext && Certificate is null)
+            throw new ArgumentNullException(nameof(Certificate),
+                "A server certificate is required for HTTP/2 over TLS. Pass Cleartext: true to serve plaintext h2c instead.");
+
         this.endpoint                  = new IPEndPoint(Address, Port);
         this.certificate               = Certificate;
+        this.cleartext                 = Cleartext;
         this.requestHandler            = RequestHandler;
         this.connectHandler            = ConnectHandler;
         this.requireClientCertificate  = RequireClientCertificate;
@@ -162,6 +179,17 @@ public sealed class HTTP2Server
 
                 await using var networkStream = Client.GetStream();
 
+                // h2c (cleartext, prior-knowledge — RFC 9113 §3.3): no TLS and
+                // no ALPN. The client sends the HTTP/2 connection preface
+                // straight over plain TCP; we hand the raw network stream to the
+                // connection unchanged. mTLS is unavailable here (no TLS layer).
+                if (cleartext)
+                {
+                    Console.WriteLine($"[HTTP/2] h2c (cleartext) connection from {remoteEP}");
+                    await RunConnectionAsync(networkStream, clientCertificate: null, Token);
+                    return;
+                }
+
                 var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
 
                 await using (sslStream)
@@ -214,17 +242,7 @@ public sealed class HTTP2Server
                         // mTLS: the validated client certificate, if one was presented.
                         var clientCertificate = sslStream.RemoteCertificate as X509Certificate2;
 
-                        var connection = new HTTP2Connection(sslStream, requestHandler, connectHandler, Token, clientCertificate, timeouts, streamingHandler);
-                        activeConnections.TryAdd(connection, 0);
-
-                        try
-                        {
-                            await connection.RunAsync();
-                        }
-                        finally
-                        {
-                            activeConnections.TryRemove(connection, out _);
-                        }
+                        await RunConnectionAsync(sslStream, clientCertificate, Token);
 
                     }
                     else if (negotiatedProtocol == SslApplicationProtocol.Http11)
@@ -255,6 +273,29 @@ public sealed class HTTP2Server
         finally
         {
             Console.WriteLine($"[HTTP/2] Connection closed: {remoteEP}");
+        }
+
+    }
+
+
+    /// <summary>
+    /// Run one HTTP/2 connection over an already-established byte transport
+    /// (a TLS <see cref="SslStream"/> or a cleartext network stream), tracking
+    /// it in <see cref="activeConnections"/> for graceful shutdown.
+    /// </summary>
+    private async Task RunConnectionAsync(Stream Transport, X509Certificate2? clientCertificate, CancellationToken Token)
+    {
+
+        var connection = new HTTP2Connection(Transport, requestHandler, connectHandler, Token, clientCertificate, timeouts, streamingHandler);
+        activeConnections.TryAdd(connection, 0);
+
+        try
+        {
+            await connection.RunAsync();
+        }
+        finally
+        {
+            activeConnections.TryRemove(connection, out _);
         }
 
     }

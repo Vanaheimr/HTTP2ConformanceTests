@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="../tests/h2attack/h2attack.csproj" />
+    <Project Path="../tests/h2c/h2c.csproj" />
     <Project Path="../tests/h2authtest/h2authtest.csproj" />
     <Project Path="../tests/h2cachetest/h2cachetest.csproj" />
     <Project Path="../tests/h2clientpriority/h2clientpriority.csproj" />

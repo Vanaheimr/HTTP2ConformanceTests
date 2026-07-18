@@ -31,17 +31,34 @@ public static class HTTP2Client
     /// Optional client certificate to present for mutual TLS (mTLS), when the
     /// server requires one. Null for ordinary (server-auth-only) TLS.
     /// </param>
+    /// <param name="Cleartext">
+    /// Connect in cleartext ("h2c", prior-knowledge — RFC 9113 §3.3): open a
+    /// plain TCP connection and send the HTTP/2 preface directly, with no TLS
+    /// and no ALPN. <paramref name="ValidateServerCertificate"/> and
+    /// <paramref name="ClientCertificate"/> are ignored in this mode. Use only
+    /// where the peer is known to speak HTTP/2 (a TLS-terminating proxy, a
+    /// trusted internal hop, or local testing).
+    /// </param>
     public static async Task<HTTP2ClientConnection> ConnectAsync(
         string                                Host,
         int                                   Port,
         RemoteCertificateValidationCallback?  ValidateServerCertificate = null,
         X509Certificate2?                     ClientCertificate         = null,
         HTTP2ClientOptions?                   Options                   = null,
+        bool                                  Cleartext                 = false,
         CancellationToken                     CancellationToken         = default)
     {
 
         var tcp = new TcpClient();
         await tcp.ConnectAsync(Host, Port, CancellationToken);
+
+        // h2c: skip TLS/ALPN entirely and speak HTTP/2 over the raw socket.
+        if (Cleartext)
+        {
+            var plain = new HTTP2ClientConnection(tcp.GetStream(), CancellationToken, Options);
+            await plain.StartAsync();
+            return plain;
+        }
 
         var ssl = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false, ValidateServerCertificate);
 

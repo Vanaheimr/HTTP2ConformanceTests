@@ -148,7 +148,7 @@ public sealed class HTTP2ClientConnection
 
     private static readonly byte[] ConnectionPreface = Encoding.ASCII.GetBytes("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
 
-    private readonly SslStream          sslStream;
+    private readonly Stream             transportStream;
     private readonly HTTP2Settings      localSettings  = new();
     private readonly HTTP2Settings      remoteSettings = new();
     private readonly HTTP2StreamManager streamManager  = new(HTTP2Role.Client);
@@ -204,12 +204,18 @@ public sealed class HTTP2ClientConnection
     private readonly object                             exchangesLock = new();
 
 
+    /// <param name="TransportStream">
+    /// The byte transport: an <see cref="SslStream"/> for HTTP/2-over-TLS, or a
+    /// raw <see cref="System.Net.Sockets.NetworkStream"/> for cleartext h2c
+    /// (prior-knowledge, RFC 9113 §3.3). Only the <see cref="Stream"/> base API
+    /// is used, so the connection is transport-agnostic.
+    /// </param>
     public HTTP2ClientConnection(
-        SslStream           SslStream,
+        Stream              TransportStream,
         CancellationToken   CancellationToken = default,
         HTTP2ClientOptions? Options           = null)
     {
-        this.sslStream         = SslStream;
+        this.transportStream   = TransportStream;
         this.options           = Options ?? HTTP2ClientOptions.Default;
         this.connectionCts     = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
         this.cancellationToken = connectionCts.Token;
@@ -227,7 +233,7 @@ public sealed class HTTP2ClientConnection
     public async Task StartAsync()
     {
 
-        await sslStream.WriteAsync(ConnectionPreface, cancellationToken);
+        await transportStream.WriteAsync(ConnectionPreface, cancellationToken);
 
         await SendFrameAsync(HTTP2Frame.CreateSettings(
             (HTTP2SettingsParameter.MAX_CONCURRENT_STREAMS, localSettings.MaxConcurrentStreams),
@@ -1317,7 +1323,7 @@ public sealed class HTTP2ClientConnection
         var offset = 0;
         while (offset < Buffer.Length)
         {
-            var read = await sslStream.ReadAsync(Buffer.AsMemory(offset, Buffer.Length - offset), cancellationToken);
+            var read = await transportStream.ReadAsync(Buffer.AsMemory(offset, Buffer.Length - offset), cancellationToken);
             if (read == 0)
                 throw new IOException("Connection closed by peer");
             offset += read;
@@ -1330,8 +1336,8 @@ public sealed class HTTP2ClientConnection
         await writeLock.WaitAsync(cancellationToken);
         try
         {
-            await sslStream.WriteAsync(bytes, cancellationToken);
-            await sslStream.FlushAsync(cancellationToken);
+            await transportStream.WriteAsync(bytes, cancellationToken);
+            await transportStream.FlushAsync(cancellationToken);
         }
         finally { writeLock.Release(); }
     }
@@ -1342,8 +1348,8 @@ public sealed class HTTP2ClientConnection
         try
         {
             foreach (var frame in Frames)
-                await sslStream.WriteAsync(frame.Serialize(), cancellationToken);
-            await sslStream.FlushAsync(cancellationToken);
+                await transportStream.WriteAsync(frame.Serialize(), cancellationToken);
+            await transportStream.FlushAsync(cancellationToken);
         }
         finally { writeLock.Release(); }
     }

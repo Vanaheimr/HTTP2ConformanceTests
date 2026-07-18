@@ -15,6 +15,11 @@ This is a learning/reference implementation in the spirit of the Vanaheimr
 Hermod protocol stacks (SMTP, IMAP, HTTP/2, DHCP, NTS-KE, TCP, ... hand-rolled
 in C#).
 
+For a curated, reader-facing reference of everything supported — the RFC
+compliance matrix, feature-by-feature breakdown, security hardening, and what's
+out of scope — see [`FEATURES.md`](FEATURES.md). This file (CLAUDE.md) is the
+chronological build log / working notes.
+
 ## Build & Run
 
 The solution (`src/HTTP2.slnx`) has four projects — `Core` (shared library),

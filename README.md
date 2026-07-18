@@ -9,7 +9,12 @@ It's three parts: a shared protocol library (`Core` — direction-neutral
 framing, HPACK, the stream layer, WebSocket framing, HTTP semantics), an HTTP/2
 **server**, and an HTTP/2 **client**, each its own project. Both roles are
 interop-verified against .NET (`HttpClient`/curl for the server; a Kestrel
-HTTP/2 server for the client). See `CLAUDE.md` for the full status.
+HTTP/2 server for the client).
+
+📋 **[FEATURES.md](FEATURES.md) is the complete reference** — every supported
+RFC & extension, a feature-by-feature breakdown, the security-hardening summary,
+and what's explicitly out of scope. See [`CLAUDE.md`](CLAUDE.md) for the full
+build history.
 
 > ⚠️ **Reference implementation.** Requests, responses, flow control, real
 > stream multiplexing, CONTINUATION-flood/Rapid-Reset/stream-ID-exhaustion

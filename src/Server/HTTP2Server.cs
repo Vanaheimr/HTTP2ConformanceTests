@@ -36,7 +36,11 @@ public sealed class HTTP2Server
     private readonly RemoteCertificateValidationCallback? validateClientCertificate;
     private readonly HTTP2Timeouts         timeouts;
     private readonly HTTP2StreamingHandler? streamingHandler;
+    private readonly long                  maxRequestBodySize;
     private readonly CancellationTokenSource cts = new();
+
+    /// <summary>Default buffered-request-body cap handed to each connection: 16 MiB.</summary>
+    public const long DefaultMaxRequestBodySize = 16 * 1024 * 1024;
 
     /// <summary>
     /// Tracks currently-running connections so StopAsync can notify each of
@@ -78,7 +82,8 @@ public sealed class HTTP2Server
         RemoteCertificateValidationCallback? ValidateClientCertificate = null,
         HTTP2Timeouts?       Timeouts = null,
         HTTP2StreamingHandler? StreamingHandler = null,
-        bool                 Cleartext = false)
+        bool                 Cleartext = false,
+        long                 MaxRequestBodySize = DefaultMaxRequestBodySize)
     {
 
         if (!Cleartext && Certificate is null)
@@ -94,6 +99,7 @@ public sealed class HTTP2Server
         this.validateClientCertificate = ValidateClientCertificate;
         this.timeouts                  = Timeouts ?? HTTP2Timeouts.Default;
         this.streamingHandler          = StreamingHandler;
+        this.maxRequestBodySize        = MaxRequestBodySize;
     }
 
 
@@ -286,7 +292,7 @@ public sealed class HTTP2Server
     private async Task RunConnectionAsync(Stream Transport, X509Certificate2? clientCertificate, CancellationToken Token)
     {
 
-        var connection = new HTTP2Connection(Transport, requestHandler, connectHandler, Token, clientCertificate, timeouts, streamingHandler);
+        var connection = new HTTP2Connection(Transport, requestHandler, connectHandler, Token, clientCertificate, timeouts, streamingHandler, maxRequestBodySize);
         activeConnections.TryAdd(connection, 0);
 
         try

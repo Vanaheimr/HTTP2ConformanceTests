@@ -23,6 +23,7 @@
     <Project Path="../tests/h2connect/h2connect.csproj" />
     <Project Path="../tests/h2flowbatch/h2flowbatch.csproj" />
     <Project Path="../tests/h2rfcpolish/h2rfcpolish.csproj" />
+    <Project Path="../tests/h2backpressure/h2backpressure.csproj" />
     <Project Path="../tests/h2hpackenc/h2hpackenc.csproj" />
     <Project Path="../tests/h2interim/h2interim.csproj" />
     <Project Path="../tests/h2timeout/h2timeout.csproj" />

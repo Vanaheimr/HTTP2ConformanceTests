@@ -76,7 +76,13 @@ public sealed class HTTP2Tunnel : IHTTP2Tunnel
         var reader = stream.TunnelInbound!.Reader;
 
         if (await reader.WaitToReadAsync(CancellationToken) && reader.TryRead(out var chunk))
+        {
+            // Consumption-driven backpressure: the window for these bytes was
+            // deliberately withheld on receipt (HandleDataAsync) and is returned
+            // only now, as the tunnel consumer actually takes them.
+            await connection.ReplenishConsumedAsync(stream, chunk.Length);
             return chunk;
+        }
 
         return null;
 
@@ -199,6 +205,31 @@ public sealed class HTTP2Connection
     private readonly object  flowLock  = new();
 
     /// <summary>
+    /// Guards the RECEIVE-side flow control windows (stream + connection) and
+    /// their pending-replenish accumulators. Previously these were touched only
+    /// from the single frame read loop and needed no lock; consumption-driven
+    /// backpressure now also replenishes them from streaming/tunnel handler
+    /// tasks (when the application actually reads a body chunk), so the read
+    /// loop's decrement and the handlers' increments can race. Never held
+    /// across an <c>await</c> — the WINDOW_UPDATE send happens outside it.
+    /// </summary>
+    private readonly object  recvLock  = new();
+
+    /// <summary>
+    /// Upper bound on a BUFFERED request body (the default handler seam, which
+    /// hands the whole body to the app at END_STREAM). Unlike the streaming and
+    /// tunnel paths — where the receive window itself bounds memory because the
+    /// window is only replenished as the handler consumes chunks — the buffered
+    /// path has no incremental consumer to drive backpressure, so an unbounded
+    /// body would grow unbounded in memory. A body exceeding this cap resets the
+    /// stream (RST_STREAM/ENHANCE_YOUR_CALM); the connection stays usable.
+    /// </summary>
+    private readonly long    maxRequestBodySize;
+
+    /// <summary>Default <see cref="maxRequestBodySize"/>: 16 MiB.</summary>
+    private const long   DefaultMaxRequestBodySize = 16 * 1024 * 1024;
+
+    /// <summary>
     /// Completed (and replaced) whenever the writer loop should re-scan for
     /// something to send: a send window grew, a stream was reset, new data
     /// was enqueued, or a stream's priority changed. See SignalWriterWakeup
@@ -311,13 +342,15 @@ public sealed class HTTP2Connection
         CancellationToken    CancellationToken  = default,
         System.Security.Cryptography.X509Certificates.X509Certificate2? ClientCertificate = null,
         HTTP2Timeouts?       Timeouts           = null,
-        HTTP2StreamingHandler? StreamingHandler = null)
+        HTTP2StreamingHandler? StreamingHandler = null,
+        long                 MaxRequestBodySize = DefaultMaxRequestBodySize)
     {
-        this.transportStream   = TransportStream;
-        this.requestHandler    = RequestHandler;
-        this.connectHandler    = ConnectHandler;
-        this.streamingHandler  = StreamingHandler;
-        this.clientCertificate = ClientCertificate;
+        this.transportStream    = TransportStream;
+        this.requestHandler     = RequestHandler;
+        this.connectHandler     = ConnectHandler;
+        this.streamingHandler   = StreamingHandler;
+        this.clientCertificate  = ClientCertificate;
+        this.maxRequestBodySize = MaxRequestBodySize;
         this.timeouts          = Timeouts ?? HTTP2Timeouts.Default;
         this.connectionCts     = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
         this.cancellationToken = connectionCts.Token;
@@ -1174,7 +1207,14 @@ public sealed class HTTP2Connection
         }
         else
         {
-            // We expect DATA frames next (request body)
+            // We expect DATA frames next (request body). If the peer already
+            // declared a content-length past the buffered-body cap, refuse now
+            // rather than buffering most of it first (the per-DATA check in
+            // HandleDataAsync is the backstop for an undeclared/lying length).
+            if (Stream.ExpectedContentLength > maxRequestBodySize)
+                throw new HTTP2StreamException(HTTP2ErrorCode.ENHANCE_YOUR_CALM, Stream.StreamId,
+                    $"Declared content-length {Stream.ExpectedContentLength} exceeds the {maxRequestBodySize}-byte limit");
+
             Stream.RequestBody = new MemoryStream();
         }
 
@@ -1588,11 +1628,13 @@ public sealed class HTTP2Connection
             // flow-control window: the peer charged its connection send window
             // for these bytes, and never crediting them back would leak that
             // window shut. (The stream window is moot — the stream is gone.)
-            streamManager.ConnectionRecvWindow -= flowLength;
-
-            if (streamManager.ConnectionRecvWindow < 0)
-                throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
-                    "Flow control window exceeded");
+            lock (recvLock)
+            {
+                streamManager.ConnectionRecvWindow -= flowLength;
+                if (streamManager.ConnectionRecvWindow < 0)
+                    throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
+                        "Flow control window exceeded");
+            }
 
             await ReplenishReceiveWindowsAsync(null, flowLength);
 
@@ -1613,24 +1655,43 @@ public sealed class HTTP2Connection
         unproductiveFrames = 0;
 
         // Flow control accounting (full payload incl. padding, Section 6.1)
-        stream.RecvWindow                  -= flowLength;
-        streamManager.ConnectionRecvWindow -= flowLength;
+        lock (recvLock)
+        {
+            stream.RecvWindow                  -= flowLength;
+            streamManager.ConnectionRecvWindow -= flowLength;
 
-        if (stream.RecvWindow < 0 || streamManager.ConnectionRecvWindow < 0)
-            throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
-                "Flow control window exceeded");
+            if (stream.RecvWindow < 0 || streamManager.ConnectionRecvWindow < 0)
+                throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
+                    "Flow control window exceeded");
+        }
 
         var payload = StripPadding(Frame, Frame.Payload.AsSpan());
         var dataLength = payload.Length;
 
-        // A CONNECT tunnel has no request body to buffer — inbound bytes are
-        // handed to the tunnel handler as they arrive via the channel instead
-        // (see HTTP2Tunnel.ReadAsync); an ordinary request accumulates them
-        // in RequestBody until the whole thing is dispatched at END_STREAM.
+        // Padding (the Pad Length byte + the padding octets) counts against flow
+        // control (Section 6.1) but is discarded here — no consumer ever reads
+        // it — so its window is returned immediately. The DATA bytes proper are
+        // returned differently per path (below).
+        var paddingOverhead = flowLength - dataLength;
+
+        // A CONNECT tunnel and a streaming request have an incremental consumer
+        // (the handler's tunnel/body ReadAsync), so their flow-control window is
+        // returned as the handler CONSUMES each chunk (ReplenishConsumedAsync),
+        // NOT on receipt. This is real backpressure: a slow consumer leaves the
+        // window depleted, so the peer is forced to stop sending — and because
+        // the window is thus never replenished ahead of consumption, the inbound
+        // channel can hold at most a window's worth (per-stream + connection)
+        // regardless of how fast the peer sends. A buffered request has no such
+        // consumer (the whole body is handed over at END_STREAM), so it is
+        // replenished on receipt and bounded instead by maxRequestBodySize.
         if (stream.IsConnectTunnel)
         {
             if (dataLength > 0)
                 await stream.TunnelInbound!.Writer.WriteAsync(payload.ToArray(), cancellationToken);
+
+            // Only the discarded padding is returned now; the data waits for the
+            // tunnel consumer (Section 6.1 padding still owed regardless).
+            await ReplenishReceiveWindowsAsync(stream, paddingOverhead);
         }
         else if (stream.IsStreamingRequest)
         {
@@ -1639,15 +1700,30 @@ public sealed class HTTP2Connection
             stream.ReceivedBodyLength += dataLength;
             if (dataLength > 0)
                 await stream.RequestBodyChannel!.Writer.WriteAsync(payload.ToArray(), cancellationToken);
+
+            await ReplenishReceiveWindowsAsync(stream, paddingOverhead);
         }
         else
         {
             stream.RequestBody?.Write(payload);
-        }
 
-        // Replenish flow control — batched, not one WINDOW_UPDATE per DATA
-        // frame, and for the full payload incl. padding (Section 6.1).
-        await ReplenishReceiveWindowsAsync(stream, flowLength);
+            // Bound the buffered body: with no incremental consumer, an
+            // unbounded upload would grow RequestBody without limit. Over the
+            // cap, reset the stream — but first credit the CONNECTION window for
+            // this frame (Section 6.9: a stream error while the connection lives
+            // must still return the connection-level window, exactly as the
+            // closed-stream path above does), or an over-cap upload would leak
+            // the connection window shut on the way out.
+            if ((stream.RequestBody?.Length ?? 0) > maxRequestBodySize)
+            {
+                await ReplenishReceiveWindowsAsync(null, flowLength);
+                throw new HTTP2StreamException(HTTP2ErrorCode.ENHANCE_YOUR_CALM, Frame.StreamId,
+                    $"Request body exceeds the {maxRequestBodySize}-byte limit");
+            }
+
+            // Buffered: replenish the full payload incl. padding on receipt.
+            await ReplenishReceiveWindowsAsync(stream, flowLength);
+        }
 
         if (Frame.EndStream)
         {
@@ -1696,28 +1772,55 @@ public sealed class HTTP2Connection
         if (DataLength <= 0)
             return;
 
-        if (Stream is not null)
+        // Decide what (if anything) to emit and apply the local window bookkeeping
+        // under recvLock — but do NOT send while holding it (SendFrameAsync is
+        // async and takes writeLock). The local RecvWindow/ConnectionRecvWindow
+        // are updated here to reflect what we're about to grant; the frames go
+        // out below, after the lock is released.
+        UInt32 streamInc = 0, connInc = 0;
+        var    streamId  = Stream?.StreamId ?? 0;
+
+        lock (recvLock)
         {
-            Stream.PendingRecvUpdate += DataLength;
-            if (Stream.PendingRecvUpdate >= localSettings.InitialWindowSize / 2)
+
+            if (Stream is not null)
             {
-                var inc = (UInt32) Stream.PendingRecvUpdate;
-                await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(Stream.StreamId, inc));
-                Stream.RecvWindow        += inc;
-                Stream.PendingRecvUpdate  = 0;
+                Stream.PendingRecvUpdate += DataLength;
+                if (Stream.PendingRecvUpdate >= localSettings.InitialWindowSize / 2)
+                {
+                    streamInc                 = (UInt32) Stream.PendingRecvUpdate;
+                    Stream.RecvWindow        += streamInc;
+                    Stream.PendingRecvUpdate  = 0;
+                }
             }
+
+            connectionPendingRecvUpdate += DataLength;
+            if (connectionPendingRecvUpdate >= ConnectionRecvWindowTarget / 2)
+            {
+                connInc                             = (UInt32) connectionPendingRecvUpdate;
+                streamManager.ConnectionRecvWindow += connInc;
+                connectionPendingRecvUpdate         = 0;
+            }
+
         }
 
-        connectionPendingRecvUpdate += DataLength;
-        if (connectionPendingRecvUpdate >= ConnectionRecvWindowTarget / 2)
-        {
-            var inc = (UInt32) connectionPendingRecvUpdate;
-            await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(0, inc));
-            streamManager.ConnectionRecvWindow += inc;
-            connectionPendingRecvUpdate         = 0;
-        }
+        if (streamInc > 0)
+            await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(streamId, streamInc));
+        if (connInc > 0)
+            await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(0, connInc));
 
     }
+
+    /// <summary>
+    /// Return flow-control window for body/tunnel bytes a streaming or CONNECT
+    /// handler has just CONSUMED (read off its inbound channel) — the demand
+    /// signal that drives consumption-based backpressure. Called from handler
+    /// tasks (via <see cref="HTTP2RequestStream"/> / <see cref="HTTP2Tunnel"/>),
+    /// so it runs concurrently with the read loop's decrement; both go through
+    /// the recvLock-guarded <see cref="ReplenishReceiveWindowsAsync"/>.
+    /// </summary>
+    internal Task ReplenishConsumedAsync(HTTP2Stream Stream, int Count)
+        => ReplenishReceiveWindowsAsync(Stream, Count);
 
     #endregion
 
@@ -2208,7 +2311,7 @@ public sealed class HTTP2Connection
                                      ? Stream.RequestHeaders!
                                      : [.. Stream.RequestHeaders!, ("x-client-cert-subject", clientCertificate.Subject)];
 
-            var request  = new HTTP2RequestStream(Stream, requestHeaders);
+            var request  = new HTTP2RequestStream(this, Stream, requestHeaders);
             var response = new HTTP2ResponseStream(this, Stream);
 
             try

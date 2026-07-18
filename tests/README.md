@@ -19,7 +19,7 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **65/65 harness runs pass** (each self-reports its own check
+Current status: **66/66 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 51/51, h2clienttest 14/14, h2authtest 18/18,
 h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
@@ -43,6 +43,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2wsclient`       | self-contained | client-side CONNECT tunnel + WebSocket (text/binary/close) vs. our server (10 checks) |
 | `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
 | `h2rfcpolish`      | self-contained | MUST-level details h2spec misses: padded-DATA flow accounting (§6.1), closed-stream DATA connection-window credit (§6.9), cookie crumb reassembly (§8.2.3) (8 checks) |
+| `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |
 | `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range, negotiation (51 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |
@@ -52,7 +53,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 "demo-driven" harnesses talk to the Demo host on `https://localhost:8443`.
 "self-contained" harnesses spin up their own server(s) on private ports
-(9443–9464).
+(9443–9466).
 
 ## h2spec conformance
 

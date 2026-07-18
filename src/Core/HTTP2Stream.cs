@@ -261,11 +261,12 @@ public sealed class HTTP2Stream
     /// Inbound side of an accepted CONNECT tunnel: DATA frame payloads the
     /// peer sends are written here by the frame read loop as they arrive
     /// (HandleDataAsync) and read by the application's tunnel handler
-    /// (HTTP2Tunnel.ReadAsync). Unbounded — consistent with this server's
-    /// existing flow-control strategy of always immediately replenishing the
-    /// window on receipt (see HandleDataAsync), so there's no backpressure
-    /// signal to honor here either; a slow consumer just means this queue
-    /// grows, exactly as an unread RequestBody would for a normal request.
+    /// (HTTP2Tunnel.ReadAsync). The channel is unbounded, but it is bounded in
+    /// practice by flow control: the receive window for these bytes is returned
+    /// only as the consumer reads them (consumption-driven backpressure — see
+    /// HandleDataAsync / ReplenishConsumedAsync), so the peer can never have
+    /// more than a window's worth in flight, and a slow consumer simply leaves
+    /// the peer's window depleted rather than growing this queue without bound.
     /// </summary>
     public Channel<byte[]>?    TunnelInbound   { get; set; }
 

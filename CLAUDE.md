@@ -1594,6 +1594,75 @@ stream 3 still answers 200. Cookie: our client sends `cookie: a=1` +
 happy-path accounting, flood-counter reset moved after them) changed no
 h2spec-visible behavior.
 
+**Consumption-driven backpressure + bounded buffered body (RFC 9113 §5.2/§6.9)**
+(done 2026-07-18) — closes the last flow-control gap: the flood defenses stop a
+peer sending *too much*, the Slowloris timeouts stop it sending *too little*,
+but a peer sending *faster than the application consumes* could still pin
+unbounded memory. Flow control's actual job — the third axis — was previously
+unused on the receive side: the server replenished the window on *receipt*
+(WINDOW_UPDATE emitted as DATA arrived), so the peer's send window never
+reflected whether the handler was keeping up, and both inbound channels
+(`RequestBodyChannel`, `TunnelInbound`) were unbounded with no backpressure
+signal to honor. Two complementary fixes, entirely server-side:
+
+- **Streaming + CONNECT-tunnel: replenish on consumption, not receipt.** The
+  receive window for body/tunnel bytes is now returned only as the *handler*
+  reads each chunk (`HTTP2RequestStream.ReadAsync` / `HTTP2Tunnel.ReadAsync` →
+  new `ReplenishConsumedAsync`), never when the read loop enqueues it. This is
+  real backpressure: a handler that hasn't read leaves the peer's window
+  depleted, forcing it to stop — and because the window is never replenished
+  ahead of consumption, the unbounded channel can hold at most one window's
+  worth (per-stream + connection) before the peer is blocked, regardless of how
+  fast it sends. The receive window *is* the memory bound. `HandleDataAsync`
+  still replenishes the discarded **padding** overhead (`flowLength -
+  dataLength`) immediately — no consumer ever reads it, so its §6.1-owed window
+  is returned at once — and only the data proper waits for the consumer.
+  (A same-urgency tradeoff worth noting: the connection window is a shared pool
+  sized equal to the stream window here — 1 MiB each — so a single stalled
+  streaming consumer can in principle hold down the whole connection window; a
+  production server would size the connection window a multiple of the stream
+  window. Correct backpressure semantics either way.)
+- **Buffered path: bounded by `MaxRequestBodySize`.** The default handler seam
+  hands the whole body over at END_STREAM, so it has no incremental consumer to
+  drive backpressure — it's bounded by a cap instead (default 16 MiB,
+  configurable via the new `HTTP2Server`/`HTTP2Connection` constructor
+  parameter). An over-cap body — declared up front in `content-length`
+  (refused in `CompleteHeaders` before buffering most of it) or discovered as
+  DATA accumulates (`HandleDataAsync`) — resets the stream with
+  `RST_STREAM/ENHANCE_YOUR_CALM` while the connection stays usable; the DATA
+  frame that trips the cap still credits the connection window back first
+  (§6.9, same reasoning as the closed-stream path).
+- **Concurrency.** The receive-window fields (`RecvWindow`,
+  `PendingRecvUpdate`, `ConnectionRecvWindow`, `connectionPendingRecvUpdate`)
+  were touched only from the single frame read loop and needed no lock;
+  consumption-driven replenish now mutates them from handler tasks too, so a
+  new `recvLock` guards every receive-window mutation. It's the read loop's
+  decrement vs. the handlers' increments — never held across the WINDOW_UPDATE
+  send (`ReplenishReceiveWindowsAsync` computes the plan under the lock, then
+  emits outside it), and never nested with `writeLock`/`flowLock`, so no
+  deadlock. The client is deliberately unchanged — a server sending faster than
+  a client consumes is the same class of concern, but out of scope for this
+  server-side pass (the client already batches its own receive replenish).
+
+Verified with a new `h2backpressure` harness (6/6): an in-process streaming
+handler held shut by a gate consumes nothing while a raw client uploads 544 KiB
+(past the 512 KiB half-window mark, under the 1 MiB full window so the client
+needs no WINDOW_UPDATE to send it) — and **zero** WINDOW_UPDATEs come back
+(under the old replenish-on-receipt strategy the accumulator would have crossed
+the half-window mark and emitted one), proving the window is genuinely withheld;
+once the gate opens and the handler drains, exactly 1 MiB is credited back
+(512 KiB stream + 512 KiB connection, batched) and the request completes 200.
+The buffered cap: an over-cap declared `content-length` is refused up front
+(`ENHANCE_YOUR_CALM`), an over-cap *undeclared* body is refused as it crosses
+the cap mid-stream, and an under-cap body still returns 200 on the same
+connection afterward (proving the resets stayed stream-scoped). Full regression
+**66/66** (h2backpressure added; the streaming/large-transfer paths —
+h2streaming's 200 KB body, h2semantics/`large`, h2clienttest's 4× concurrent
+`/large`, h2flowbatch's batched WINDOW_UPDATEs — all still pass, confirming
+consumption-driven replenish doesn't stall or miscount a well-behaved consumer)
+and h2spec still **146/146 over both transports** (its flow-control §6.9 tests
+read the body promptly, so the window is replenished as fast as ever).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

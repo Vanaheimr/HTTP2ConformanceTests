@@ -59,7 +59,7 @@ Core never references the role-specific projects.
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocket.cs` doesn't depend on the server's concrete tunnel |
 | `WebSocket.cs` | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` (server vs. client masking) |
 | `HTTPSemantics.cs` | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
-| `HTTPAuthentication.cs` | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617) & Bearer (RFC 6750) schemes, store-agnostic (app-supplied validators) |
+| `HTTPAuthentication.cs` | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750) & Digest (RFC 7616) schemes, store-agnostic (app-supplied validators) |
 | `HTTPCaching.cs` | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
 
 **`Server/`** — references `Core`:
@@ -876,11 +876,12 @@ separate:
   (§11.6.1 multiple-challenges). It never validates anything itself: each scheme
   decodes its credential form and defers the actual "valid?" decision to an
   app-supplied validator delegate, so `Core` stays BCL-only and free of any
-  credential store (no password DB, no JWT library). Two concrete schemes ship:
+  credential store (no password DB, no JWT library). Three concrete schemes ship:
   **Basic** (RFC 7617 — `base64(user:password)`, split on the *first* colon,
-  `charset="UTF-8"` in the challenge) and **Bearer** (RFC 6750 — opaque token
-  handed straight to the validator). Two schemes rather than one deliberately —
-  it proves the abstraction is genuinely scheme-agnostic, not Basic-hardwired.
+  `charset="UTF-8"` in the challenge), **Bearer** (RFC 6750 — opaque token handed
+  straight to the validator), and **Digest** (RFC 7616 — see the separate Digest
+  entry below). Multiple schemes deliberately — it proves the abstraction is
+  genuinely scheme-agnostic, not Basic-hardwired.
   `HTTPAuthentication.RequireAuthentication(authenticator, innerHandler)` wraps
   an identity-aware handler into an ordinary `HTTP2RequestHandler` (401 on
   failure, otherwise pass through with the `HTTPAuthenticatedIdentity`), so it
@@ -2002,6 +2003,52 @@ h2clientrobust 8/8, h2wsclient 15/15 — all still green, confirming the request
 path restructure left the buffered/tunnel paths intact) and h2spec still
 **146/146 over both transports** (the server is untouched).
 
+**Digest authentication (RFC 7616)** (done 2026-07-18) — a third scheme on the
+existing RFC 9110 §11 framework, and the first *challenge-response* one: unlike
+Basic, Digest never sends the password over the wire. Entirely in
+`Core/HTTPAuthentication.cs` next to Basic/Bearer:
+
+- **The scheme.** `DigestAuthenticationScheme` issues a one-time `nonce` in its
+  `WWW-Authenticate: Digest …, qop="auth", algorithm=SHA-256, nonce="…"`
+  challenge; the client answers with
+  `response = H(HA1:nonce:nc:cnonce:qop:HA2)` where `HA1 = H(user:realm:pass)`
+  and `HA2 = H(method:request-target)` (§3.4). The server recomputes the same
+  hash from the password it looks up for that user and constant-time-compares
+  (`CryptographicOperations.FixedTimeEquals`) — proving password knowledge
+  without ever receiving it. Store-agnostic like the others: the app supplies a
+  `username → password` lookup (a real deployment would store
+  `H(user:realm:pass)`; the plaintext lookup keeps the demo simple). Default hash
+  **SHA-256** (RFC 7616); **MD5** (RFC 2617) accepted for interop if a client
+  echoes `algorithm=MD5`. Supports `qop=auth` with client `nc`/`cnonce` (replay
+  protection) and the legacy no-`qop` RFC 2069 form; `-sess` variants handled;
+  `auth-int` not advertised. The **nonce is stateless** —
+  `base64(ticks ":" HMAC-SHA256(secret, ticks))` — so the server validates its
+  own nonce's integrity + age (default 5 min) with no per-nonce state. Also
+  verifies the digest-`uri` equals the actual request-target (no scope
+  substitution) and the `realm` matches.
+- **One small framework change.** `IHTTPAuthenticationScheme.AuthenticateAsync`
+  gained `Method` + `RequestTarget` parameters (Digest folds them into `HA2`);
+  Basic/Bearer ignore them, and `HTTPAuthenticator` pulls them from the request's
+  `:method`/`:path`. The only breaking signature change, contained to the three
+  in-Core implementers.
+- **Demo.** A `/digest` route (its own endpoint, not mixed into `/secret`'s
+  Basic/Bearer, so a client is forced to exercise Digest specifically),
+  credentials `alice:secret`.
+
+Verified (`h2authtest` 18 → **28/28**) against **both** roles. Our own client
+hand-rolls the Digest response (full control over the wire): a correct SHA-256
+response → 200 with the identity surfaced; and the failure surface — wrong
+password, unknown user, a forged nonce we never issued, and a valid response
+computed for the wrong request-target (uri mismatch) — each → 401; plus the
+challenge is asserted to advertise `realm`/`nonce`/`qop=auth`/`algorithm=SHA-256`.
+And the production peer: **.NET `HttpClient`** with a `CredentialCache` entry
+(authType `"Digest"`) does the entire 401→re-auth Digest dance itself over
+HTTP/2 and gets 200 — confirming our SHA-256 Digest challenge/validation
+interoperates with a real client's implementation, not just our own. Full
+regression **69/69** (h2authtest now 28/28; the `AuthenticateAsync` signature
+change left Basic/Bearer behavior identical) and h2spec still **146/146 over both
+transports** (no auth path there; the server framing is untouched).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -2058,7 +2105,7 @@ conditional requests (If-Match/If-None-Match/If-Modified-Since/If-Unmodified-Sin
 single-range Range requests (Range/If-Range/Content-Range/Accept-Ranges),
 proactive content negotiation (Accept/Accept-Encoding/Accept-Language, `Vary`,
 the 406-vs-default policy), the **RFC 9110 §11 authentication framework** (Basic
-+ Bearer + transport-layer mTLS), and **RFC 9111 caching** (a client-side cache
++ Bearer + Digest/RFC 7616 + transport-layer mTLS), and **RFC 9111 caching** (a client-side cache
 with shared-cache semantics — Cache-Control, age/freshness, conditional
 revalidation, Vary keying, invalidation, stale-while-revalidate) — see the
 "RFC 9110 'core mechanics' + content negotiation", "Authentication", and
@@ -2137,4 +2184,5 @@ only remaining candidate is a neutral home for the demo — as interest dictates
 - RFC 7301 — ALPN
 - RFC 6455 — The WebSocket Protocol
 - RFC 7692 — Compression Extensions for WebSocket (permessage-deflate)
+- RFC 7616 — HTTP Digest Access Authentication
 - RFC 10008 — The HTTP QUERY Method

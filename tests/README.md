@@ -35,7 +35,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2shutdowntest`   | self-contained | graceful `GOAWAY` shutdown timing (own server + port) |
 | `h2timeout`        | self-contained | Slowloris/timeout hardening: handshake, preface, partial header block, withheld payload, SETTINGS-ACK timeouts |
 | `h2clienttest`     | self-contained | our client vs. our server *and* vs. .NET Kestrel (14 checks) |
-| `h2authtest`       | self-contained | RFC 9110 §11 auth framework + Basic/Bearer + mTLS (18 checks) |
+| `h2authtest`       | self-contained | RFC 9110 §11 auth framework + Basic/Bearer/Digest (RFC 7616) + mTLS, vs. our client + .NET `HttpClient` (28 checks) |
 | `h2cachetest`      | self-contained | RFC 9111 client cache: freshness, revalidation, Vary, shared/private (23 checks) |
 | `h2clientpriority` | self-contained | client-side RFC 9218 emission vs. our server + Kestrel (15 checks) |
 | `h2clientrobust`   | self-contained | client robustness vs. a raw mock server: REFUSED_STREAM retry, MCS gating, GOAWAY retry-safety, keepalive (8 checks) |

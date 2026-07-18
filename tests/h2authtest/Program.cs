@@ -208,5 +208,127 @@ Console.WriteLine("\n=== mutual TLS (client certificates) ===");
     try { await serverTask; } catch { }
 }
 
+// =========================================================================
+// Part 3 — RFC 7616 Digest authentication
+// =========================================================================
+Console.WriteLine("\n=== RFC 7616 Digest authentication ===");
+{
+    const int port = 9447;
+    var cert = MakeCert("localhost");
+
+    var digestAuth = new HTTPAuthenticator("demo",
+        new DigestAuthenticationScheme("demo",
+            (u, _) => Task.FromResult<string?>(u == "alice" ? "secret" : null)));
+    var digestHandler = HTTPAuthentication.RequireAuthentication(digestAuth,
+        (identity, sid, h, b, ct) =>
+        {
+            var body = Encoding.UTF8.GetBytes($"Digest as: {identity.Name}");
+            return Task.FromResult<(List<(string, string)>, byte[]?)>(
+                ([(":status", "200"), ("content-type", "text/plain"), ("content-length", body.Length.ToString())], body));
+        });
+
+    var server = new OurServer(IPAddress.Loopback, port, cert, digestHandler);
+    var serverTask = server.RunAsync();
+    await Task.Delay(400);
+
+    // --- hand-rolled Digest response computation (full control over the wire) --
+    static string HH(string alg, string s)
+    {
+        var bytes = Encoding.UTF8.GetBytes(s);
+        var d = alg.StartsWith("SHA-256", StringComparison.OrdinalIgnoreCase) ? SHA256.HashData(bytes) : MD5.HashData(bytes);
+        return Convert.ToHexStringLower(d);
+    }
+    static Dictionary<string, string> ParseChallenge(string v)
+    {
+        var rest = v.StartsWith("Digest", StringComparison.OrdinalIgnoreCase) ? v[6..] : v;
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in System.Text.RegularExpressions.Regex.Matches(rest, "(\\w+)=(?:\"([^\"]*)\"|([^,]+))"))
+        {
+            var m = (System.Text.RegularExpressions.Match) part;
+            d[m.Groups[1].Value] = m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value.Trim();
+        }
+        return d;
+    }
+    static string BuildAuth(string challenge, string user, string pass, string method, string uri, string? nonceOverride = null, string alg = "SHA-256")
+    {
+        var p      = ParseChallenge(challenge);
+        var realm  = p["realm"];
+        var nonce  = nonceOverride ?? p["nonce"];
+        var qop    = p.GetValueOrDefault("qop", "");
+        var cnonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
+        var nc     = "00000001";
+        var ha1    = HH(alg, $"{user}:{realm}:{pass}");
+        var ha2    = HH(alg, $"{method}:{uri}");
+        var resp   = qop.Length > 0 ? HH(alg, $"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2}")
+                                    : HH(alg, $"{ha1}:{nonce}:{ha2}");
+        var h = $"Digest username=\"{user}\", realm=\"{realm}\", nonce=\"{nonce}\", uri=\"{uri}\", algorithm={alg}, response=\"{resp}\"";
+        if (qop.Length > 0) h += $", qop=auth, nc={nc}, cnonce=\"{cnonce}\"";
+        return h;
+    }
+
+    var conn = await HTTP2Client.ConnectAsync("localhost", port, acceptAnyServerCert);
+
+    // 1. No credentials -> 401 with a Digest challenge.
+    var anon      = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest");
+    var challenge = anon.Headers.FirstOrDefault(h => h.Name == "www-authenticate").Value ?? "";
+    Check("Digest: no creds -> 401", anon.Status == 401, anon.Status.ToString());
+    Check("Digest: challenge has realm + nonce + qop=auth + algorithm",
+          challenge.StartsWith("Digest") && challenge.Contains("realm=\"demo\"") &&
+          challenge.Contains("nonce=") && challenge.Contains("qop=\"auth\"") && challenge.Contains("algorithm=SHA-256"),
+          challenge);
+
+    // 2. A correct SHA-256 response -> 200 (the password never crossed the wire).
+    var okResp = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest",
+                     ExtraHeaders: [("authorization", BuildAuth(challenge, "alice", "secret", "GET", "/digest"))]);
+    Check("Digest: valid response -> 200", okResp.Status == 200, okResp.Status.ToString());
+    Check("Digest: identity surfaced", Encoding.UTF8.GetString(okResp.Body) == "Digest as: alice", Encoding.UTF8.GetString(okResp.Body));
+
+    // 3. Wrong password (same nonce — still valid) -> 401.
+    var wrongPw = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest",
+                      ExtraHeaders: [("authorization", BuildAuth(challenge, "alice", "wrong", "GET", "/digest"))]);
+    Check("Digest: wrong password -> 401", wrongPw.Status == 401, wrongPw.Status.ToString());
+
+    // 4. Unknown user -> 401 (indistinguishable from a wrong password).
+    var unknownUser = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest",
+                          ExtraHeaders: [("authorization", BuildAuth(challenge, "bob", "secret", "GET", "/digest"))]);
+    Check("Digest: unknown user -> 401", unknownUser.Status == 401, unknownUser.Status.ToString());
+
+    // 5. A nonce we never issued (forged) -> 401.
+    var forgedNonce = Convert.ToBase64String(Encoding.ASCII.GetBytes("638000000000000000:bogusmac"));
+    var badNonce = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest",
+                       ExtraHeaders: [("authorization", BuildAuth(challenge, "alice", "secret", "GET", "/digest", nonceOverride: forgedNonce))]);
+    Check("Digest: forged nonce -> 401", badNonce.Status == 401, badNonce.Status.ToString());
+
+    // 6. A valid response but for the WRONG request-target (uri mismatch) -> 401.
+    var wrongUri = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/digest",
+                       ExtraHeaders: [("authorization", BuildAuth(challenge, "alice", "secret", "GET", "/elsewhere"))]);
+    Check("Digest: uri mismatch -> 401", wrongUri.Status == 401, wrongUri.Status.ToString());
+
+    await conn.CloseAsync();
+
+    // --- the production peer: .NET HttpClient does the whole Digest dance itself -
+    var credCache = new CredentialCache { { new Uri($"https://127.0.0.1:{port}/"), "Digest", new NetworkCredential("alice", "secret") } };
+    var handler = new SocketsHttpHandler {
+        Credentials = credCache,
+        SslOptions  = new SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (_, _, _, _) => true }
+    };
+    using (var http = new HttpClient(handler) {
+        DefaultRequestVersion = HttpVersion.Version20, DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
+        Timeout = TimeSpan.FromSeconds(8)
+    })
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, $"https://127.0.0.1:{port}/digest") {
+            Version = HttpVersion.Version20, VersionPolicy = HttpVersionPolicy.RequestVersionExact
+        };
+        var resp = await http.SendAsync(req);
+        Check("HttpClient Digest (CredentialCache) -> 200", resp.StatusCode == HttpStatusCode.OK, $"{(int) resp.StatusCode}");
+        Check("HttpClient Digest identity surfaced", (await resp.Content.ReadAsStringAsync()) == "Digest as: alice",
+              await resp.Content.ReadAsStringAsync());
+    }
+
+    await server.StopAsync();
+    try { await serverTask; } catch { }
+}
+
 Console.WriteLine($"\n=== {passed}/{passed + failed} checks passed ===");
 Environment.Exit(failed == 0 ? 0 : 1);

@@ -27,7 +27,7 @@ HTTP/2 server for the client). See `CLAUDE.md` for the full status.
 > requests, Range requests, proactive content negotiation with `Vary`,
 > opt-in on-the-fly gzip/brotli/deflate compression), cleartext h2c
 > (prior-knowledge, no TLS — server and client),
-> authentication (RFC 9110 §11 framework with Basic/Bearer, plus mutual TLS on
+> authentication (RFC 9110 §11 framework with Basic/Bearer/Digest, plus mutual TLS on
 > server and client), and an RFC 9111 client-side cache (freshness, conditional
 > revalidation, `Vary`, shared/private semantics) all work end-to-end (verified
 > against .NET's strict `HttpClient`/Kestrel and raw frame-level attack
@@ -132,7 +132,7 @@ src/  (solution HTTP2.slnx)
 │   ├── IHTTP2Tunnel.cs      Transport-agnostic byte-tunnel interface
 │   ├── WebSocket.cs         RFC 6455 WebSocket framing over an IHTTP2Tunnel
 │   ├── HTTPSemantics.cs     RFC 9110 semantics (GET/HEAD/OPTIONS, conditional + Range, content negotiation)
-│   ├── HTTPAuthentication.cs  RFC 9110 §11 auth framework + Basic/Bearer schemes
+│   ├── HTTPAuthentication.cs  RFC 9110 §11 auth framework + Basic/Bearer/Digest schemes
 │   └── HTTPCaching.cs       RFC 9111 caching logic (Cache-Control, freshness, revalidation, Vary)
 ├── Server/              (→ Core)
 │   ├── HTTP2Connection.cs   Preface, SETTINGS, frame dispatch, responses, CONNECT tunneling, priority-aware writer
@@ -184,8 +184,10 @@ stack and interop-tests it against the real `Grpc.Net.Client`.
 For authentication, `HTTPAuthentication.RequireAuthentication` wraps a handler
 with the RFC 9110 §11 challenge/response flow (401 + `WWW-Authenticate` when
 unauthenticated), backed by pluggable schemes — `BasicAuthenticationScheme`
-(RFC 7617) and `BearerAuthenticationScheme` (RFC 6750), each taking an
-app-supplied validator so no credential store is baked in. Mutual TLS is a
+(RFC 7617), `BearerAuthenticationScheme` (RFC 6750), and
+`DigestAuthenticationScheme` (RFC 7616 — challenge-response, SHA-256, the
+password never crosses the wire), each taking an app-supplied validator so no
+credential store is baked in. Mutual TLS is a
 separate, transport-layer option on `HTTP2Server` (`RequireClientCertificate`)
 and `HTTP2Client` (`ClientCertificate`).
 

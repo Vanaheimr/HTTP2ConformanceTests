@@ -248,6 +248,33 @@ public static class Program
 
 
     /// <summary>
+    /// A resource at "/digest" protected with RFC 7616 Digest authentication —
+    /// the challenge-response scheme that never sends the password over the wire
+    /// (the server issues a nonce, the client answers with a keyed hash). Kept on
+    /// its own endpoint (rather than added to "/secret" alongside Basic/Bearer)
+    /// so a client is forced to exercise Digest specifically. Demo credentials:
+    /// <c>alice:secret</c>. A real deployment would store H(user:realm:password),
+    /// not the plaintext this toy lookup returns.
+    /// </summary>
+    private static readonly HTTPAuthenticator digestAuthenticator = new(
+        Realm: "demo",
+        new DigestAuthenticationScheme("demo",
+            (user, _) => Task.FromResult<string?>(user == "alice" ? "secret" : null)));
+
+    private static readonly HTTP2RequestHandler digestHandler =
+        HTTPAuthentication.RequireAuthentication(digestAuthenticator, (identity, streamId, reqHeaders, reqBody, ct) =>
+        {
+            var body = Encoding.UTF8.GetBytes($"Digest-authenticated as: {identity.Name}\n");
+            return Task.FromResult<(List<(string Name, string Value)>, byte[]?)>(
+            ([
+                (":status",        "200"),
+                ("content-type",   "text/plain; charset=utf-8"),
+                ("content-length", body.Length.ToString())
+            ], body));
+        });
+
+
+    /// <summary>
     /// Simple request handler that demonstrates how the higher-level HTTP semantics
     /// plug into the HTTP/2 framing layer. The pseudo-headers (:method, :path, :scheme,
     /// :authority) have already been decoded from HPACK.
@@ -272,6 +299,9 @@ public static class Program
 
         if (path == "/secret")
             return await secretHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);
+
+        if (path == "/digest")
+            return await digestHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);
 
         if (path == "/files/greeting")
             return await negotiatedHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);

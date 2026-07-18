@@ -135,6 +135,62 @@ Check("out-of-bounds range -> 416", range3.StatusCode == HttpStatusCode.Requeste
 Check("416 Content-Range: bytes */len", (range3.Content.Headers.ContentRange?.ToString() ?? "").Contains($"*/{baselineBody.Length}"),
       range3.Content.Headers.ContentRange?.ToString() ?? "(none)");
 
+Console.WriteLine("\n=== Multi-Range (multipart/byteranges) ===");
+static bool ContainsSeq(byte[] hay, byte[] needle)
+{
+    for (var i = 0; i + needle.Length <= hay.Length; i++)
+    {
+        var ok = true;
+        for (var j = 0; j < needle.Length; j++)
+            if (hay[i + j] != needle[j]) { ok = false; break; }
+        if (ok) return true;
+    }
+    return false;
+}
+
+// Two disjoint satisfiable ranges -> a 206 multipart/byteranges body.
+var multi = await Send(HttpMethod.Get, Url, r =>
+{
+    r.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue();
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(0, 9));
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(20, 29));
+});
+var multiBody = await multi.Content.ReadAsByteArrayAsync();
+Check("multi-range -> 206", multi.StatusCode == HttpStatusCode.PartialContent, $"{(int) multi.StatusCode}");
+Check("content-type multipart/byteranges",
+      (multi.Content.Headers.ContentType?.MediaType ?? "") == "multipart/byteranges",
+      multi.Content.Headers.ContentType?.ToString() ?? "(none)");
+var boundary = multi.Content.Headers.ContentType?.Parameters.FirstOrDefault(p => p.Name == "boundary")?.Value ?? "";
+Check("multipart carries a boundary", boundary.Length > 0, boundary);
+Check("both parts carry a Content-Range",
+      ContainsSeq(multiBody, System.Text.Encoding.ASCII.GetBytes("Content-Range: bytes 0-9/")) &&
+      ContainsSeq(multiBody, System.Text.Encoding.ASCII.GetBytes("Content-Range: bytes 20-29/")));
+Check("part payloads match the resource bytes",
+      ContainsSeq(multiBody, baselineBody[0..10]) && ContainsSeq(multiBody, baselineBody[20..30]));
+
+// A set with one satisfiable + one out-of-bounds range -> the unsatisfiable one
+// is dropped, leaving a single-part 206 (not multipart).
+var multiPartial = await Send(HttpMethod.Get, Url, r =>
+{
+    r.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue();
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(0, 9));
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(999_999, 9_999_999));
+});
+Check("partly-satisfiable multi-range -> 206", multiPartial.StatusCode == HttpStatusCode.PartialContent, $"{(int) multiPartial.StatusCode}");
+Check("single satisfiable range -> single-part 206 (not multipart)",
+      (multiPartial.Content.Headers.ContentType?.MediaType ?? "") != "multipart/byteranges" &&
+      multiPartial.Content.Headers.ContentRange?.ToString() == $"bytes 0-9/{baselineBody.Length}",
+      multiPartial.Content.Headers.ContentRange?.ToString() ?? "(none)");
+
+// A set where every range is out of bounds -> 416.
+var multiUnsat = await Send(HttpMethod.Get, Url, r =>
+{
+    r.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue();
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(999_999, 9_999_999));
+    r.Headers.Range.Ranges.Add(new System.Net.Http.Headers.RangeItemHeaderValue(888_888, 999_999));
+});
+Check("all-unsatisfiable multi-range -> 416", multiUnsat.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable, $"{(int) multiUnsat.StatusCode}");
+
 Console.WriteLine("\n=== Range + If-Range ===");
 var rangeIfRangeMatch = await Send(HttpMethod.Get, Url, r =>
 {

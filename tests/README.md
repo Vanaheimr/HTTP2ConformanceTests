@@ -48,7 +48,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
 | `h2query`          | self-contained | RFC 10008 the HTTP QUERY method (safe/idempotent body-carrying read) vs. our client + .NET HttpClient — filtering, Content-Location, ETag/304, Allow, 400/404/405 (12 checks) |
 | `grpc`             | self-contained | gRPC over our stack — all four call types (unary, server-/client-streaming, bidi), length-prefix framing, `grpc-status` trailers — vs. our client (incl. the streaming request API) + the real `Grpc.Net.Client` (16 checks) |
-| `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range, negotiation (51 checks) |
+| `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range (single + multi `multipart/byteranges`), negotiation (59 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
 | `h2priority`       | demo-driven    | server-side RFC 9218 scheduling: urgency ordering, PRIORITY_UPDATE |

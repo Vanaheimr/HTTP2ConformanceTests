@@ -712,17 +712,16 @@ below for why):
   `bytes=first-` / `bytes=-suffixLength` → `206 Partial Content` +
   `Content-Range`; a syntactically valid but unsatisfiable range (start at or
   past the resource's length) → `416 Range Not Satisfiable` +
-  `Content-Range: bytes */length`; anything this wrapper doesn't parse
-  (multi-range, garbage) is simply ignored, falling back to an ordinary `200`
-  — both are explicit, distinct RFC 9110 §14.2 outcomes, not the same
-  "give up" path. `If-Range` (§13.1.5) gates whether Range is honored at all:
-  an entity-tag uses strong comparison (a weak validator can never safely
-  resume a partial download), a date uses exact 1-second-granularity
-  equality; a mismatch silently ignores Range and returns the full `200`.
-  Every successful GET/HEAD/206 response advertises `Accept-Ranges: bytes`.
-  Multi-range (`multipart/byteranges`) responses are the one explicitly
-  documented gap in Range support — real but rarely used, and meaningfully
-  more complex than the single-range case.
+  `Content-Range: bytes */length`; garbage / unknown units are simply ignored,
+  falling back to an ordinary `200` — all explicit, distinct RFC 9110 §14.2
+  outcomes, not the same "give up" path. `If-Range` (§13.1.5) gates whether
+  Range is honored at all: an entity-tag uses strong comparison (a weak
+  validator can never safely resume a partial download), a date uses exact
+  1-second-granularity equality; a mismatch silently ignores Range and returns
+  the full `200`. Every successful GET/HEAD/206 response advertises
+  `Accept-Ranges: bytes`. (Multi-range `multipart/byteranges` responses were
+  originally the one documented gap here; they were added later — see the
+  "Multi-range requests" entry below.)
 - **The demo.** `Program.cs` wires two routes: a single static resource at
   `/files/resource.txt` (via the `HTTPResourceHandler` overload — routing by
   `/files/` *prefix* means `/files/missing.txt` exercises `HTTPSemantics`'
@@ -2079,6 +2078,42 @@ identity surfaced, a wrong token → 401, and the 401 challenge now advertises
 `Basic + Bearer + Token`; and via our own client (`Token secret-token-abc`) → 200.
 Full regression **69/69** (h2authtest now 33/33) and h2spec still **146/146 over
 both transports** (no auth path there; server framing untouched).
+
+**Multi-range requests — `multipart/byteranges` (RFC 9110 §14)** (done
+2026-07-18) — closes the one documented gap in Range support. A `Range` header
+naming two or more ranges now yields a proper `multipart/byteranges` 206 instead
+of falling back to a full 200. Entirely in `Core/HTTPSemantics.cs` (the framing
+layer is version-independent and untouched, as always):
+
+- **`ApplyRange` now parses the whole byte-range *set*** (comma-separated),
+  resolving each member via the refactored `ParseByteRangeSpec` (the former
+  single-range parser, now spec-at-a-time). The outcome mirrors §14.1.2/§14.4:
+  a single satisfiable range → the existing single-part `206` + `Content-Range`;
+  **two or more** satisfiable ranges → a `206` whose body is
+  `multipart/byteranges` (each part carries its own `Content-Type` +
+  `Content-Range`, separated by a random boundary that can't collide with binary
+  content; no response-level `Content-Range`). Unsatisfiable members inside a set
+  that still has satisfiable ones are dropped; if **every** member is out of
+  bounds → `416`; any malformed member or unknown unit → ignore the Range
+  (full `200`), the §14.2 fallback.
+- **DoS guard.** A set naming more than `MaxRanges` (100) is refused (falls back
+  to a full 200) — many tiny, often overlapping ranges are a
+  response-amplification/CPU vector, exactly the "unsatisfiable or excessive"
+  case §14.1.2 lets a server reject. Overlaps aren't coalesced; the cap is the
+  guard.
+
+Verified (`h2semantics` 51 → **59/59**, driven by .NET `HttpClient`): two
+disjoint ranges (`bytes=0-9,20-29`) → `206` with `content-type:
+multipart/byteranges; boundary=…`, both parts' `Content-Range` lines present and
+each part's payload byte-for-byte equal to the resource slice (checked as a byte
+subsequence, robust to the resource's UTF-8 content); a partly-satisfiable set
+(`0-9` + an out-of-bounds range) → a single-part `206` (`bytes 0-9/len`, *not*
+multipart — the unsatisfiable member dropped); an all-out-of-bounds set → `416`.
+Full regression **69/69** (h2semantics now 59/59; single-range/If-Range behavior
+unchanged — that path is byte-identical) and h2spec still **146/146 over both
+transports** (no Range path there; server framing untouched). The demo needed no
+change — `/files/resource.txt` picks up multi-range automatically through the
+shared `HTTPSemantics` wrapper.
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

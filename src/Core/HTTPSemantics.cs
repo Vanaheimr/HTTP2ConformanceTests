@@ -3,6 +3,7 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 
 
 /// <summary>
@@ -125,8 +126,9 @@ public delegate Task<HTTPResource?> HTTPQueryHandler(
 /// (Section 9), proactive content negotiation (Section 12: Accept,
 /// Accept-Encoding, Accept-Language, Vary), conditional requests (Section 13:
 /// If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since), and
-/// single-range Range requests (Section 14: Range, If-Range, Content-Range,
-/// Accept-Ranges). Optionally also the QUERY method (RFC 10008) — a safe,
+/// Range requests (Section 14: Range, If-Range, Content-Range, Accept-Ranges —
+/// single-range 206 and multi-range multipart/byteranges). Optionally also the
+/// QUERY method (RFC 10008) — a safe,
 /// idempotent, cacheable method that carries its query in the request body —
 /// when an <see cref="HTTPQueryHandler"/> is supplied; its result runs through
 /// the very same conditional/negotiation/representation pipeline as a GET.
@@ -987,28 +989,67 @@ public static class HTTPSemantics
     private enum RangeParseResult { Unsupported, Unsatisfiable, Ok }
 
     /// <summary>
+    /// A byte-range set may name more than this many ranges, but a request that
+    /// does is refused (falls back to a full 200). Many tiny (often overlapping)
+    /// ranges are a response-amplification / CPU DoS vector — the same reason
+    /// RFC 9110, Section 14.1.2 lets a server reject "an unsatisfiable or
+    /// excessive" range set. We don't coalesce overlaps; the cap is the guard.
+    /// </summary>
+    private const int MaxRanges = 100;
+
+    /// <summary>
     /// Apply a Range header (already passed its If-Range check, if any) to
-    /// Resource. Returns null if the Range header isn't a single
-    /// byte-range-spec this wrapper understands (multi-range, or malformed) —
-    /// per Section 14.2, an unusable Range is simply ignored, falling back to
-    /// an ordinary 200; a syntactically valid but out-of-bounds range is a
-    /// distinct 416 response, handled here rather than falling back.
+    /// Resource. A single satisfiable range → <c>206</c> with
+    /// <c>Content-Range</c>; multiple satisfiable ranges → <c>206</c> as a
+    /// <c>multipart/byteranges</c> body (Section 14.4). Returns null if the
+    /// Range header names a unit/syntax this wrapper doesn't understand — per
+    /// Section 14.2 an unusable Range is simply ignored, falling back to an
+    /// ordinary 200; a set whose ranges are *all* out of bounds is a distinct
+    /// 416, handled here rather than falling back. Unsatisfiable ranges within a
+    /// set that also has satisfiable ones are dropped (Section 14.1.2).
     /// </summary>
     private static (List<(string Name, string Value)> Headers, byte[]? Body)? ApplyRange(HTTPResource Resource, string ETag, string RangeHeader)
     {
 
         var length = (long) Resource.Body.Length;
-        var result = TryParseSingleByteRange(RangeHeader, length, out var start, out var end);
 
-        return result switch
+        if (!RangeHeader.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
+            return null;   // Unknown range unit — ignore the Range (RFC 9110 §14.2).
+
+        var setSpec = RangeHeader["bytes=".Length..].Trim();
+        if (setSpec.Length == 0)
+            return null;
+
+        var parts = setSpec.Split(',');
+        if (parts.Length > MaxRanges)
+            return null;   // Excessive range set — fall back to a full 200.
+
+        var satisfiable = new List<(long Start, long End)>();
+
+        foreach (var raw in parts)
         {
-            RangeParseResult.Unsupported   => null,
-            RangeParseResult.Unsatisfiable => (
-                [ (":status", "416"), ("content-range", $"bytes */{length}"), ("etag", ETag) ],
-                null
-            ),
-            _ => BuildPartialResponse(Resource, ETag, start, end, length)
-        };
+            var spec = raw.Trim();
+            if (spec.Length == 0)
+                continue;   // Tolerate a stray empty element between commas.
+
+            switch (ParseByteRangeSpec(spec, length, out var start, out var end))
+            {
+                case RangeParseResult.Unsupported:
+                    return null;   // Any malformed member ⇒ ignore the whole Range.
+                case RangeParseResult.Ok:
+                    satisfiable.Add((start, end));
+                    break;
+                // Unsatisfiable: drop this member, keep going.
+            }
+        }
+
+        if (satisfiable.Count == 0)
+            // Every range was out of bounds (or the set was empty) ⇒ 416.
+            return ([(":status", "416"), ("content-range", $"bytes */{length}"), ("etag", ETag)], null);
+
+        return satisfiable.Count == 1
+                   ? BuildPartialResponse(Resource, ETag, satisfiable[0].Start, satisfiable[0].End, length)
+                   : BuildMultipartResponse(Resource, ETag, satisfiable, length);
 
     }
 
@@ -1036,26 +1077,65 @@ public static class HTTPSemantics
     }
 
     /// <summary>
-    /// A single byte-range-spec (RFC 9110, Section 14.1.2): "bytes=first-last",
-    /// "bytes=first-" (to the end), or "bytes=-suffixLength" (the last N
-    /// bytes). Multiple comma-separated ranges (multipart/byteranges
-    /// responses) are out of scope — reported as Unsupported so the caller
-    /// falls back to a full 200, which is always a legal response to any
-    /// Range request.
+    /// Build a <c>multipart/byteranges</c> 206 (RFC 9110, Section 14.4 / 14.6)
+    /// for two or more satisfiable ranges: each part carries its own
+    /// <c>Content-Type</c> and <c>Content-Range</c>, separated by a unique
+    /// boundary; the response-level <c>Content-Type</c> is
+    /// <c>multipart/byteranges; boundary=…</c> and there is no response-level
+    /// <c>Content-Range</c> (each part has its own). The boundary is random so it
+    /// can't collide with binary body content.
     /// </summary>
-    private static RangeParseResult TryParseSingleByteRange(string RangeHeader, long ContentLength, out long Start, out long End)
+    private static (List<(string Name, string Value)> Headers, byte[]? Body) BuildMultipartResponse(
+        HTTPResource Resource, string ETag, List<(long Start, long End)> Ranges, long Length)
+    {
+
+        var boundary = Guid.NewGuid().ToString("N");
+        var body     = new List<byte>();
+
+        foreach (var (start, end) in Ranges)
+        {
+            // Part header (ASCII): boundary line + per-part Content-Type / Content-Range.
+            body.AddRange(Encoding.ASCII.GetBytes(
+                $"--{boundary}\r\n" +
+                $"Content-Type: {Resource.ContentType}\r\n" +
+                $"Content-Range: bytes {start}-{end}/{Length}\r\n\r\n"));
+
+            body.AddRange(Resource.Body[(int) start..(int) (end + 1)]);
+            body.AddRange("\r\n"u8.ToArray());
+        }
+
+        body.AddRange(Encoding.ASCII.GetBytes($"--{boundary}--\r\n"));   // closing delimiter
+
+        var bytes = body.ToArray();
+
+        var headers = new List<(string, string)>
+        {
+            (":status",        "206"),
+            ("content-type",   $"multipart/byteranges; boundary={boundary}"),
+            ("content-length", bytes.Length.ToString()),
+            ("accept-ranges",  "bytes"),
+            ("etag",           ETag)
+        };
+
+        if (Resource.LastModified is not null)
+            headers.Add(("last-modified", Resource.LastModified.Value.ToString("r", CultureInfo.InvariantCulture)));
+
+        return (headers, bytes);
+
+    }
+
+    /// <summary>
+    /// Parse one byte-range-spec (RFC 9110, Section 14.1.2), already stripped of
+    /// the <c>bytes=</c> unit and surrounding whitespace: <c>first-last</c>,
+    /// <c>first-</c> (to the end), or <c>-suffixLength</c> (the last N bytes).
+    /// Returns Ok with [Start,End] resolved against ContentLength, Unsatisfiable
+    /// if syntactically valid but out of bounds, or Unsupported if malformed.
+    /// </summary>
+    private static RangeParseResult ParseByteRangeSpec(string spec, long ContentLength, out long Start, out long End)
     {
 
         Start = 0;
         End   = 0;
-
-        if (!RangeHeader.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase))
-            return RangeParseResult.Unsupported;
-
-        var spec = RangeHeader["bytes=".Length..].Trim();
-
-        if (spec.Length == 0 || spec.Contains(','))
-            return RangeParseResult.Unsupported;
 
         var dash = spec.IndexOf('-');
         if (dash < 0)

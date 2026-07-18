@@ -158,7 +158,8 @@ first: `HTTPResourceHandler` (see `HTTPSemantics.cs`) just answers "what is
 this resource's current representation, or null for 404" — `HTTPSemantics.Wrap`
 turns that into an ordinary `HTTP2RequestHandler`, adding RFC 9110
 GET/HEAD/OPTIONS method semantics, conditional requests, and Range requests
-on top, entirely without touching HTTP/2 framing. Its `HTTPVariantHandler`
+(single-range and multi-range `multipart/byteranges`) on top, entirely without
+touching HTTP/2 framing. Its `HTTPVariantHandler`
 sibling returns *several* representations of a resource, and `Wrap` picks
 among them by the client's `Accept` / `Accept-Encoding` / `Accept-Language`
 (proactive content negotiation, emitting the appropriate `Vary`). Passing

@@ -257,6 +257,21 @@ await conn.UpdatePriorityAsync(h.StreamId, new HTTP2Priority(0, false));   // PR
 var slow = await h.Response;
 ```
 
+For full-duplex request/response streaming — the enabler for client-streaming and
+bidirectional gRPC — `StartStreamingRequestAsync` returns a handle whose request
+body is written incrementally while the response is read incrementally, both at
+once:
+
+```csharp
+var s = await conn.StartStreamingRequestAsync("POST", "https", "localhost:8443", "/svc.Greeter/Bidi",
+    ExtraHeaders: [("content-type", "application/grpc"), ("te", "trailers")]);
+var head = await s.GetResponseAsync();                 // status + headers
+await s.WriteAsync(frame);                              // send a request-body chunk (DATA)
+byte[]? chunk = await s.ReadAsync();                    // read a response-body chunk (null at end)
+await s.CompleteRequestAsync();                         // half-close the request side
+var trailers = await s.GetTrailersAsync();              // e.g. grpc-status
+```
+
 `HTTP2CachingClient` wraps a connection with an RFC 9111 cache — it serves fresh
 responses without a round trip, revalidates stale ones with conditional
 requests, keys variants by `Vary`, and honors `Cache-Control` (with private vs.

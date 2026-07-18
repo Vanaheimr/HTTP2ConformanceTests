@@ -18,10 +18,15 @@ using OurServer = org.GraphDefined.Vanaheimr.Hermod.HTTP2.HTTP2Server;
 // response body. That is exactly what the streaming seam (HTTP2StreamingHandler
 // + IHTTP2ResponseStream.CompleteAsync(trailers)) was built to enable.
 //
-// This hosts a Greeter service (unary SayHello + server-streaming
-// SayHelloStream) on our server, with a hand-rolled minimal protobuf codec (one
-// string field), and drives it from BOTH our own HTTP2Client AND the real
-// .NET gRPC client (Grpc.Net.Client) — the production-peer interop proof.
+// This hosts a Greeter service covering all four gRPC call types — unary
+// SayHello (1->1), server-streaming SayHelloStream (1->N), client-streaming
+// SayHelloClientStream (N->1), and bidirectional SayHelloBidi (N->N) — on our
+// server, with a hand-rolled minimal protobuf codec (one string field), and
+// drives it from BOTH our own HTTP2Client AND the real .NET gRPC client
+// (Grpc.Net.Client) — the production-peer interop proof. The client-streaming
+// and bidi legs exercise HTTP2ClientConnection.StartStreamingRequestAsync — the
+// client's incremental streaming *request* path, whose absence was the last
+// streaming asymmetry between our server and client.
 // =============================================================================
 
 var passed = 0;
@@ -81,42 +86,46 @@ static List<byte[]> Deframe(byte[] data)
     return msgs;
 }
 
-// Server-side: reassemble the first framed message from the streaming request's
-// DATA chunks (which don't align with gRPC message boundaries).
-static async Task<byte[]?> ReadOneMessageAsync(IHTTP2RequestStream req, CancellationToken ct)
-{
-    var buf = new List<byte>();
-    while (true)
-    {
-        if (buf.Count >= 5)
-        {
-            var len = (buf[1] << 24) | (buf[2] << 16) | (buf[3] << 8) | buf[4];
-            if (buf.Count >= 5 + len) return buf.GetRange(5, len).ToArray();
-        }
-        var chunk = await req.ReadAsync(ct);
-        if (chunk is null) return null;
-        buf.AddRange(chunk);
-    }
-}
-
 // --- the Greeter service, on our streaming seam ------------------------------
+// Four method types: unary (1->1), server-streaming (1->N), client-streaming
+// (N->1), and bidi (N->N). The last two exercise the client's new streaming
+// *request* path — reading many request messages off IHTTP2RequestStream as they
+// arrive (a GrpcMessageReader reassembles gRPC frames from DATA chunks that don't
+// align with message boundaries).
 HTTP2StreamingHandler greeter = async (req, resp, ct) =>
 {
-    var path = req.Headers.FirstOrDefault(h => h.Name == ":path").Value ?? "";
-    var reqBytes = await ReadOneMessageAsync(req, ct);
-    var name = reqBytes is null ? "" : DecodeStr(reqBytes);
+    var path   = req.Headers.FirstOrDefault(h => h.Name == ":path").Value ?? "";
+    var reader = new GrpcMessageReader(req.ReadAsync);
 
     await resp.WriteHeadersAsync([(":status", "200"), ("content-type", "application/grpc")], ct);
 
-    if (path.EndsWith("/SayHello"))
+    if (path.EndsWith("/SayHello"))   // unary
     {
+        var name = DecodeStr(await reader.NextAsync(ct) ?? []);
         await resp.WriteAsync(Frame(EncodeStr($"Hello, {name}!")), ct);
         await resp.CompleteAsync([("grpc-status", "0")], ct);
     }
-    else if (path.EndsWith("/SayHelloStream"))
+    else if (path.EndsWith("/SayHelloStream"))   // server-streaming
     {
+        var name = DecodeStr(await reader.NextAsync(ct) ?? []);
         for (var i = 1; i <= 3; i++)
             await resp.WriteAsync(Frame(EncodeStr($"Hello #{i}, {name}!")), ct);
+        await resp.CompleteAsync([("grpc-status", "0")], ct);
+    }
+    else if (path.EndsWith("/SayHelloClientStream"))   // client-streaming: read all, reply once
+    {
+        var names = new List<string>();
+        byte[]? m;
+        while ((m = await reader.NextAsync(ct)) is not null)
+            names.Add(DecodeStr(m));
+        await resp.WriteAsync(Frame(EncodeStr($"Hello, {string.Join(" and ", names)}!")), ct);
+        await resp.CompleteAsync([("grpc-status", "0")], ct);
+    }
+    else if (path.EndsWith("/SayHelloBidi"))   // bidi: reply to each request message as it arrives
+    {
+        byte[]? m;
+        while ((m = await reader.NextAsync(ct)) is not null)
+            await resp.WriteAsync(Frame(EncodeStr($"Hello, {DecodeStr(m)}!")), ct);
         await resp.CompleteAsync([("grpc-status", "0")], ct);
     }
     else
@@ -172,6 +181,47 @@ Console.WriteLine("=== gRPC via our own HTTP2Client (hand-rolled framing) ===");
           msgs.SequenceEqual(["Hello #1, Ada!", "Hello #2, Ada!", "Hello #3, Ada!"]), string.Join(" | ", msgs));
     Check("server-streaming: grpc-status 0 in trailers", sresp.Trailers.Any(t => t is { Name: "grpc-status", Value: "0" }));
 
+    // Client-streaming SayHelloClientStream — write three request messages over
+    // time via the new streaming request API, then read the single reply.
+    var cs = await conn.StartStreamingRequestAsync("POST", "https", authority, "/helloworld.Greeter/SayHelloClientStream",
+                 ExtraHeaders: [("content-type", "application/grpc"), ("te", "trailers")]);
+    foreach (var n in new[] { "Ada", "Grace", "Lin" })
+        await cs.WriteAsync(Frame(EncodeStr(n)));
+    await cs.CompleteRequestAsync();
+
+    var csHead = await cs.GetResponseAsync();
+    var csBody = new List<byte>();
+    byte[]? csChunk;
+    while ((csChunk = await cs.ReadAsync()) is not null)
+        csBody.AddRange(csChunk);
+    var csReply    = Deframe(csBody.ToArray()).Select(DecodeStr).ToList();
+    var csTrailers = await cs.GetTrailersAsync();
+    Check("client-streaming: head :status 200", csHead.Status == 200, csHead.Status.ToString());
+    Check("client-streaming: single joined reply", csReply.Count == 1 && csReply[0] == "Hello, Ada and Grace and Lin!",
+          csReply.Count > 0 ? csReply[0] : "(none)");
+    Check("client-streaming: grpc-status 0 in trailers", csTrailers.Any(t => t is { Name: "grpc-status", Value: "0" }));
+
+    // Bidi SayHelloBidi — true ping-pong: write a message, read its reply, repeat.
+    var bd = await conn.StartStreamingRequestAsync("POST", "https", authority, "/helloworld.Greeter/SayHelloBidi",
+                 ExtraHeaders: [("content-type", "application/grpc"), ("te", "trailers")]);
+    var bdHead   = await bd.GetResponseAsync();   // server writes response HEADERS before reading
+    var bdReader = new GrpcMessageReader(ct => new ValueTask<byte[]?>(bd.ReadAsync(ct)));
+    var bdReplies = new List<string>();
+    foreach (var n in new[] { "Ada", "Grace", "Lin" })
+    {
+        await bd.WriteAsync(Frame(EncodeStr(n)));
+        var r = await bdReader.NextAsync(CancellationToken.None);
+        if (r is not null) bdReplies.Add(DecodeStr(r));
+    }
+    await bd.CompleteRequestAsync();
+    var bdEnd      = await bdReader.NextAsync(CancellationToken.None);   // drains to end-of-stream (null)
+    var bdTrailers = await bd.GetTrailersAsync();
+    Check("bidi: head :status 200", bdHead.Status == 200, bdHead.Status.ToString());
+    Check("bidi: a reply per request message, interleaved",
+          bdReplies.SequenceEqual(["Hello, Ada!", "Hello, Grace!", "Hello, Lin!"]), string.Join(" | ", bdReplies));
+    Check("bidi: stream ends cleanly + grpc-status 0",
+          bdEnd is null && bdTrailers.Any(t => t is { Name: "grpc-status", Value: "0" }));
+
     await conn.CloseAsync();
 }
 
@@ -207,6 +257,35 @@ Console.WriteLine("=== gRPC via the real .NET client (Grpc.Net.Client) ===");
     try { await invoker.AsyncUnaryCall(unknown, null, opts, "x").ResponseAsync; }
     catch (RpcException ex) when (ex.StatusCode == StatusCode.Unimplemented) { unimplemented = true; }
     Check("real gRPC: unknown method -> RpcException UNIMPLEMENTED", unimplemented);
+
+    // Client-streaming: the real client streams N request messages, our server
+    // reads them all off IHTTP2RequestStream and replies once.
+    var clientStream = new Method<string, string>(MethodType.ClientStreaming, "helloworld.Greeter", "SayHelloClientStream", marsh, marsh);
+    using (var csCall = invoker.AsyncClientStreamingCall(clientStream, null, opts))
+    {
+        foreach (var n in new[] { "Ada", "Grace" })
+            await csCall.RequestStream.WriteAsync(n);
+        await csCall.RequestStream.CompleteAsync();
+        var csReply = await csCall.ResponseAsync;
+        Check("real gRPC client-streaming: joined reply", csReply == "Hello, Ada and Grace!", csReply);
+    }
+
+    // Bidi: the real client streams request messages and reads a reply per
+    // message — full duplex over our stack.
+    var bidi = new Method<string, string>(MethodType.DuplexStreaming, "helloworld.Greeter", "SayHelloBidi", marsh, marsh);
+    using (var bidiCall = invoker.AsyncDuplexStreamingCall(bidi, null, opts))
+    {
+        var bidiGot = new List<string>();
+        foreach (var n in new[] { "Ada", "Grace", "Lin" })
+        {
+            await bidiCall.RequestStream.WriteAsync(n);
+            if (await bidiCall.ResponseStream.MoveNext(cts.Token))
+                bidiGot.Add(bidiCall.ResponseStream.Current);
+        }
+        await bidiCall.RequestStream.CompleteAsync();
+        Check("real gRPC bidi: a reply per request message",
+              bidiGot.SequenceEqual(["Hello, Ada!", "Hello, Grace!", "Hello, Lin!"]), string.Join(" | ", bidiGot));
+    }
 }
 
 await server.StopAsync();
@@ -214,3 +293,38 @@ try { await serverTask; } catch { }
 
 Console.WriteLine($"\n=== {passed}/{passed + failed} checks passed ===");
 Environment.Exit(failed == 0 ? 0 : 1);
+
+
+// Reassembles gRPC length-prefixed messages ([1-byte flag][4-byte BE length]
+// [message]) from a stream of arbitrary byte chunks (DATA frame payloads on
+// either side of the wire don't align with gRPC message boundaries). Retains a
+// running buffer across calls, so it works for multi-message client-streaming
+// and bidi. NextAsync returns the next whole message, or null at end-of-stream.
+sealed class GrpcMessageReader(Func<CancellationToken, ValueTask<byte[]?>> Read)
+{
+
+    private readonly List<byte> buffer = [];
+
+    public async Task<byte[]?> NextAsync(CancellationToken CancellationToken)
+    {
+        while (true)
+        {
+            if (buffer.Count >= 5)
+            {
+                var len = (buffer[1] << 24) | (buffer[2] << 16) | (buffer[3] << 8) | buffer[4];
+                if (buffer.Count >= 5 + len)
+                {
+                    var msg = buffer.GetRange(5, len).ToArray();
+                    buffer.RemoveRange(0, 5 + len);
+                    return msg;
+                }
+            }
+
+            var chunk = await Read(CancellationToken);
+            if (chunk is null)
+                return null;   // end-of-stream (any trailing partial is discarded)
+            buffer.AddRange(chunk);
+        }
+    }
+
+}

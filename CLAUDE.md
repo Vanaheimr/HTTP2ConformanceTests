@@ -1884,10 +1884,10 @@ real `Grpc.Net.Client` — unary → `Hello, World!`; server-streaming → three
 messages; an unknown method → `RpcException` with `StatusCode.Unimplemented`
 (our trailer `grpc-status 12`). No production code changed, so full regression is
 **69/69** (grpc added) and h2spec stays **146/146 over both transports** (the
-demo host is untouched). Deliberately scoped to unary + server-streaming; client-
-streaming and bidi would use the same seam (our buffered client would need the
-client-side streaming request path for many-message uploads) but add nothing to
-the "does gRPC work over this stack" proof.
+demo host is untouched). Initially scoped to unary + server-streaming; client-
+streaming and bidi were added later once the client grew a streaming request path
+— see the "Client-side streaming requests + gRPC client-streaming/bidi" entry
+below.
 
 **permessage-deflate over the production HTTP/2 path (RFC 7692 + RFC 8441)**
 (done 2026-07-18): the WebSocket permessage-deflate *framing* had shipped
@@ -1938,6 +1938,69 @@ now 15/15; the default-off path leaves `h2connect` ws-* and `h2wsconformance`
 WebSocket path there; the `Core` change is purely additive and the demo's
 non-WebSocket handlers are untouched). The Autobahn 517/517 result stands
 unchanged (the echo server's negotiation is a byte-identical refactor).
+
+**Client-side streaming requests + gRPC client-streaming/bidi** (done
+2026-07-18) — the last streaming asymmetry between the two roles. The server has
+had a full streaming seam for a while (`HTTP2StreamingHandler` +
+`IHTTP2RequestStream`/`IHTTP2ResponseStream`), but the **client** could only send
+a request body *buffered* (whole `byte[]` up front) — which rules out
+client-streaming and bidirectional gRPC, whose many request messages are sent
+over time and interleave with the response. This adds the client's incremental
+streaming *request* path, entirely in `HTTP2ClientConnection.cs` (the server is
+untouched — it already handles inbound streaming DATA, proven by `h2streaming`
+and now by a real gRPC client):
+
+- **The handle.** New `HTTP2ClientStream` (the client mirror of the server's
+  request/response stream seam, and a sibling of the existing
+  `HTTP2ClientTunnel`): `WriteAsync` sends request-body chunks as flow-controlled
+  DATA over time, `CompleteRequestAsync` half-closes with a zero-length
+  END_STREAM; `GetResponseAsync` yields the response head (`HTTP2ResponseHead` —
+  status + headers) as soon as the response HEADERS arrive, `ReadAsync` pulls
+  response-body chunks incrementally (null at END_STREAM), and `GetTrailersAsync`
+  yields the response trailers. Both directions flow concurrently, so a single
+  handle serves client-streaming (write N, then read) *and* full bidi (interleave
+  writes and reads). Returned by the new
+  `HTTP2ClientConnection.StartStreamingRequestAsync`.
+- **How it reuses the existing machinery.** The request write path *is* the
+  CONNECT-tunnel send path — "raw flow-controlled DATA on an open stream, never
+  END_STREAM" — so `WriteAsync`/`CompleteRequestAsync` route through the same
+  `SendStreamDataAsync` (a rename-free alias of `SendTunnelDataAsync`) /
+  `EndTunnelAsync`. On the receive side, the response is delivered through three
+  vehicles created up front and shared between the connection-side `ClientExchange`
+  and the caller-side handle — a head `TaskCompletionSource`, an unbounded
+  body-chunk `Channel`, and a trailers `TaskCompletionSource` — so neither side
+  has to look the other up after the exchange is removed on completion. The three
+  response-handling branches (`CompleteHeaderBlock` head + trailers,
+  `HandleDataAsync`) gained a streaming arm parallel to the existing tunnel and
+  buffered arms; a new `FinalizeStreamingResponse` mirrors `CompleteResponse` for
+  the streaming path.
+- **No auto-retry (deliberate).** Like a tunnel, a streaming exchange is never
+  auto-retried on REFUSED_STREAM — its outbound chunks aren't buffered for replay
+  — so a reset surfaces on the response side instead. A small `FailExchange`
+  helper now routes every failure path (RST_STREAM, GOAWAY, whole-connection
+  teardown) to the right vehicle (buffered `Completion`, tunnel `TunnelStatus`,
+  or the streaming trio), replacing the scattered `Completion.TrySetException`
+  calls. `IssueOnNewStreamAsync` grew a `keepOpen` branch (HEADERS without
+  END_STREAM, no local close, no body task) for the streaming case; the buffered
+  and retry paths are byte-identical to before.
+
+Verified: the `grpc` harness grew from 8 → **16/16**, now covering **all four
+gRPC call types** against **both** roles. Our own client via the new
+`StartStreamingRequestAsync`: **client-streaming** (`SayHelloClientStream` — write
+three request messages, then read the single joined reply `"Hello, Ada and Grace
+and Lin!"` + `grpc-status 0`) and **bidi** (`SayHelloBidi` — true ping-pong:
+write a message, read its reply, ×3, then complete + clean END_STREAM). And the
+real **`Grpc.Net.Client`** via `AsyncClientStreamingCall` /
+`AsyncDuplexStreamingCall` against our server — the production-peer proof that our
+server's streaming seam is gRPC-correct for the inbound-streaming modes too, not
+just unary/server-streaming. A test-only `GrpcMessageReader` reassembles gRPC
+frames from DATA chunks on both sides (frame boundaries don't align with DATA
+boundaries). No production code outside `HTTP2ClientConnection.cs` changed, so
+full regression is **69/69** (grpc now 16/16; the client-path harnesses —
+h2clienttest 14/14, h2streaming 8/8, h2cachetest 23/23, h2clientpriority 15/15,
+h2clientrobust 8/8, h2wsclient 15/15 — all still green, confirming the request-
+path restructure left the buffered/tunnel paths intact) and h2spec still
+**146/146 over both transports** (the server is untouched).
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

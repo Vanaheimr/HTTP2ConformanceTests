@@ -41,6 +41,88 @@ public sealed record HTTP2RequestHandle(UInt32 StreamId, Task<HTTP2Response> Res
 
 
 /// <summary>
+/// The head of a response — its <c>:status</c> and header fields — surfaced by a
+/// streaming exchange (<see cref="HTTP2ClientStream"/>) as soon as the response
+/// HEADERS arrive, before (and independently of) its body.
+/// </summary>
+public sealed record HTTP2ResponseHead(int Status, List<(string Name, string Value)> Headers)
+{
+    public string? HeaderValue(string Name)
+        => Headers.FirstOrDefault(h => h.Name == Name).Value;
+}
+
+
+/// <summary>
+/// A full-duplex (bidirectional) streaming exchange over one HTTP/2 stream,
+/// returned by <see cref="HTTP2ClientConnection.StartStreamingRequestAsync"/>.
+/// The request body is written incrementally (<see cref="WriteAsync"/> any number
+/// of chunks, then <see cref="CompleteRequestAsync"/> to half-close), and the
+/// response is read incrementally (<see cref="GetResponseAsync"/> for the head,
+/// then <see cref="ReadAsync"/> until it returns null, then
+/// <see cref="GetTrailersAsync"/>). Both directions flow concurrently — the
+/// enabler for client-streaming and bidirectional gRPC, whose request and
+/// response messages interleave over the same stream.
+///
+/// Unlike a buffered <see cref="HTTP2ClientConnection.SendRequestAsync"/>, a
+/// streaming exchange is never auto-retried on REFUSED_STREAM: its outbound
+/// chunks aren't buffered for replay, so a reset surfaces to the caller (same as
+/// a CONNECT tunnel). Mirrors the server's <c>IHTTP2RequestStream</c> /
+/// <c>IHTTP2ResponseStream</c> seam from the client side.
+/// </summary>
+public sealed class HTTP2ClientStream
+{
+
+    private readonly HTTP2ClientConnection                    connection;
+    private readonly HTTP2Stream                              stream;
+    private readonly Task<HTTP2ResponseHead>                  responseHead;
+    private readonly ChannelReader<byte[]>                    responseChunks;
+    private readonly Task<List<(string Name, string Value)>>  responseTrailers;
+
+    internal HTTP2ClientStream(
+        HTTP2ClientConnection                   Connection,
+        HTTP2Stream                             Stream,
+        Task<HTTP2ResponseHead>                 ResponseHead,
+        ChannelReader<byte[]>                   ResponseChunks,
+        Task<List<(string Name, string Value)>> ResponseTrailers)
+    {
+        connection       = Connection;
+        stream           = Stream;
+        responseHead     = ResponseHead;
+        responseChunks   = ResponseChunks;
+        responseTrailers = ResponseTrailers;
+    }
+
+    /// <summary>The stream ID this exchange runs on.</summary>
+    public UInt32 StreamId => stream.StreamId;
+
+    /// <summary>Send a chunk of request body as flow-controlled DATA frame(s) — never END_STREAM.</summary>
+    public Task WriteAsync(byte[] Data, CancellationToken CancellationToken = default)
+        => connection.SendStreamDataAsync(stream, Data, CancellationToken);
+
+    /// <summary>Finish the request body: a zero-length END_STREAM DATA frame, half-closing our side.</summary>
+    public Task CompleteRequestAsync(CancellationToken CancellationToken = default)
+        => connection.EndTunnelAsync(stream);
+
+    /// <summary>Await the response head (status + headers) — completes when the response HEADERS arrive.</summary>
+    public Task<HTTP2ResponseHead> GetResponseAsync(CancellationToken CancellationToken = default)
+        => responseHead.WaitAsync(CancellationToken);
+
+    /// <summary>Read the next response body chunk as it arrives, or null once the response ends (END_STREAM / reset).</summary>
+    public async Task<byte[]?> ReadAsync(CancellationToken CancellationToken = default)
+    {
+        if (await responseChunks.WaitToReadAsync(CancellationToken) && responseChunks.TryRead(out var chunk))
+            return chunk;
+        return null;
+    }
+
+    /// <summary>The response trailer fields (RFC 9113 §8.1) — completes when the response ends. Empty if none.</summary>
+    public Task<List<(string Name, string Value)>> GetTrailersAsync()
+        => responseTrailers;
+
+}
+
+
+/// <summary>
 /// The client side of an accepted CONNECT tunnel (RFC 9113 §8.5 / RFC 8441) —
 /// a raw bidirectional byte stream over one HTTP/2 stream, the mirror of the
 /// server's <c>HTTP2Tunnel</c>. Implements <see cref="IHTTP2Tunnel"/>, so a
@@ -398,6 +480,65 @@ public sealed class HTTP2ClientConnection
     }
 
     /// <summary>
+    /// Begin a bidirectional streaming request: send the HEADERS (keeping the
+    /// request side open) and return an <see cref="HTTP2ClientStream"/> the caller
+    /// drives — writing request-body chunks over time and reading the response
+    /// incrementally. This is the client counterpart of the server's streaming
+    /// seam, and the enabler for client-streaming / bidirectional gRPC (whose
+    /// request and response messages interleave over one stream). Never
+    /// auto-retried on REFUSED_STREAM (the outbound chunks aren't buffered for
+    /// replay); a reset surfaces on the response side instead.
+    /// </summary>
+    public async Task<HTTP2ClientStream> StartStreamingRequestAsync(
+        string                             Method,
+        string                             Scheme,
+        string                             Authority,
+        string                             Path,
+        List<(string Name, string Value)>? ExtraHeaders = null,
+        HTTP2Priority?                     Priority     = null,
+        CancellationToken                  CancellationToken = default)
+    {
+
+        var headers = new List<(string Name, string Value)>
+        {
+            (":method",    Method),
+            (":scheme",    Scheme),
+            (":authority", Authority),
+            (":path",      Path)
+        };
+
+        if (Priority is not null && (ExtraHeaders is null || !ExtraHeaders.Any(h => h.Name == "priority")))
+            headers.Add(("priority", Priority.Value.ToHeaderValue()));
+
+        if (ExtraHeaders is not null)
+            headers.AddRange(ExtraHeaders);
+
+        // Vehicles shared between the exchange (connection side) and the returned
+        // handle (caller side): created up front so neither needs to look the
+        // other up after the exchange is removed on completion.
+        var responseHead     = new TaskCompletionSource<HTTP2ResponseHead>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var responseChunks   = Channel.CreateUnbounded<byte[]>();
+        var responseTrailers = new TaskCompletionSource<List<(string Name, string Value)>>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var exchange = new ClientExchange
+        {
+            RequestHeaders   = headers,
+            RequestBody      = null,
+            HasBody          = false,
+            RequestToken     = CancellationToken,
+            IsStreaming      = true,
+            ResponseHead     = responseHead,
+            ResponseChunks   = responseChunks,
+            ResponseTrailers = responseTrailers
+        };
+
+        await IssueOnNewStreamAsync(exchange);
+
+        return new HTTP2ClientStream(this, exchange.Stream, responseHead.Task, responseChunks.Reader, responseTrailers.Task);
+
+    }
+
+    /// <summary>
     /// Allocate a fresh outbound stream and put the request on the wire: gate on
     /// the peer's MAX_CONCURRENT_STREAMS, allocate + open the stream, encode and
     /// send HEADERS atomically under the request-start lock, then (if there's a
@@ -423,10 +564,16 @@ public sealed class HTTP2ClientConnection
             lock (exchangesLock)
                 exchanges[stream.StreamId] = Exchange;
 
-            var headerBlock = hpackEncoder.EncodeHeaderBlock(Exchange.RequestHeaders);
-            await SendHeaderBlockAsync(stream.StreamId, headerBlock, EndStream: !Exchange.HasBody);
+            // A streaming exchange keeps the request side open (HEADERS without
+            // END_STREAM) so the caller can write DATA chunks over time; the
+            // buffered path ends the stream now (no body) or streams the whole
+            // body then closes (below).
+            var keepOpen = Exchange.IsStreaming;
 
-            if (!Exchange.HasBody)
+            var headerBlock = hpackEncoder.EncodeHeaderBlock(Exchange.RequestHeaders);
+            await SendHeaderBlockAsync(stream.StreamId, headerBlock, EndStream: !Exchange.HasBody && !keepOpen);
+
+            if (!Exchange.HasBody && !keepOpen)
                 stream.CloseLocal();
         }
         finally
@@ -658,6 +805,14 @@ public sealed class HTTP2ClientConnection
         }
 
     }
+
+    /// <summary>
+    /// Send stream body bytes as flow-controlled DATA frames (never END_STREAM) —
+    /// the send path shared by CONNECT tunnels and streaming requests; both are
+    /// "raw bytes out on an open stream", flow-controlled identically.
+    /// </summary>
+    internal Task SendStreamDataAsync(HTTP2Stream Stream, byte[] Data, CancellationToken CancellationToken)
+        => SendTunnelDataAsync(Stream, Data, CancellationToken);
 
     /// <summary>End our side of the tunnel with a zero-length END_STREAM DATA frame.</summary>
     internal async Task EndTunnelAsync(HTTP2Stream Stream)
@@ -931,6 +1086,21 @@ public sealed class HTTP2ClientConnection
 
                 return;
             }
+
+            // A streaming exchange: surface the response head immediately so the
+            // caller can start reading the body (which arrives as DATA), and
+            // finalize now if this response has no body/trailers (headers-only).
+            if (Exchange.IsStreaming)
+            {
+                var statusText = decoded.FirstOrDefault(h => h.Name == ":status").Value;
+                _ = int.TryParse(statusText, out var status);
+                Exchange.ResponseHead!.TrySetResult(new HTTP2ResponseHead(status, decoded));
+
+                if (EndStream)
+                    FinalizeStreamingResponse(Exchange);
+
+                return;
+            }
         }
         else
         {
@@ -939,8 +1109,34 @@ public sealed class HTTP2ClientConnection
         }
 
         if (EndStream)
-            CompleteResponse(Exchange);
+        {
+            if (Exchange.IsStreaming)
+                FinalizeStreamingResponse(Exchange);
+            else
+                CompleteResponse(Exchange);
+        }
 
+    }
+
+    /// <summary>
+    /// Finalize a streaming response at END_STREAM: complete the body channel
+    /// (so the reader sees end-of-stream) and hand over the trailers. Mirrors
+    /// <see cref="CompleteResponse"/> for the streaming path.
+    /// </summary>
+    private void FinalizeStreamingResponse(ClientExchange Exchange)
+    {
+        CloseRemoteIfOpen(Exchange.Stream);
+        RemoveExchange(Exchange.Stream.StreamId);
+
+        // In case a body-less response never carried HEADERS through the head
+        // path above (defensive — HEADERS always precede END_STREAM), make sure
+        // the head is satisfied so a waiting GetResponseAsync can't hang.
+        var statusText = Exchange.Headers?.FirstOrDefault(h => h.Name == ":status").Value;
+        _ = int.TryParse(statusText, out var status);
+        Exchange.ResponseHead!.TrySetResult(new HTTP2ResponseHead(status, Exchange.Headers ?? []));
+
+        Exchange.ResponseChunks!.Writer.TryComplete();
+        Exchange.ResponseTrailers!.TrySetResult(Exchange.Trailers);
     }
 
     #endregion
@@ -970,6 +1166,13 @@ public sealed class HTTP2ClientConnection
                 if (length > 0)
                     await exchange.Stream.TunnelInbound!.Writer.WriteAsync(payload.ToArray(), cancellationToken);
             }
+            else if (exchange.IsStreaming)
+            {
+                // Streaming response body — hand each chunk to the reader as it
+                // arrives, rather than buffering the whole response.
+                if (length > 0)
+                    await exchange.ResponseChunks!.Writer.WriteAsync(payload.ToArray(), cancellationToken);
+            }
             else
                 exchange.Body.Write(payload);
         }
@@ -985,6 +1188,8 @@ public sealed class HTTP2ClientConnection
                 exchange.Stream.TunnelInbound!.Writer.TryComplete();
                 RemoveExchange(Frame.StreamId);
             }
+            else if (exchange.IsStreaming)
+                FinalizeStreamingResponse(exchange);   // no trailers — END_STREAM on DATA
             else
                 CompleteResponse(exchange);
         }
@@ -1144,6 +1349,17 @@ public sealed class HTTP2ClientConnection
             return;
         }
 
+        // A streaming exchange is likewise never auto-retried (its outbound
+        // chunks aren't buffered for replay); surface the reset on the response
+        // side (head / body channel / trailers).
+        if (exchange.IsStreaming)
+        {
+            FailStreaming(exchange,
+                new HTTP2StreamException(code, Frame.StreamId, $"Stream reset by server: {code}"));
+            SignalWindowChange();
+            return;
+        }
+
         if (code == HTTP2ErrorCode.REFUSED_STREAM)
         {
             // RFC 9113 §8.1: REFUSED_STREAM guarantees the request was NOT
@@ -1187,10 +1403,29 @@ public sealed class HTTP2ClientConnection
         foreach (var ex in abandoned)
         {
             RemoveExchange(ex.Stream.StreamId);
-            ex.Completion.TrySetException(
+            FailExchange(ex,
                 new HTTP2RequestNotProcessedException(code,
                     $"Server sent GOAWAY (lastStreamId={lastStreamId}, {code}) — request not processed"));
         }
+    }
+
+    /// <summary>Fail an exchange, routing to the streaming vehicles or the buffered Completion as appropriate.</summary>
+    private static void FailExchange(ClientExchange Exchange, Exception Ex)
+    {
+        if (Exchange.IsStreaming)
+            FailStreaming(Exchange, Ex);
+        else if (Exchange.IsTunnel)
+            Exchange.TunnelStatus.TrySetException(Ex);
+        else
+            Exchange.Completion.TrySetException(Ex);
+    }
+
+    /// <summary>Propagate a failure to a streaming exchange's head, body channel, and trailers.</summary>
+    private static void FailStreaming(ClientExchange Exchange, Exception Ex)
+    {
+        Exchange.ResponseHead?.TrySetException(Ex);
+        Exchange.ResponseChunks?.Writer.TryComplete(Ex);
+        Exchange.ResponseTrailers?.TrySetException(Ex);
     }
 
     #endregion
@@ -1259,6 +1494,14 @@ public sealed class HTTP2ClientConnection
         public bool                                 IsTunnel        { get; init; }
         public TaskCompletionSource<int>            TunnelStatus    { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Streaming exchange (HTTP2ClientStream): the response is delivered
+        // incrementally rather than buffered — a head TCS (status + headers), a
+        // body-chunk channel, and a trailers TCS, all shared with the handle.
+        public bool                                                          IsStreaming      { get; init; }
+        public TaskCompletionSource<HTTP2ResponseHead>?                      ResponseHead     { get; init; }
+        public Channel<byte[]>?                                             ResponseChunks   { get; init; }
+        public TaskCompletionSource<List<(string Name, string Value)>>?      ResponseTrailers { get; init; }
 
         // Response accumulation (reset between retry attempts).
         public MemoryStream                         HeaderBuffer    { get; } = new();
@@ -1330,7 +1573,7 @@ public sealed class HTTP2ClientConnection
         }
         freed.TrySetResult();   // release any request blocked on the concurrency gate
         foreach (var ex in all)
-            ex.Completion.TrySetException(Ex);
+            FailExchange(ex, Ex);
     }
 
     #endregion

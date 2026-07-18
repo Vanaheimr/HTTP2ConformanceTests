@@ -26,6 +26,7 @@
     <Project Path="../tests/h2backpressure/h2backpressure.csproj" />
     <Project Path="../tests/h2wsconformance/h2wsconformance.csproj" />
     <Project Path="../tests/h2query/h2query.csproj" />
+    <Project Path="../tests/grpc/grpc.csproj" />
     <Project Path="../tests/autobahn-server/autobahn-server.csproj" />
     <Project Path="../tests/h2hpackenc/h2hpackenc.csproj" />
     <Project Path="../tests/h2interim/h2interim.csproj" />

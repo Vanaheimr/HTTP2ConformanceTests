@@ -20,7 +20,8 @@ HTTP/2 server for the client). See `CLAUDE.md` for the full status.
 > dynamic table + Huffman), CONNECT + extended CONNECT (RFC 8441) +
 > WebSocket (RFC 6455) tunneling, RFC 9218 priority-aware response
 > scheduling, streaming request/response bodies with response trailers
-> (gRPC-style, verified against .NET `HttpClient`), 1xx interim responses
+> (gRPC-style, verified against .NET `HttpClient` — and a real gRPC service
+> interop-tested against `Grpc.Net.Client`), 1xx interim responses
 > (`Expect: 100-continue`, 103 Early Hints), an RFC 9110 semantics
 > layer (GET/HEAD/OPTIONS, conditional
 > requests, Range requests, proactive content negotiation with `Vary`,
@@ -59,7 +60,7 @@ suite (builds, starts the demo host, drives every harness) with:
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-Current status: **67/67 harness runs pass**, and the stack scores **146/146 on
+Current status: **69/69 harness runs pass**, and the stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —
@@ -175,7 +176,10 @@ arrives; read request `Trailers` once the body ends) and an
 then `WriteAsync` body chunks, then `CompleteAsync(trailers)` — e.g. gRPC's
 `grpc-status`). The handler is invoked as soon as the request headers arrive, so
 both directions flow at once. `Expect: 100-continue` is handled automatically by
-the server.
+the server. This seam is enough to serve real **gRPC**: the
+[`grpc`](tests/grpc/Program.cs) harness runs a Greeter service (unary +
+server-streaming, length-prefixed messages, `grpc-status` in trailers) over the
+stack and interop-tests it against the real `Grpc.Net.Client`.
 
 For authentication, `HTTPAuthentication.RequireAuthentication` wraps a handler
 with the RFC 9110 §11 challenge/response flow (401 + `WWW-Authenticate` when

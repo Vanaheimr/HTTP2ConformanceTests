@@ -1842,6 +1842,53 @@ uncompressed even when the extension is active). Full regression **68/68**
 `h2wsclient` 10/10 byte-identical) and h2spec still **146/146 over both
 transports** (no WebSocket path there, and the `WebSocket.cs` change is isolated).
 
+**gRPC over the stack — the streaming seam's headline** (done 2026-07-18) — gRPC
+is the de-facto RPC protocol built on HTTP/2, and it's precisely what the
+streaming-bodies + response-trailers work (see that entry above) was for: its RPC
+status (`grpc-status`) travels in HTTP/2 **trailers** after the response body,
+which the buffered handler seam structurally cannot emit. This demonstrates a
+real gRPC service running over the from-scratch stack — **with zero changes to
+any production code** (`Core`/`Server`/`Client` untouched): the existing
+`HTTP2StreamingHandler` + `IHTTP2ResponseStream.CompleteAsync(trailers)` are
+exactly sufficient, which is the proof that the seam's design was right.
+
+- **A `Greeter` service** (`helloworld.Greeter`) on our streaming seam: unary
+  `SayHello` (one request message → one reply) and server-streaming
+  `SayHelloStream` (one request → three replies), plus an unknown method →
+  `grpc-status 12` (UNIMPLEMENTED). The handler reads the length-prefixed request
+  message off `IHTTP2RequestStream`, writes length-prefixed replies via
+  `WriteAsync`, and ends with `CompleteAsync([("grpc-status","0")])` — the
+  trailer that carries the real RPC outcome.
+- **Hand-rolled everything, BCL-only on our side.** The gRPC wire framing (the
+  `[1-byte compressed-flag][4-byte big-endian length][message]`
+  Length-Prefixed-Message) and a minimal protobuf codec (a message with a single
+  string field #1 — tag `0x0A`, varint length, UTF-8 bytes, skipping unknown
+  fields) are both hand-written in the harness. No `protoc`, no codegen, no
+  `Google.Protobuf`.
+- **Dual interop, both sides of the wire.** Verified against **our own
+  `HTTP2Client`** (hand-rolled framing: the buffered client sends one framed
+  request and reads the whole framed response + `grpc-status` trailer, which
+  covers unary and server-streaming since it buffers the full response) *and*
+  against the **real .NET gRPC client, `Grpc.Net.Client`** — a strict production
+  gRPC stack — using `Marshallers.Create` with our hand-rolled protobuf as the
+  custom (codegen-free) marshaller, so `Grpc.Net.Client` frames/deframes and
+  reads trailers itself. That a production gRPC client's unary call, server-
+  streaming call, and error-status handling all work against our server is the
+  real proof our HTTP/2 framing + streaming + trailers are gRPC-correct.
+  `Grpc.Net.Client` is a **test-only reference peer** (like `HttpClient`,
+  Kestrel, curl) — it does not count against the core stack's BCL-only rule.
+
+Verified with a new `grpc` harness (8/8): our client — unary → `Hello, Ada!`
+with `grpc-status 0`; server-streaming → three messages + `grpc-status 0`. The
+real `Grpc.Net.Client` — unary → `Hello, World!`; server-streaming → three
+messages; an unknown method → `RpcException` with `StatusCode.Unimplemented`
+(our trailer `grpc-status 12`). No production code changed, so full regression is
+**69/69** (grpc added) and h2spec stays **146/146 over both transports** (the
+demo host is untouched). Deliberately scoped to unary + server-streaming; client-
+streaming and bidi would use the same seam (our buffered client would need the
+client-side streaming request path for many-message uploads) but add nothing to
+the "does gRPC work over this stack" proof.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

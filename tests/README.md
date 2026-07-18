@@ -57,11 +57,14 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2
 conformance suite (RFC 9113 + RFC 7541). This stack passes **146 / 146** over
-*both* the TLS (`h2`, :8443) and cleartext (`h2c`, :8080) listeners. The easiest
-way to reproduce it:
+*both* the TLS (`h2`, :8443) and cleartext (`h2c`, :8080) listeners, on Windows
+*and* Linux (WSL/Debian). The easiest way to reproduce it — a wrapper for each
+platform that builds, starts the demo, runs h2spec on both transports, and stops
+the demo again:
 
-```powershell
-pwsh tests/h2spec.ps1        # build, start demo, run h2spec on both, stop demo
+```bash
+tests/h2spec.sh          # Linux / macOS
+pwsh tests/h2spec.ps1    # Windows
 ```
 
 For the full walkthrough — installing h2spec, running individual sections,

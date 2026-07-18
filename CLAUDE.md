@@ -1520,6 +1520,24 @@ occurrences after the HPACK fix. Full regression **64/64** (h2c added) and
 h2spec over TLS still **146/146** — the transport generalization left the TLS
 path byte-identical.
 
+**Cross-platform verification (Linux/WSL, done 2026-07-18):** the whole thing
+was re-verified under WSL/Debian with .NET 10 — the solution builds clean
+(0/0), the `h2c` harness passes 12/12 (incl. the Kestrel-h2c leg), and — the
+Linux-native bonus the Windows side can't do — the distro `curl` (built against
+**nghttp2**) drives both listeners directly: `curl --http2-prior-knowledge
+http://localhost:8080/` and `curl --http2 -k https://localhost:8443/` both
+return HTTP/2 200 (Windows' Schannel curl has no HTTP/2). h2spec 2.6.0 scores
+**146/146 over both transports** on Linux too. For running h2spec there,
+`tests/h2spec.sh` is the bash mirror of `tests/h2spec.ps1` (build → start demo
+with drained output → h2spec both transports → stop); the h2spec walkthrough in
+`tests/TestingAgainst_h2spec.md` is cross-platform. Two bash-specific gotchas
+worth remembering, both fixed in the script: run the built **DLL directly**
+rather than `dotnet run` (whose forked child a plain `kill` would orphan,
+leaving the port bound for the next run — the equivalent of the PowerShell
+runner's kill-by-port-owner), and probe readiness with a **bare TCP connect**
+(bash `/dev/tcp`), not an HTTP request — a plain HTTP/1.1 curl to the h2c port
+is rejected (prior-knowledge only), so it's a false negative for "is it up?".
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

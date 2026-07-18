@@ -59,7 +59,7 @@ Core never references the role-specific projects.
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocket.cs` doesn't depend on the server's concrete tunnel |
 | `WebSocket.cs` | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` (server vs. client masking) |
 | `HTTPSemantics.cs` | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
-| `HTTPAuthentication.cs` | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750) & Digest (RFC 7616) schemes, store-agnostic (app-supplied validators) |
+| `HTTPAuthentication.cs` | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750), Digest (RFC 7616) & Token (non-standard) schemes, store-agnostic (app-supplied validators) |
 | `HTTPCaching.cs` | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
 
 **`Server/`** — references `Core`:
@@ -876,12 +876,13 @@ separate:
   (§11.6.1 multiple-challenges). It never validates anything itself: each scheme
   decodes its credential form and defers the actual "valid?" decision to an
   app-supplied validator delegate, so `Core` stays BCL-only and free of any
-  credential store (no password DB, no JWT library). Three concrete schemes ship:
+  credential store (no password DB, no JWT library). Concrete schemes ship:
   **Basic** (RFC 7617 — `base64(user:password)`, split on the *first* colon,
   `charset="UTF-8"` in the challenge), **Bearer** (RFC 6750 — opaque token handed
-  straight to the validator), and **Digest** (RFC 7616 — see the separate Digest
-  entry below). Multiple schemes deliberately — it proves the abstraction is
-  genuinely scheme-agnostic, not Basic-hardwired.
+  straight to the validator), **Digest** (RFC 7616 — see the separate Digest
+  entry below), and **Token** (non-standard but common — see the Token entry
+  below). Multiple schemes deliberately — it proves the abstraction is genuinely
+  scheme-agnostic, not Basic-hardwired.
   `HTTPAuthentication.RequireAuthentication(authenticator, innerHandler)` wraps
   an identity-aware handler into an ordinary `HTTP2RequestHandler` (401 on
   failure, otherwise pass through with the `HTTPAuthenticatedIdentity`), so it
@@ -2049,6 +2050,36 @@ regression **69/69** (h2authtest now 28/28; the `AuthenticateAsync` signature
 change left Basic/Bearer behavior identical) and h2spec still **146/146 over both
 transports** (no auth path there; the server framing is untouched).
 
+**Token authentication (non-standard)** (done 2026-07-18) — a fourth scheme on
+the §11 framework. "Token" auth isn't an IETF standard (the
+draft-hammer-http-token-auth I-D expired) but is a widely used convention —
+Rails' `ActionController::HttpAuthentication::Token` and GitHub-style
+`Authorization: token <token>` APIs. In `Core/HTTPAuthentication.cs` next to the
+others:
+
+- **`TokenAuthenticationScheme`** accepts both on-the-wire forms: the bare
+  `Token <token>` (GitHub-style — the whole credential is the token) and the
+  parameterized `Token token="…", nonce="…", …` (Rails-style — an RFC 7235
+  auth-param list with a mandatory `token` plus optional extras). Functionally
+  close to Bearer (a single opaque credential, no challenge-response) but with
+  the `Token` scheme name and the optional structured params, which are handed to
+  the validator alongside the token (so an app can read a Rails-style `nonce`).
+  Store-agnostic like the rest.
+- **Shared parser.** The RFC 7235 auth-param parser that Digest already carried
+  was extracted into an internal `HTTPAuthParams.Parse` helper and is now shared
+  by both Digest and Token (both carry their credentials as a `key=value` list) —
+  a small dedup, no behavior change to Digest.
+- **Demo.** Added to the `/secret` authenticator alongside Basic + Bearer (its
+  401 now advertises all three), token `secret-token-abc` → identity `api-user`.
+
+Verified (`h2authtest` 28 → **33/33**): via .NET `HttpClient` (setting the header
+explicitly, as Token needs no automatic dance) — the bare form and the Rails
+parameterized form (`token="secret-token-abc", nonce="xyz"`) both → 200 with the
+identity surfaced, a wrong token → 401, and the 401 challenge now advertises
+`Basic + Bearer + Token`; and via our own client (`Token secret-token-abc`) → 200.
+Full regression **69/69** (h2authtest now 33/33) and h2spec still **146/146 over
+both transports** (no auth path there; server framing untouched).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -2105,7 +2136,7 @@ conditional requests (If-Match/If-None-Match/If-Modified-Since/If-Unmodified-Sin
 single-range Range requests (Range/If-Range/Content-Range/Accept-Ranges),
 proactive content negotiation (Accept/Accept-Encoding/Accept-Language, `Vary`,
 the 406-vs-default policy), the **RFC 9110 §11 authentication framework** (Basic
-+ Bearer + Digest/RFC 7616 + transport-layer mTLS), and **RFC 9111 caching** (a client-side cache
++ Bearer + Digest/RFC 7616 + Token + transport-layer mTLS), and **RFC 9111 caching** (a client-side cache
 with shared-cache semantics — Cache-Control, age/freshness, conditional
 revalidation, Vary keying, invalidation, stale-while-revalidate) — see the
 "RFC 9110 'core mechanics' + content negotiation", "Authentication", and

@@ -232,6 +232,13 @@ public static class Program
             Task.FromResult<HTTPAuthenticatedIdentity?>(
                 token == "valid-token-123"
                     ? new HTTPAuthenticatedIdentity { Name = "token-user" }
+                    : null)),
+        // "Token" — non-standard but common (Rails / GitHub-style). Accepts both
+        // the bare "Token <token>" and the "Token token=\"…\"" parameterized form.
+        new TokenAuthenticationScheme((token, parameters, _) =>
+            Task.FromResult<HTTPAuthenticatedIdentity?>(
+                token == "secret-token-abc"
+                    ? new HTTPAuthenticatedIdentity { Name = "api-user" }
                     : null)));
 
     private static readonly HTTP2RequestHandler secretHandler =

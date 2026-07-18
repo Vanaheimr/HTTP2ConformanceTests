@@ -53,12 +53,15 @@ HttpClient MakeHttpClient(X509Certificate2? clientCert = null)
     };
 }
 
-// The auth framework under test: Basic alice:secret + Bearer valid-token-123.
+// The auth framework under test: Basic alice:secret + Bearer valid-token-123 +
+// Token secret-token-abc.
 var authenticator = new HTTPAuthenticator("demo",
     new BasicAuthenticationScheme((u, p, _) => Task.FromResult<HTTPAuthenticatedIdentity?>(
         u == "alice" && p == "secret" ? new HTTPAuthenticatedIdentity { Name = "alice" } : null)),
     new BearerAuthenticationScheme((t, _) => Task.FromResult<HTTPAuthenticatedIdentity?>(
-        t == "valid-token-123" ? new HTTPAuthenticatedIdentity { Name = "token-user" } : null)));
+        t == "valid-token-123" ? new HTTPAuthenticatedIdentity { Name = "token-user" } : null)),
+    new TokenAuthenticationScheme((t, parameters, _) => Task.FromResult<HTTPAuthenticatedIdentity?>(
+        t == "secret-token-abc" ? new HTTPAuthenticatedIdentity { Name = "api-user" } : null)));
 
 var secretHandler = HTTPAuthentication.RequireAuthentication(authenticator,
     (identity, sid, h, b, ct) =>
@@ -88,8 +91,8 @@ Console.WriteLine("=== RFC 9110 §11 auth framework (Basic + Bearer) ===");
     var anon = await http.GetAsync(baseUri);
     var challenges = anon.Headers.WwwAuthenticate.Select(h => h.Scheme).ToList();
     Check("no creds -> 401", anon.StatusCode == HttpStatusCode.Unauthorized, $"{(int) anon.StatusCode}");
-    Check("challenge advertises Basic + Bearer",
-          challenges.Contains("Basic") && challenges.Contains("Bearer"),
+    Check("challenge advertises Basic + Bearer + Token",
+          challenges.Contains("Basic") && challenges.Contains("Bearer") && challenges.Contains("Token"),
           string.Join(", ", challenges));
 
     // Basic, correct.
@@ -126,11 +129,26 @@ Console.WriteLine("=== RFC 9110 §11 auth framework (Basic + Bearer) ===");
     var unknownScheme = await Send(baseUri, new AuthenticationHeaderValue("Digest", "whatever"));
     Check("unsupported scheme -> 401", unknownScheme.StatusCode == HttpStatusCode.Unauthorized, $"{(int) unknownScheme.StatusCode}");
 
+    // Token (non-standard) — bare GitHub-style form and Rails-style parameterized form.
+    var tokenBare = await Send(baseUri, new AuthenticationHeaderValue("Token", "secret-token-abc"));
+    Check("Token bare form -> 200", tokenBare.StatusCode == HttpStatusCode.OK, $"{(int) tokenBare.StatusCode}");
+    Check("token identity surfaced", (await tokenBare.Content.ReadAsStringAsync()) == "Authenticated as: api-user",
+          await tokenBare.Content.ReadAsStringAsync());
+
+    var tokenParam = await Send(baseUri, new AuthenticationHeaderValue("Token", "token=\"secret-token-abc\", nonce=\"xyz\""));
+    Check("Token parameterized form -> 200", tokenParam.StatusCode == HttpStatusCode.OK, $"{(int) tokenParam.StatusCode}");
+
+    var tokenBad = await Send(baseUri, new AuthenticationHeaderValue("Token", "wrong-token"));
+    Check("Token invalid -> 401", tokenBad.StatusCode == HttpStatusCode.Unauthorized, $"{(int) tokenBad.StatusCode}");
+
     // Same, via OUR client — proves the framework isn't HttpClient-specific.
     var conn = await HTTP2Client.ConnectAsync("localhost", port, acceptAnyServerCert);
     var basicViaOurClient = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/secret",
         ExtraHeaders: [("authorization", "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("alice:secret")))]);
     Check("our client + Basic -> 200", basicViaOurClient.Status == 200, basicViaOurClient.Status.ToString());
+    var tokenViaOurClient = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/secret",
+        ExtraHeaders: [("authorization", "Token secret-token-abc")]);
+    Check("our client + Token -> 200", tokenViaOurClient.Status == 200, tokenViaOurClient.Status.ToString());
     var anonViaOurClient = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/secret");
     Check("our client, no creds -> 401", anonViaOurClient.Status == 401, anonViaOurClient.Status.ToString());
     await conn.CloseAsync();

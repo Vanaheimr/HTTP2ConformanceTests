@@ -134,6 +134,74 @@ public sealed class BearerAuthenticationScheme : IHTTPAuthenticationScheme
 
 
 /// <summary>
+/// "Token" HTTP authentication — <b>not an IETF standard</b> (the
+/// draft-hammer-http-token-auth I-D expired), but a widely used convention,
+/// popularized by Rails' <c>ActionController::HttpAuthentication::Token</c> and
+/// GitHub-style <c>Authorization: token &lt;token&gt;</c> APIs. Two on-the-wire
+/// forms are accepted:
+/// <list type="bullet">
+///   <item>the bare form <c>Token &lt;token&gt;</c> (GitHub-style), where the
+///   whole credential is the token; and</item>
+///   <item>the parameterized form <c>Token token="&lt;token&gt;", nonce="…", …</c>
+///   (Rails-style), an RFC 7235 auth-param list carrying a mandatory
+///   <c>token</c> plus optional extra params.</item>
+/// </list>
+/// Functionally close to Bearer (RFC 6750) — a single opaque credential, no
+/// challenge-response — but with the <c>Token</c> scheme name and the optional
+/// structured parameters, which are handed to the validator alongside the token
+/// (e.g. to read a Rails-style <c>nonce</c>). Store-agnostic like the others:
+/// the app decides whether the token (and params) are valid.
+/// </summary>
+public sealed class TokenAuthenticationScheme : IHTTPAuthenticationScheme
+{
+
+    private readonly Func<string, IReadOnlyDictionary<string, string>, CancellationToken, Task<HTTPAuthenticatedIdentity?>> validate;
+
+    /// <param name="Validate">
+    /// Decides whether a token is valid; also receives any extra auth-params from
+    /// the parameterized form (empty for the bare form), so an app can honor a
+    /// Rails-style <c>nonce</c> or similar.
+    /// </param>
+    public TokenAuthenticationScheme(
+        Func<string, IReadOnlyDictionary<string, string>, CancellationToken, Task<HTTPAuthenticatedIdentity?>> Validate)
+    {
+        validate = Validate;
+    }
+
+    public string SchemeName => "Token";
+
+    public string BuildChallenge(string Realm)
+        => $"Token realm=\"{Realm}\"";
+
+    public async Task<HTTPAuthenticatedIdentity?> AuthenticateAsync(
+        string Credentials, string Method, string RequestTarget, CancellationToken CancellationToken)
+    {
+
+        var creds = Credentials.Trim();
+        if (creds.Length == 0)
+            return null;
+
+        var p = HTTPAuthParams.Parse(creds);
+
+        string token;
+        if (p.TryGetValue("token", out var t))
+            token = t;                 // Rails-style: Token token="…", …
+        else if (p.Count == 0)
+            token = creds;             // GitHub-style bare form: Token <token>
+        else
+            return null;               // structured params but no token= — malformed
+
+        if (token.Length == 0)
+            return null;
+
+        return await validate(token, p, CancellationToken);
+
+    }
+
+}
+
+
+/// <summary>
 /// RFC 7616 "Digest" HTTP authentication: a challenge-response scheme that,
 /// unlike Basic, never sends the password over the wire. The server issues a
 /// one-time <c>nonce</c> in its <c>WWW-Authenticate</c> challenge; the client
@@ -190,7 +258,7 @@ public sealed class DigestAuthenticationScheme : IHTTPAuthenticationScheme
         string Credentials, string Method, string RequestTarget, CancellationToken CancellationToken)
     {
 
-        var p = ParseAuthParams(Credentials);
+        var p = HTTPAuthParams.Parse(Credentials);
 
         // Required fields (RFC 7616, Section 3.4). username, realm, nonce, uri
         // and response must all be present.
@@ -310,12 +378,18 @@ public sealed class DigestAuthenticationScheme : IHTTPAuthenticationScheme
         }
     }
 
-    /// <summary>
-    /// Parse a Digest credentials list — comma-separated <c>key=value</c> pairs,
-    /// values optionally double-quoted (RFC 7616, Section 3.4). Quotes may contain
-    /// commas and backslash-escapes.
-    /// </summary>
-    private static Dictionary<string, string> ParseAuthParams(string Credentials)
+}
+
+
+/// <summary>
+/// Shared parser for an RFC 7235 auth-param list — comma-separated
+/// <c>key=value</c> pairs, values optionally double-quoted (with backslash
+/// escapes and embedded commas). Used by the Digest (RFC 7616) and Token
+/// schemes, both of which carry their credentials as such a list.
+/// </summary>
+internal static class HTTPAuthParams
+{
+    public static Dictionary<string, string> Parse(string Credentials)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var i      = 0;
@@ -362,7 +436,6 @@ public sealed class DigestAuthenticationScheme : IHTTPAuthenticationScheme
 
         return result;
     }
-
 }
 
 

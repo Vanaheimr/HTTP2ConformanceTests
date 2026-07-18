@@ -1,6 +1,7 @@
 namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 
 using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Text;
 
 
@@ -78,6 +79,19 @@ public sealed class WebSocketConnection
     private readonly IHTTP2Tunnel   tunnel;
     private readonly WebSocketRole  role;
 
+    /// <summary>
+    /// Whether the "permessage-deflate" extension (RFC 7692) was negotiated at
+    /// the opening handshake. When true, Text/Binary message payloads are
+    /// DEFLATE-compressed with the RSV1 bit set on the message's first frame.
+    /// This connection always operates in *no-context-takeover* mode (each
+    /// message is compressed independently, LZ77 window reset per message) —
+    /// the handshake layer that flips this on is expected to have advertised
+    /// <c>server_no_context_takeover; client_no_context_takeover</c>, which is
+    /// what lets a fixed-window codec like <see cref="DeflateStream"/> handle
+    /// each message on its own without carrying state across messages.
+    /// </summary>
+    private readonly bool           perMessageDeflate;
+
     /// <summary>Bytes read from the tunnel but not yet consumed by frame parsing.</summary>
     private byte[] buffer      = [];
     private int    bufferStart;
@@ -93,10 +107,16 @@ public sealed class WebSocketConnection
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
 
-    public WebSocketConnection(IHTTP2Tunnel Tunnel, WebSocketRole Role = WebSocketRole.Server)
+    /// <param name="PerMessageDeflate">
+    /// Whether the handshake negotiated "permessage-deflate" (RFC 7692). See
+    /// <see cref="perMessageDeflate"/> — this connection always runs the
+    /// extension in no-context-takeover mode.
+    /// </param>
+    public WebSocketConnection(IHTTP2Tunnel Tunnel, WebSocketRole Role = WebSocketRole.Server, bool PerMessageDeflate = false)
     {
-        tunnel = Tunnel;
-        role   = Role;
+        tunnel            = Tunnel;
+        role              = Role;
+        perMessageDeflate = PerMessageDeflate;
     }
 
 
@@ -116,9 +136,10 @@ public sealed class WebSocketConnection
     public async Task<WebSocketMessage?> ReceiveAsync(CancellationToken CancellationToken)
     {
 
-        WebSocketOpcode? fragmentOpcode = null;
-        List<byte>?      fragmentBuffer = null;
-        Decoder?         textDecoder    = null;   // strict UTF-8 state across a fragmented text message
+        WebSocketOpcode? fragmentOpcode    = null;
+        List<byte>?      fragmentBuffer    = null;
+        Decoder?         textDecoder       = null;   // strict UTF-8 state across a fragmented text message
+        var              messageCompressed = false;  // RSV1 seen on this message's first frame (permessage-deflate)
 
         while (true)
         {
@@ -137,6 +158,15 @@ public sealed class WebSocketConnection
 
             if (frame is null)
                 return null;   // Tunnel ended without a close handshake
+
+            // RFC 7692, Section 6: RSV1 (the "compressed" bit) is only ever
+            // valid on the FIRST frame of a data message. A control frame or a
+            // continuation frame that carries it is a protocol error.
+            if (frame.Rsv1 && frame.Opcode is not (WebSocketOpcode.Text or WebSocketOpcode.Binary))
+            {
+                await CloseAsync(1002, "RSV1 set on a control or continuation frame", CancellationToken);
+                return null;
+            }
 
             switch (frame.Opcode)
             {
@@ -163,23 +193,43 @@ public sealed class WebSocketConnection
 
                     if (frame.Fin)
                     {
-                        // A complete, single-frame message. A text payload MUST
-                        // be valid UTF-8 (RFC 6455 Section 8.1) — else 1007.
-                        if (frame.Opcode == WebSocketOpcode.Text && !IsValidUtf8(frame.Payload))
+                        // A complete, single-frame message.
+                        var payload = frame.Payload;
+
+                        // permessage-deflate: RSV1 ⇒ the payload is DEFLATE-
+                        // compressed; inflate before anything else (a decode
+                        // failure fails the connection, RFC 7692 Section 7.2.2).
+                        if (frame.Rsv1)
+                        {
+                            var inflated = Inflate(payload);
+                            if (inflated is null)
+                            {
+                                await CloseAsync(1002, "permessage-deflate decode failed", CancellationToken);
+                                return null;
+                            }
+                            payload = inflated;
+                        }
+
+                        // A text payload MUST be valid UTF-8 (RFC 6455 Section 8.1),
+                        // checked on the *decompressed* bytes.
+                        if (frame.Opcode == WebSocketOpcode.Text && !IsValidUtf8(payload))
                         {
                             await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
                             return null;
                         }
-                        return new WebSocketMessage { Opcode = frame.Opcode, Payload = frame.Payload };
+                        return new WebSocketMessage { Opcode = frame.Opcode, Payload = payload };
                     }
 
-                    // Start of a fragmented message. Text is validated
-                    // incrementally, per fragment, so an invalid byte fails the
-                    // connection as soon as it arrives (not only at the end).
-                    fragmentOpcode = frame.Opcode;
-                    fragmentBuffer = [.. frame.Payload];
+                    // Start of a fragmented message.
+                    fragmentOpcode    = frame.Opcode;
+                    fragmentBuffer    = [.. frame.Payload];
+                    messageCompressed = frame.Rsv1;
 
-                    if (frame.Opcode == WebSocketOpcode.Text)
+                    // Uncompressed text is validated incrementally, per fragment,
+                    // so an invalid byte fails the connection as soon as it
+                    // arrives. A compressed message can only be validated after
+                    // it's whole and inflated, so its UTF-8 check is deferred.
+                    if (frame.Opcode == WebSocketOpcode.Text && !messageCompressed)
                     {
                         textDecoder = StrictUtf8.GetDecoder();
                         if (!FeedUtf8(textDecoder, frame.Payload, Flush: false))
@@ -200,9 +250,9 @@ public sealed class WebSocketConnection
 
                     fragmentBuffer!.AddRange(frame.Payload);
 
-                    // Validate this fragment's bytes against the running UTF-8
-                    // state; on the final fragment, flush so a trailing partial
-                    // multi-byte sequence is caught too.
+                    // Uncompressed text: validate this fragment's bytes against the
+                    // running UTF-8 state; flush on the final fragment to catch a
+                    // trailing partial sequence. (Compressed messages defer, below.)
                     if (textDecoder is not null && !FeedUtf8(textDecoder, frame.Payload, Flush: frame.Fin))
                     {
                         await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
@@ -212,8 +262,28 @@ public sealed class WebSocketConnection
                     if (!frame.Fin)
                         continue;
 
-                    var message = new WebSocketMessage { Opcode = fragmentOpcode.Value, Payload = [.. fragmentBuffer] };
-                    return message;
+                    var body = fragmentBuffer.ToArray();
+
+                    if (messageCompressed)
+                    {
+                        // Inflate the whole reassembled message, then UTF-8-check
+                        // the decompressed text.
+                        var inflated = Inflate(body);
+                        if (inflated is null)
+                        {
+                            await CloseAsync(1002, "permessage-deflate decode failed", CancellationToken);
+                            return null;
+                        }
+                        body = inflated;
+
+                        if (fragmentOpcode == WebSocketOpcode.Text && !IsValidUtf8(body))
+                        {
+                            await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
+                            return null;
+                        }
+                    }
+
+                    return new WebSocketMessage { Opcode = fragmentOpcode.Value, Payload = body };
 
                 default:
                     await CloseAsync(1002, "Unknown opcode", CancellationToken);
@@ -224,6 +294,66 @@ public sealed class WebSocketConnection
         }
 
     }
+
+    #region permessage-deflate (RFC 7692)
+
+    /// <summary>The 4-octet tail (an empty DEFLATE block) permessage-deflate strips when sending and re-appends when receiving (RFC 7692 Section 7.2).</summary>
+    private static readonly byte[] DeflateTail = [0x00, 0x00, 0xFF, 0xFF];
+
+    /// <summary>
+    /// Compress a message payload with raw DEFLATE for permessage-deflate
+    /// (RFC 7692 Section 7.2.1). <see cref="DeflateStream"/> emits raw DEFLATE
+    /// (no zlib wrapper) and, on close, a final (BFINAL) block — valid under
+    /// no-context-takeover, where each message stands alone. If the platform
+    /// ever emits the <c>00 00 FF FF</c> sync-flush tail we strip it as the RFC
+    /// requires; a receiver re-appends it before inflating either way.
+    /// </summary>
+    private static byte[] Deflate(byte[] Data)
+    {
+
+        using var output = new MemoryStream();
+
+        using (var deflate = new DeflateStream(output, CompressionLevel.Optimal, leaveOpen: true))
+            deflate.Write(Data, 0, Data.Length);
+
+        var bytes = output.ToArray();
+
+        if (bytes.Length >= 4 &&
+            bytes[^4] == 0x00 && bytes[^3] == 0x00 && bytes[^2] == 0xFF && bytes[^1] == 0xFF)
+            bytes = bytes[..^4];
+
+        return bytes;
+
+    }
+
+    /// <summary>
+    /// Decompress a permessage-deflate message payload (RFC 7692 Section 7.2.2):
+    /// re-append the <c>00 00 FF FF</c> tail the sender stripped, then raw-inflate.
+    /// Returns null on any decode failure (a malformed compressed message).
+    /// </summary>
+    private static byte[]? Inflate(byte[] Compressed)
+    {
+
+        try
+        {
+            using var input = new MemoryStream(Compressed.Length + 4);
+            input.Write(Compressed, 0, Compressed.Length);
+            input.Write(DeflateTail, 0, DeflateTail.Length);
+            input.Position = 0;
+
+            using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+            using var output  = new MemoryStream();
+            deflate.CopyTo(output);
+            return output.ToArray();
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+
+    }
+
+    #endregion
 
     /// <summary>Whether the whole byte sequence decodes as valid UTF-8 (RFC 6455 Section 8.1).</summary>
     private static bool IsValidUtf8(byte[] Bytes)
@@ -346,10 +476,19 @@ public sealed class WebSocketConnection
         if (Opcode == WebSocketOpcode.Close)
             closeSent = true;
 
+        // permessage-deflate (RFC 7692): compress data-message payloads and mark
+        // the frame with RSV1. Control frames (Close/Ping/Pong) are never
+        // compressed. We never fragment our own output, so RSV1 sits on the one
+        // frame that carries the whole message.
+        var compress = perMessageDeflate && Opcode is (WebSocketOpcode.Text or WebSocketOpcode.Binary);
+        if (compress)
+            Payload = Deflate(Payload);
+
         var mask     = role == WebSocketRole.Client;
         var maskFlag = mask ? 0x80 : 0x00;
+        var rsv1Flag = compress ? 0x40 : 0x00;
 
-        var header = new List<byte> { (byte) (0x80 | (byte) Opcode) };   // FIN=1
+        var header = new List<byte> { (byte) (0x80 | rsv1Flag | (byte) Opcode) };   // FIN=1 (+ RSV1)
 
         if (Payload.Length <= 125)
         {
@@ -398,7 +537,7 @@ public sealed class WebSocketConnection
 
     #region Raw frame parsing
 
-    private sealed record RawFrame(bool Fin, WebSocketOpcode Opcode, byte[] Payload);
+    private sealed record RawFrame(bool Fin, bool Rsv1, WebSocketOpcode Opcode, byte[] Payload);
 
     /// <summary>
     /// Read and unmask a single WebSocket frame (RFC 6455 Section 5.2).
@@ -412,13 +551,19 @@ public sealed class WebSocketConnection
             return null;
 
         var fin    = (header[0] & 0x80) != 0;
-        var rsv    =  header[0] & 0x70;
+        var rsv1   = (header[0] & 0x40) != 0;
+        var rsv23  =  header[0] & 0x30;
         var opcode = (WebSocketOpcode) (header[0] & 0x0F);
         var masked = (header[1] & 0x80) != 0;
         var len7   =  header[1] & 0x7F;
 
-        if (rsv != 0)
-            throw new WebSocketProtocolException("Reserved bits must be 0 (no extension negotiated)");
+        // RSV2/RSV3 are never valid (no extension defines them here). RSV1 is
+        // valid only when permessage-deflate (RFC 7692) was negotiated; where it
+        // may appear (first data frame only) is checked in ReceiveAsync.
+        if (rsv23 != 0)
+            throw new WebSocketProtocolException("Reserved bits RSV2/RSV3 must be 0");
+        if (rsv1 && !perMessageDeflate)
+            throw new WebSocketProtocolException("RSV1 set but permessage-deflate not negotiated");
 
         // RFC 6455, Section 5.1: a server MUST close on an unmasked client frame;
         // a client MUST close on a masked server frame.
@@ -484,7 +629,7 @@ public sealed class WebSocketConnection
         else
             payload = rawPayload;
 
-        return new RawFrame(fin, opcode, payload);
+        return new RawFrame(fin, rsv1, opcode, payload);
 
     }
 

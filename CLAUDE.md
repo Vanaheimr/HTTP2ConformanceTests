@@ -1791,6 +1791,57 @@ QUERY`; `POST` → `405` with the same `Allow`; a QUERY body with no `Content-Ty
 extraction and per-wrap `Allow` left GET/HEAD/OPTIONS byte-identical) and h2spec
 still **146/146 over both transports**.
 
+**WebSocket permessage-deflate (RFC 7692)** (done 2026-07-18) — the optional
+per-message compression extension, which lights up Autobahn sections 12 & 13 (the
+216 cases the earlier WebSocket track had excluded): the suite now scores the
+**full 517/517**, up from 301/301-with-12/13-excluded. Entirely in
+`Core/WebSocket.cs` (negotiation is a handshake-layer concern, passed in as a
+flag), so it's shared by the WebSocket server and the role-parameterized client:
+
+- **Wire format (§7).** A data message's *first* frame carries the RSV1 bit when
+  its payload is DEFLATE-compressed (control and continuation frames never do —
+  RSV1 elsewhere is a `1002`). `RawFrame` now carries `Rsv1`; `ReadRawFrameAsync`
+  rejects RSV2/RSV3 always and RSV1 unless permessage-deflate was negotiated, and
+  `ReceiveAsync` enforces "RSV1 only on a data message's first frame." Compressed
+  messages are inflated once the whole message is reassembled (a decode failure →
+  `1002`, §7.2.2), and — importantly — a compressed *text* message's UTF-8 is
+  validated on the **decompressed** bytes (the incremental per-fragment UTF-8
+  check only applies to uncompressed text, since you can't validate mid-compressed
+  stream). Sending compresses Text/Binary payloads and sets RSV1; we never
+  fragment our own output, so RSV1 sits on the one frame.
+- **The codec + no-context-takeover.** Raw DEFLATE via
+  `System.IO.Compression.DeflateStream` (no zlib wrapper), with the RFC 7692 §7.2
+  `00 00 FF FF` empty-block tail stripped on send / re-appended on receive. The
+  connection always runs **no-context-takeover** (LZ77 window reset per message,
+  each message compressed independently) — this is the key that makes a
+  fixed-window BCL codec work: with a fresh context per message, `DeflateStream`
+  closing each message with a final (BFINAL) block interoperates with a peer's
+  sync-flushed input (append `00 00 FF FF`, inflate, the inflater stops at the
+  final block or the empty tail either way). Verified against Autobahn's actual
+  zlib-based `Z_SYNC_FLUSH` compressor, which is the real interop proof the BCL
+  round-trip alone can't give.
+- **Negotiation.** Kept at the handshake layer (where extensions belong): the
+  `WebSocketConnection` constructor takes a `PerMessageDeflate` flag (default
+  false — so every existing WebSocket path is byte-identical). The Autobahn echo
+  server (`tests/autobahn-server`) parses `Sec-WebSocket-Extensions`; if the
+  client offers `permessage-deflate` it responds
+  `permessage-deflate; server_no_context_takeover; client_no_context_takeover`
+  and flips the flag on. (The production HTTP/2 RFC 8441 CONNECT path in the demo
+  is left non-deflate for now; the framing is ready if that handshake ever wires
+  the header through.)
+
+Verified: **Autobahn 517/517** (the full suite incl. 12/13, run via
+`tests/autobahn.sh` under WSL/Debian against `crossbario/autobahn-testsuite`) —
+`fuzzingclient.json` no longer excludes any section. The committed
+`h2wsconformance` harness gained five permessage-deflate round-trip checks
+(26 → **31/31**, still Docker-free): negotiation when offered, compressed
+text/binary/fragmented-text round-trips, and an uncompressed message on a
+deflate-negotiated connection (RFC 7692 §5.1 — a message MAY be sent
+uncompressed even when the extension is active). Full regression **68/68**
+(h2wsconformance now 31/31; the default-off path leaves `h2connect` ws-* and
+`h2wsclient` 10/10 byte-identical) and h2spec still **146/146 over both
+transports** (no WebSocket path there, and the `WebSocket.cs` change is isolated).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -1924,4 +1975,6 @@ only remaining candidate is a neutral home for the demo — as interest dictates
 - RFC 9113 — HTTP/2
 - RFC 7541 — HPACK
 - RFC 7301 — ALPN
+- RFC 6455 — The WebSocket Protocol
+- RFC 7692 — Compression Extensions for WebSocket (permessage-deflate)
 - RFC 10008 — The HTTP QUERY Method

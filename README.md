@@ -72,10 +72,10 @@ pwsh tests/h2spec.ps1   # builds, starts the demo, runs h2spec on both transport
 full h2spec walkthrough, [`tests/README.md`](tests/README.md) for the harness
 layout, and [`CLAUDE.md`](CLAUDE.md) for the conformance breakdown.
 
-The WebSocket framing (RFC 6455) likewise passes **301/301** cases of the
+The WebSocket framing (RFC 6455) likewise passes **517/517** cases of the
 canonical [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite)
-(sections 1–10; the optional `permessage-deflate` sections 12/13 are excluded) —
-`pwsh tests/autobahn.ps1` / `tests/autobahn.sh` (Docker) — with the critical
+— the full suite, including `permessage-deflate` (RFC 7692) compression —
+`pwsh tests/autobahn.ps1` / `tests/autobahn.sh` (Docker), with the critical
 cases also pinned in the committed `h2wsconformance` harness (no Docker needed);
 see [`tests/TestingAgainst_Autobahn.md`](tests/TestingAgainst_Autobahn.md).
 

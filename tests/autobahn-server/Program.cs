@@ -58,17 +58,29 @@ async Task HandleAsync(TcpClient Client)
             Client.NoDelay = true;
             var stream = Client.GetStream();
 
-            var key = await ReadHandshakeKeyAsync(stream);
+            var request = await ReadHandshakeAsync(stream);
+            var key     = request is null ? null : HeaderValue(request, "Sec-WebSocket-Key");
             if (key is null)
                 return;   // not a well-formed WebSocket upgrade
 
             var accept = Convert.ToBase64String(
                              SHA1.HashData(Encoding.ASCII.GetBytes(key + wsGuid)));
 
+            // permessage-deflate (RFC 7692): if the client offers it, accept —
+            // forcing no-context-takeover both ways so each message is compressed
+            // independently (which is all a fixed-window codec can do), and
+            // echoing that back in Sec-WebSocket-Extensions.
+            var offered  = HeaderValue(request!, "Sec-WebSocket-Extensions") ?? "";
+            var deflate  = offered.Split(',').Any(e => e.Trim().StartsWith("permessage-deflate", StringComparison.OrdinalIgnoreCase));
+            var extLine  = deflate
+                               ? "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n"
+                               : "";
+
             var response = "HTTP/1.1 101 Switching Protocols\r\n" +
                            "Upgrade: websocket\r\n"              +
                            "Connection: Upgrade\r\n"            +
                            $"Sec-WebSocket-Accept: {accept}\r\n" +
+                           extLine +
                            "\r\n";
             await stream.WriteAsync(Encoding.ASCII.GetBytes(response));
             await stream.FlushAsync();
@@ -78,7 +90,7 @@ async Task HandleAsync(TcpClient Client)
             // application message straight back — the behavior Autobahn's
             // fuzzingclient expects of an echo server.
             var tunnel = new NetworkStreamTunnel(stream);
-            var ws     = new WebSocketConnection(tunnel, WebSocketRole.Server);
+            var ws     = new WebSocketConnection(tunnel, WebSocketRole.Server, PerMessageDeflate: deflate);
 
             while (true)
             {
@@ -111,9 +123,9 @@ async Task HandleAsync(TcpClient Client)
 
 
 // Read the HTTP/1.1 request headers up to the blank line, byte by byte so we
-// never consume into the first WebSocket frame that follows, and return the
-// Sec-WebSocket-Key value (or null if this isn't a WebSocket upgrade).
-async Task<string?> ReadHandshakeKeyAsync(NetworkStream Stream)
+// never consume into the first WebSocket frame that follows. Returns the raw
+// header lines (or null if the request never terminated).
+async Task<string[]?> ReadHandshakeAsync(NetworkStream Stream)
 {
     var sb  = new StringBuilder();
     var one = new byte[1];
@@ -125,17 +137,21 @@ async Task<string?> ReadHandshakeKeyAsync(NetworkStream Stream)
             return null;
         sb.Append((char) one[0]);
         if (sb.Length >= 4 && sb[^1] == '\n' && sb[^2] == '\r' && sb[^3] == '\n' && sb[^4] == '\r')
-            break;
+            return sb.ToString().Split("\r\n");
     }
 
-    foreach (var line in sb.ToString().Split("\r\n"))
+    return null;
+}
+
+// Case-insensitive header lookup over the raw request lines.
+static string? HeaderValue(string[] Lines, string Name)
+{
+    foreach (var line in Lines)
     {
         var colon = line.IndexOf(':');
-        if (colon > 0 &&
-            line[..colon].Trim().Equals("Sec-WebSocket-Key", StringComparison.OrdinalIgnoreCase))
+        if (colon > 0 && line[..colon].Trim().Equals(Name, StringComparison.OrdinalIgnoreCase))
             return line[(colon + 1)..].Trim();
     }
-
     return null;
 }
 

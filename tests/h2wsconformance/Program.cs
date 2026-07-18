@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -45,14 +46,21 @@ var serverLoop = Task.Run(async () =>
             {
                 try
                 {
-                    var s   = c.GetStream();
-                    var key = await ReadKey(s);
+                    var s     = c.GetStream();
+                    var lines = await ReadHeaders(s);
+                    if (lines is null) return;
+                    var key = Header(lines, "Sec-WebSocket-Key");
                     if (key is null) return;
                     var accept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(key + wsGuid)));
+
+                    // Negotiate permessage-deflate (no-context-takeover) if offered.
+                    var deflate = (Header(lines, "Sec-WebSocket-Extensions") ?? "").Contains("permessage-deflate");
+                    var extLine = deflate ? "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n" : "";
+
                     await s.WriteAsync(Encoding.ASCII.GetBytes(
                         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
-                        $"Sec-WebSocket-Accept: {accept}\r\n\r\n"));
-                    var ws = new WebSocketConnection(new TcpTunnel(s), WebSocketRole.Server);
+                        $"Sec-WebSocket-Accept: {accept}\r\n{extLine}\r\n"));
+                    var ws = new WebSocketConnection(new TcpTunnel(s), WebSocketRole.Server, PerMessageDeflate: deflate);
                     while (true)
                     {
                         WebSocketMessage? m;
@@ -71,19 +79,25 @@ var serverLoop = Task.Run(async () =>
     }
 });
 
-async Task<string?> ReadKey(NetworkStream s)
+async Task<string[]?> ReadHeaders(NetworkStream s)
 {
     var sb = new StringBuilder(); var one = new byte[1];
     while (sb.Length < 16 * 1024)
     {
         if (await s.ReadAsync(one) == 0) return null;
         sb.Append((char) one[0]);
-        if (sb.Length >= 4 && sb[^1] == '\n' && sb[^2] == '\r' && sb[^3] == '\n' && sb[^4] == '\r') break;
+        if (sb.Length >= 4 && sb[^1] == '\n' && sb[^2] == '\r' && sb[^3] == '\n' && sb[^4] == '\r')
+            return sb.ToString().Split("\r\n");
     }
-    foreach (var line in sb.ToString().Split("\r\n"))
+    return null;
+}
+
+static string? Header(string[] lines, string name)
+{
+    foreach (var line in lines)
     {
         var i = line.IndexOf(':');
-        if (i > 0 && line[..i].Trim().Equals("Sec-WebSocket-Key", StringComparison.OrdinalIgnoreCase))
+        if (i > 0 && line[..i].Trim().Equals(name, StringComparison.OrdinalIgnoreCase))
             return line[(i + 1)..].Trim();
     }
     return null;
@@ -168,6 +182,60 @@ async Task<ushort?> ExpectClose(NetworkStream s)
             return f.Value.Payload.Length >= 2 ? BinaryPrimitives.ReadUInt16BigEndian(f.Value.Payload) : (ushort) 0;
         // ignore any non-close frame (e.g. an echoed text) while waiting for close
     }
+}
+
+// Read one server frame including its RSV1 (compression) bit. Null on EOF.
+async Task<(bool Rsv1, int Opcode, byte[] Payload)?> ReadFrameFull(NetworkStream s)
+{
+    var h2 = new byte[2];
+    if (!await ReadExact(s, h2)) return null;
+    var rsv1 = (h2[0] & 0x40) != 0;
+    var opcode = h2[0] & 0x0F;
+    long len = h2[1] & 0x7F;
+    if (len == 126) { var e = new byte[2]; if (!await ReadExact(s, e)) return null; len = BinaryPrimitives.ReadUInt16BigEndian(e); }
+    else if (len == 127) { var e = new byte[8]; if (!await ReadExact(s, e)) return null; len = (long) BinaryPrimitives.ReadUInt64BigEndian(e); }
+    var payload = new byte[len];
+    if (len > 0 && !await ReadExact(s, payload)) return null;
+    return (rsv1, opcode, payload);
+}
+
+// A handshake that offers permessage-deflate; returns the stream and whether
+// the server accepted the extension in its 101 response.
+async Task<(NetworkStream Stream, bool Deflate)> HandshakeOfferingDeflate()
+{
+    var tcp = new TcpClient();
+    await tcp.ConnectAsync(IPAddress.Loopback, port);
+    var s = tcp.GetStream();
+    var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+    await s.WriteAsync(Encoding.ASCII.GetBytes(
+        $"GET / HTTP/1.1\r\nHost: localhost:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+        $"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n"));
+    var sb = new StringBuilder(); var one = new byte[1];
+    while (true)
+    {
+        if (await s.ReadAsync(one) == 0) throw new IOException("handshake ended");
+        sb.Append((char) one[0]);
+        if (sb.Length >= 4 && sb[^1] == '\n' && sb[^2] == '\r' && sb[^3] == '\n' && sb[^4] == '\r') break;
+    }
+    var head = sb.ToString();
+    if (!head.StartsWith("HTTP/1.1 101")) throw new IOException("no 101");
+    return (s, head.Contains("permessage-deflate", StringComparison.OrdinalIgnoreCase));
+}
+
+// permessage-deflate wire codec (RFC 7692 §7.2), client side — mirrors Core.
+static byte[] DeflateBody(byte[] data)
+{
+    using var o = new MemoryStream();
+    using (var d = new DeflateStream(o, CompressionLevel.Optimal, leaveOpen: true)) d.Write(data, 0, data.Length);
+    var b = o.ToArray();
+    if (b.Length >= 4 && b[^4] == 0 && b[^3] == 0 && b[^2] == 0xFF && b[^1] == 0xFF) b = b[..^4];
+    return b;
+}
+static byte[] InflateBody(byte[] comp)
+{
+    using var i = new MemoryStream(); i.Write(comp, 0, comp.Length); i.Write([0, 0, 0xFF, 0xFF], 0, 4); i.Position = 0;
+    using var d = new DeflateStream(i, CompressionMode.Decompress);
+    using var o = new MemoryStream(); d.CopyTo(o); return o.ToArray();
 }
 
 const int Text = 0x1, Binary = 0x2, Close = 0x8, Ping = 0x9, Pong = 0xA, Cont = 0x0;
@@ -314,6 +382,44 @@ Console.WriteLine("--- Section 7: close handling ---");
     var badReason = new byte[] { 0x03, 0xE8, 0xFF, 0xFF };   // code 1000, then invalid UTF-8
     await SendRaw(s, true, 0, Close, badReason);
     Check("7.5.1 invalid UTF-8 in a close reason fails the connection (Close 1007)", await ExpectClose(s) == 1007);
+    s.Close();
+}
+
+// =========================================================================
+Console.WriteLine("--- RFC 7692: permessage-deflate ---");
+{
+    var (s, accepted) = await HandshakeOfferingDeflate();
+    Check("permessage-deflate is negotiated when offered", accepted);
+
+    // Send a compressed text message: deflate the payload, set RSV1.
+    var text = "Hello, permessage-deflate! " + new string('x', 200);   // compressible
+    await SendRaw(s, true, 0b100, Text, DeflateBody(Encoding.UTF8.GetBytes(text)));
+    var echo = await ReadFrameFull(s);
+    Check("compressed text round-trips (echo is RSV1-compressed, inflates to original)",
+          echo is { Rsv1: true, Opcode: Text } && Encoding.UTF8.GetString(InflateBody(echo.Value.Payload)) == text);
+
+    // Compressed binary.
+    var bin = Enumerable.Range(0, 300).Select(i => (byte) (i % 7)).ToArray();   // compressible
+    await SendRaw(s, true, 0b100, Binary, DeflateBody(bin));
+    var be = await ReadFrameFull(s);
+    Check("compressed binary round-trips", be is { Rsv1: true, Opcode: Binary } && InflateBody(be.Value.Payload).SequenceEqual(bin));
+
+    // A compressed message split across two frames: RSV1 only on the first.
+    var frag = Encoding.UTF8.GetBytes("fragmented compressed message payload, reasonably long");
+    var comp = DeflateBody(frag);
+    var half = comp.Length / 2;
+    await SendRaw(s, false, 0b100, Text, comp[..half]);   // first frame: RSV1 set, FIN=0
+    await SendRaw(s, true,  0,     Cont, comp[half..]);   // continuation: RSV1 clear, FIN=1
+    var fe = await ReadFrameFull(s);
+    Check("compressed fragmented text round-trips", fe is { Opcode: Text } && Encoding.UTF8.GetString(InflateBody(fe.Value.Payload)) == Encoding.UTF8.GetString(frag));
+
+    // RFC 7692 §5.1: even with the extension active, a message MAY be sent
+    // uncompressed (RSV1 = 0) — the server must still handle it.
+    await SendRaw(s, true, 0, Text, Encoding.UTF8.GetBytes("plain"));
+    var pe = await ReadFrameFull(s);
+    var plainText = pe!.Value.Rsv1 ? Encoding.UTF8.GetString(InflateBody(pe.Value.Payload)) : Encoding.UTF8.GetString(pe.Value.Payload);
+    Check("an uncompressed message on a deflate connection still round-trips", plainText == "plain");
+
     s.Close();
 }
 

@@ -107,14 +107,12 @@ echo "Echo server up (pid $srv_pid) on ws://127.0.0.1:$port/"
 # --- write a Linux config (host networking -> 127.0.0.1) and run Autobahn ---
 rm -rf "$repdir"; mkdir -p "$repdir"
 cfg="$repdir/fuzzingclient.json"
-# Sections 12 & 13 (permessage-deflate, RFC 7692) are an optional extension this
-# stack does not implement — excluded, leaving the 301 RFC 6455 core cases.
 cat >"$cfg" <<JSON
 {
     "outdir": "/reports",
     "servers": [{ "agent": "HTTP2FromScratch", "url": "ws://127.0.0.1:$port" }],
     "cases": ["*"],
-    "exclude-cases": ["12.*", "13.*"],
+    "exclude-cases": [],
     "exclude-agent-cases": {}
 }
 JSON

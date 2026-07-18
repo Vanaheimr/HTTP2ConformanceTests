@@ -44,7 +44,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
 | `h2rfcpolish`      | self-contained | MUST-level details h2spec misses: padded-DATA flow accounting (§6.1), closed-stream DATA connection-window credit (§6.9), cookie crumb reassembly (§8.2.3) (8 checks) |
 | `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |
-| `h2wsconformance`  | self-contained | RFC 6455 WebSocket framing conformance — the critical Autobahn cases (framing, fragmentation, UTF-8 §8.1, close §7.4) driven raw against our `WebSocketConnection` (26 checks) |
+| `h2wsconformance`  | self-contained | RFC 6455 WebSocket framing conformance — the critical Autobahn cases (framing, fragmentation, UTF-8 §8.1, close §7.4) + permessage-deflate (RFC 7692) round-trips, driven raw against our `WebSocketConnection` (31 checks) |
 | `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
 | `h2query`          | self-contained | RFC 10008 the HTTP QUERY method (safe/idempotent body-carrying read) vs. our client + .NET HttpClient — filtering, Content-Location, ETag/304, Allow, 400/404/405 (12 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range, negotiation (51 checks) |
@@ -81,9 +81,9 @@ the 10 failures) is in [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry.
 ## Autobahn WebSocket conformance
 
 [Autobahn|TestSuite](https://github.com/crossbario/autobahn-testsuite) is the
-canonical RFC 6455 WebSocket conformance suite. This stack passes **301 / 301**
-RFC 6455 cases (sections 1–10); sections 12/13 (`permessage-deflate`, RFC 7692 —
-an optional extension not implemented here) are excluded. It drives the
+canonical RFC 6455 WebSocket conformance suite. This stack passes **517 / 517**
+cases — the full suite, including sections 12/13 (`permessage-deflate`, RFC 7692,
+negotiated in no-context-takeover mode). It drives the
 `autobahn-server` echo host, which runs the same `WebSocketConnection` framing
 used in production over a plain-TCP tunnel behind an HTTP/1.1 Upgrade handshake
 (Autobahn speaks WebSocket over HTTP/1.1, not RFC 8441 over HTTP/2 — but the

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- We provide our own Main; suppress the SDK.Web implicit one. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The hand-rolled stack, now as project references (Core comes in
+         transitively via both). -->
+    <ProjectReference Include="..\..\src\Server\HTTP2.Server.csproj" />
+    <ProjectReference Include="..\..\src\Client\HTTP2.Client.csproj" />
+  </ItemGroup>
+
+</Project>

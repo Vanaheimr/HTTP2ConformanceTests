@@ -1,0 +1,36 @@
+<Solution>
+  <Folder Name="/Client/">
+    <Project Path="Client/HTTP2.Client.csproj" />
+  </Folder>
+  <Folder Name="/Core/">
+    <Project Path="Core/HTTP2.Core.csproj" />
+  </Folder>
+  <Folder Name="/Demo/">
+    <Project Path="Demo/HTTP2.Demo.csproj" />
+  </Folder>
+  <Folder Name="/Server/">
+    <Project Path="Server/HTTP2.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../tests/h2attack/h2attack.csproj" />
+    <Project Path="../tests/h2authtest/h2authtest.csproj" />
+    <Project Path="../tests/h2cachetest/h2cachetest.csproj" />
+    <Project Path="../tests/h2clientpriority/h2clientpriority.csproj" />
+    <Project Path="../tests/h2clientrobust/h2clientrobust.csproj" />
+    <Project Path="../tests/h2compress/h2compress.csproj" />
+    <Project Path="../tests/h2clienttest/h2clienttest.csproj" />
+    <Project Path="../tests/h2connect/h2connect.csproj" />
+    <Project Path="../tests/h2flowbatch/h2flowbatch.csproj" />
+    <Project Path="../tests/h2hpackenc/h2hpackenc.csproj" />
+    <Project Path="../tests/h2timeout/h2timeout.csproj" />
+    <Project Path="../tests/h2hufftest/h2hufftest.csproj" />
+    <Project Path="../tests/h2priority/h2priority.csproj" />
+    <Project Path="../tests/h2raw/h2raw.csproj" />
+    <Project Path="../tests/h2semantics/h2semantics.csproj" />
+    <Project Path="../tests/h2shutdowntest/h2shutdowntest.csproj" />
+    <Project Path="../tests/h2streaming/h2streaming.csproj" />
+    <Project Path="../tests/h2wsclient/h2wsclient.csproj" />
+    <Project Path="../tests/h2streamtest/h2streamtest.csproj" />
+    <Project Path="../tests/h2test/h2test.csproj" />
+  </Folder>
+</Solution>

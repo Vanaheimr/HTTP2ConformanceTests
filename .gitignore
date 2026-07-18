@@ -1,0 +1,19 @@
+# .NET build output
+bin/
+obj/
+out/
+
+# Rider / VS / VS Code
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Certificates accidentally exported
+*.pfx
+*.p12
+
+# OS
+.DS_Store
+Thumbs.db

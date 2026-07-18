@@ -44,12 +44,21 @@ Task<HTTP2ConnectResult> Connect(uint sid, List<(string Name, string Value)> hea
     var path     = headers.FirstOrDefault(h => h.Name == ":path").Value;
 
     if (protocol == "websocket" && path == "/ws-echo")
+    {
+        // Negotiate permessage-deflate (RFC 7692) over the production HTTP/2
+        // (RFC 8441) CONNECT path exactly as the demo server does: accept the
+        // client's offer, echo the acceptance back in sec-websocket-extensions,
+        // and flip the framing's flag on.
+        var offer   = headers.FirstOrDefault(h => h.Name == "sec-websocket-extensions").Value;
+        var deflate = WebSocketDeflate.ShouldAccept(offer, out var responseExt);
+
         return Task.FromResult(new HTTP2ConnectResult
         {
-            StatusCode = 200,
-            RunAsync   = async (tunnel, ct2) =>
+            StatusCode   = 200,
+            ExtraHeaders = deflate ? [("sec-websocket-extensions", responseExt!)] : null,
+            RunAsync     = async (tunnel, ct2) =>
             {
-                var ws = new WebSocketConnection(tunnel, WebSocketRole.Server);
+                var ws = new WebSocketConnection(tunnel, WebSocketRole.Server, PerMessageDeflate: deflate);
                 while (true)
                 {
                     var msg = await ws.ReceiveAsync(ct2);
@@ -61,6 +70,7 @@ Task<HTTP2ConnectResult> Connect(uint sid, List<(string Name, string Value)> hea
                 }
             }
         });
+    }
 
     if (protocol is null)   // plain CONNECT: raw byte loopback
         return Task.FromResult(new HTTP2ConnectResult
@@ -166,6 +176,63 @@ Console.WriteLine("\n=== rejected extended CONNECT ===");
     // Connection still usable for an ordinary request afterward.
     var resp = await conn.SendRequestAsync("GET", "https", $"localhost:{port}", "/");
     Check("connection healthy after a rejected CONNECT", resp.Status == 404, resp.Status.ToString());
+    await conn.CloseAsync();
+}
+
+// =========================================================================
+// 4. Extended CONNECT WebSocket with permessage-deflate (RFC 7692) over the
+//    production HTTP/2 (RFC 8441) path — offered by the client, negotiated on
+//    the CONNECT handshake, both ends compressing/inflating transparently.
+// =========================================================================
+Console.WriteLine("\n=== WebSocket permessage-deflate (RFC 7692) ===");
+{
+    // First open the tunnel manually with the deflate offer, so we can prove the
+    // negotiation happened on the wire — the server MUST echo the acceptance
+    // back in sec-websocket-extensions. (A successful round-trip alone wouldn't
+    // prove compression, since a failed negotiation falls back transparently.)
+    var conn   = await HTTP2Client.ConnectAsync("localhost", port, acceptAny);
+    var tunnel = await conn.OpenTunnelAsync("localhost", "websocket", "https", "/ws-echo",
+                     [("sec-websocket-extensions", WebSocketDeflate.Offer)]);
+    var echoed = tunnel.ResponseHeaders.FirstOrDefault(h => h.Name == "sec-websocket-extensions").Value;
+    Check("server echoes permessage-deflate acceptance", WebSocketDeflate.WasAccepted(echoed), echoed ?? "(none)");
+
+    var ws = new WebSocketConnection(tunnel, WebSocketRole.Client, PerMessageDeflate: WebSocketDeflate.WasAccepted(echoed));
+
+    // A highly compressible text message: proves the compressed round-trip works
+    // end-to-end (offer → server accept → RSV1 deflate both ways → inflate).
+    var compressible = new string('A', 2000) + "🎉 unicode survives compression 🎉";
+    await ws.SendTextAsync(compressible, CancellationToken.None);
+    var d1 = await ws.ReceiveAsync(CancellationToken.None);
+    Check("deflate text message round-trips", d1 is { Opcode: WebSocketOpcode.Text } && Encoding.UTF8.GetString(d1.Payload) == compressible,
+          d1 is null ? "(null)" : $"{d1.Payload.Length} bytes");
+
+    // A binary message with repetitive content, likewise.
+    var binData = new byte[4096];
+    for (var i = 0; i < binData.Length; i++) binData[i] = (byte) (i % 7);
+    await ws.SendBinaryAsync(binData, CancellationToken.None);
+    var d2 = await ws.ReceiveAsync(CancellationToken.None);
+    Check("deflate binary message round-trips", d2 is { Opcode: WebSocketOpcode.Binary } && d2.Payload.AsSpan().SequenceEqual(binData),
+          d2 is null ? "(null)" : $"{d2.Payload.Length} bytes");
+
+    await ws.CloseAsync(1000, "bye", CancellationToken.None);
+    var d3 = await ws.ReceiveAsync(CancellationToken.None);
+    Check("deflate close handshake completes", d3 is null);
+
+    await conn.CloseAsync();
+}
+
+// The convenience OpenWebSocketAsync(PerMessageDeflate: true) wrapper (offer +
+// read-acceptance + flag, all in one) round-trips a compressed message too.
+{
+    var conn = await HTTP2Client.ConnectAsync("localhost", port, acceptAny);
+    var ws   = await conn.OpenWebSocketAsync("localhost", "https", "/ws-echo", PerMessageDeflate: true);
+
+    var msg = new string('Z', 1500);
+    await ws.SendTextAsync(msg, CancellationToken.None);
+    var back = await ws.ReceiveAsync(CancellationToken.None);
+    Check("convenience deflate API round-trips", back is { Opcode: WebSocketOpcode.Text } && Encoding.UTF8.GetString(back.Payload) == msg,
+          back is null ? "(null)" : $"{back.Payload.Length} bytes");
+
     await conn.CloseAsync();
 }
 

@@ -1826,9 +1826,9 @@ flag), so it's shared by the WebSocket server and the role-parameterized client:
   server (`tests/autobahn-server`) parses `Sec-WebSocket-Extensions`; if the
   client offers `permessage-deflate` it responds
   `permessage-deflate; server_no_context_takeover; client_no_context_takeover`
-  and flips the flag on. (The production HTTP/2 RFC 8441 CONNECT path in the demo
-  is left non-deflate for now; the framing is ready if that handshake ever wires
-  the header through.)
+  and flips the flag on. (The production HTTP/2 RFC 8441 CONNECT path was wired
+  through later — see the "permessage-deflate over the production HTTP/2 path"
+  entry below.)
 
 Verified: **Autobahn 517/517** (the full suite incl. 12/13, run via
 `tests/autobahn.sh` under WSL/Debian against `crossbario/autobahn-testsuite`) —
@@ -1888,6 +1888,56 @@ demo host is untouched). Deliberately scoped to unary + server-streaming; client
 streaming and bidi would use the same seam (our buffered client would need the
 client-side streaming request path for many-message uploads) but add nothing to
 the "does gRPC work over this stack" proof.
+
+**permessage-deflate over the production HTTP/2 path (RFC 7692 + RFC 8441)**
+(done 2026-07-18): the WebSocket permessage-deflate *framing* had shipped
+earlier (Autobahn 517/517), but only the test-only Autobahn echo server (over
+an HTTP/1.1 Upgrade) actually *negotiated* it — the production HTTP/2 (RFC 8441
+extended CONNECT) path left the `sec-websocket-extensions` header unused. This
+wires the negotiation through both ends of that path, with the framing layer
+itself untouched (it already had the `PerMessageDeflate` flag; this just decides
+when to set it):
+
+- **A shared, transport-agnostic negotiation helper in `Core`.** New
+  `WebSocketDeflate` (in `WebSocket.cs`) holds the RFC 7692 offer/response
+  strings (always no-context-takeover both ways — the mode a fixed-window
+  `DeflateStream` can honor) and two one-liners: `ShouldAccept(clientOffer, out
+  responseValue)` (server side) and `WasAccepted(serverResponse)` (client side).
+  Both operate on the raw header *value*, so the same helper serves the HTTP/2
+  CONNECT path, the HTTP/1.1 Upgrade path, or any future transport. The
+  previously-inline negotiation in `tests/autobahn-server` was refactored onto
+  it (byte-identical response string, so Autobahn behavior is unchanged).
+- **Client.** `HTTP2ClientConnection.OpenWebSocketAsync` gained an opt-in
+  `PerMessageDeflate` flag: when set it adds `sec-websocket-extensions:
+  <offer>` to the extended-CONNECT request and — crucially — only actually runs
+  the extension if the server *echoes acceptance back*, so a server that ignores
+  the offer transparently yields an uncompressed connection. To read that
+  response, `HTTP2ClientTunnel` now surfaces the accepting 2xx CONNECT's
+  `ResponseHeaders` (the accept headers were already captured on the exchange;
+  this just exposes them — also useful for any negotiated sub-protocol).
+- **Server / demo.** The demo's `HandleConnect` runs `WebSocketDeflate.ShouldAccept`
+  on the request's `sec-websocket-extensions`, and — the one piece of plumbing
+  the existing `HTTP2ConnectResult` already supported — returns the acceptance
+  in `ExtraHeaders` while threading the negotiated flag into the WebSocket echo
+  handler. No change to `HTTP2Connection.cs`: negotiation is a handler-layer
+  decision, exactly the layering the CONNECT seam intends.
+
+Verified: `h2wsclient` gained five checks (10 → **15/15**) driving our client's
+`OpenWebSocketAsync(PerMessageDeflate: true)` against our own server over the
+real HTTP/2 CONNECT path — the server is *proven* to echo the acceptance on the
+wire (`sec-websocket-extensions: permessage-deflate; server_no_context_takeover;
+client_no_context_takeover`), then a highly-compressible 2 KB text message, a
+4 KB repetitive binary message, and the close handshake all round-trip through
+RSV1-compressed frames in both directions (a plain round-trip alone wouldn't
+prove compression, since a failed negotiation falls back transparently — hence
+the explicit on-the-wire acceptance assertion). Both the manual
+`OpenTunnelAsync` + `WebSocketConnection` path and the convenience
+`OpenWebSocketAsync` wrapper are covered. Full regression **69/69** (h2wsclient
+now 15/15; the default-off path leaves `h2connect` ws-* and `h2wsconformance`
+31/31 byte-identical) and h2spec still **146/146 over both transports** (no
+WebSocket path there; the `Core` change is purely additive and the demo's
+non-WebSocket handlers are untouched). The Autobahn 517/517 result stands
+unchanged (the echo server's negotiation is a byte-identical refactor).
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

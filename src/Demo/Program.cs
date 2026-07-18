@@ -400,10 +400,23 @@ public static class Program
 
         if (protocol == "websocket" && path == "/ws-echo")
         {
-            Console.WriteLine($"[Connect] stream={StreamId} extended CONNECT :protocol=websocket :path={path}");
+
+            // permessage-deflate (RFC 7692): if the client offered it on the
+            // CONNECT request, accept (in no-context-takeover mode) and echo the
+            // acceptance back in sec-websocket-extensions. Negotiation lives at
+            // this handshake layer, not in the framing — the framing just gets a
+            // flag. This is the production HTTP/2 (RFC 8441) counterpart of the
+            // HTTP/1.1 Upgrade negotiation the Autobahn echo server does.
+            var offer   = RequestHeaders.FirstOrDefault(h => h.Name == "sec-websocket-extensions").Value;
+            var deflate = WebSocketDeflate.ShouldAccept(offer, out var responseExt);
+
+            Console.WriteLine($"[Connect] stream={StreamId} extended CONNECT :protocol=websocket :path={path}" +
+                              (deflate ? " (permessage-deflate)" : ""));
+
             return Task.FromResult(new HTTP2ConnectResult {
-                StatusCode = 200,
-                RunAsync   = RunWebSocketEchoAsync
+                StatusCode   = 200,
+                ExtraHeaders = deflate ? [("sec-websocket-extensions", responseExt!)] : null,
+                RunAsync     = (tunnel, ct) => RunWebSocketEchoAsync(tunnel, deflate, ct)
             });
         }
 
@@ -446,12 +459,14 @@ public static class Program
     /// <summary>
     /// Demo tunnel body for the extended-CONNECT WebSocket endpoint: echoes
     /// text/binary messages back verbatim. Ping/pong and the close handshake
-    /// are handled transparently by WebSocketConnection itself.
+    /// are handled transparently by WebSocketConnection itself. When
+    /// <paramref name="PerMessageDeflate"/> was negotiated at the handshake, the
+    /// framing transparently (de)compresses each message (RFC 7692).
     /// </summary>
-    private static async Task RunWebSocketEchoAsync(HTTP2Tunnel Tunnel, CancellationToken CancellationToken)
+    private static async Task RunWebSocketEchoAsync(HTTP2Tunnel Tunnel, bool PerMessageDeflate, CancellationToken CancellationToken)
     {
 
-        var webSocket = new WebSocketConnection(Tunnel);
+        var webSocket = new WebSocketConnection(Tunnel, WebSocketRole.Server, PerMessageDeflate);
 
         while (true)
         {

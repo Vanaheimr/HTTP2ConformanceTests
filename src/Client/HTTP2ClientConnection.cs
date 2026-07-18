@@ -53,14 +53,23 @@ public sealed class HTTP2ClientTunnel : IHTTP2Tunnel
     private readonly HTTP2ClientConnection connection;
     private readonly HTTP2Stream           stream;
 
-    internal HTTP2ClientTunnel(HTTP2ClientConnection Connection, HTTP2Stream Stream)
+    internal HTTP2ClientTunnel(HTTP2ClientConnection Connection, HTTP2Stream Stream, IReadOnlyList<(string Name, string Value)> ResponseHeaders)
     {
-        connection = Connection;
-        stream     = Stream;
+        connection           = Connection;
+        stream               = Stream;
+        this.ResponseHeaders = ResponseHeaders;
     }
 
     /// <summary>The tunnel's stream ID.</summary>
     public UInt32 StreamId => stream.StreamId;
+
+    /// <summary>
+    /// The headers the server sent on the accepting (2xx) CONNECT response —
+    /// e.g. <c>sec-websocket-extensions</c> echoing back a negotiated
+    /// permessage-deflate (RFC 7692), or any sub-protocol/extension the server
+    /// selected.
+    /// </summary>
+    public IReadOnlyList<(string Name, string Value)> ResponseHeaders { get; }
 
     /// <summary>Read the next chunk the peer sent, or null once the tunnel ends (END_STREAM / reset).</summary>
     public async Task<byte[]?> ReadAsync(CancellationToken CancellationToken)
@@ -581,7 +590,7 @@ public sealed class HTTP2ClientConnection
             throw new HTTP2StreamException(HTTP2ErrorCode.REFUSED_STREAM, exchange.Stream.StreamId,
                 $"CONNECT to '{Authority}' rejected with status {status}");
 
-        return new HTTP2ClientTunnel(this, exchange.Stream);
+        return new HTTP2ClientTunnel(this, exchange.Stream, exchange.Headers ?? []);
 
     }
 
@@ -590,16 +599,40 @@ public sealed class HTTP2ClientConnection
     /// a convenience over <see cref="OpenTunnelAsync"/> with
     /// <c>:protocol = websocket</c>, returning a client-role
     /// <see cref="WebSocketConnection"/> (it masks every frame it sends).
+    ///
+    /// When <paramref name="PerMessageDeflate"/> is set, the client offers
+    /// permessage-deflate (RFC 7692) via a <c>sec-websocket-extensions</c> header
+    /// on the CONNECT request and only actually compresses if the server echoes
+    /// its acceptance back — so a server that ignores the offer transparently
+    /// yields an uncompressed connection.
     /// </summary>
     public async Task<WebSocketConnection> OpenWebSocketAsync(
         string                             Authority,
         string                             Scheme,
         string                             Path,
-        List<(string Name, string Value)>? ExtraHeaders = null,
+        List<(string Name, string Value)>? ExtraHeaders      = null,
+        bool                               PerMessageDeflate = false,
         CancellationToken                  CancellationToken = default)
     {
+
+        // Offer permessage-deflate as an ordinary request header on the extended
+        // CONNECT (over HTTP/2 the WebSocket handshake headers are just fields).
+        if (PerMessageDeflate)
+        {
+            ExtraHeaders = ExtraHeaders is null ? [] : [.. ExtraHeaders];
+            ExtraHeaders.Add(("sec-websocket-extensions", WebSocketDeflate.Offer));
+        }
+
         var tunnel = await OpenTunnelAsync(Authority, "websocket", Scheme, Path, ExtraHeaders, CancellationToken);
-        return new WebSocketConnection(tunnel, WebSocketRole.Client);
+
+        // Only run the extension if the server accepted it (echoed back in its
+        // sec-websocket-extensions response header, RFC 7692 §5.1).
+        var accepted = PerMessageDeflate &&
+                       WebSocketDeflate.WasAccepted(
+                           tunnel.ResponseHeaders.FirstOrDefault(h => h.Name == "sec-websocket-extensions").Value);
+
+        return new WebSocketConnection(tunnel, WebSocketRole.Client, PerMessageDeflate: accepted);
+
     }
 
     /// <summary>Send tunnel bytes as flow-controlled DATA frames (never END_STREAM).</summary>

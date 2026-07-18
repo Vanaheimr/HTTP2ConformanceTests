@@ -240,6 +240,10 @@ var reply = await tunnel.ReadAsync(CancellationToken.None);
 var ws = await conn.OpenWebSocketAsync("localhost", "https", "/ws-echo");
 await ws.SendTextAsync("hello", CancellationToken.None);
 var msg = await ws.ReceiveAsync(CancellationToken.None);
+
+// opt into permessage-deflate (RFC 7692) — offered on the CONNECT handshake,
+// only actually used if the server echoes acceptance back
+var wsz = await conn.OpenWebSocketAsync("localhost", "https", "/ws-echo", PerMessageDeflate: true);
 ```
 Requests can carry an RFC 9218 priority hint, and an in-flight request can be
 reprioritized (both honored by the priority-aware server):

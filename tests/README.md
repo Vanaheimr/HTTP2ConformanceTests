@@ -40,7 +40,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2clientpriority` | self-contained | client-side RFC 9218 emission vs. our server + Kestrel (15 checks) |
 | `h2clientrobust`   | self-contained | client robustness vs. a raw mock server: REFUSED_STREAM retry, MCS gating, GOAWAY retry-safety, keepalive (8 checks) |
 | `h2streaming`      | self-contained | streaming bodies + response trailers (gRPC-style) vs. our client *and* .NET HttpClient (8 checks) |
-| `h2wsclient`       | self-contained | client-side CONNECT tunnel + WebSocket (text/binary/close) vs. our server (10 checks) |
+| `h2wsclient`       | self-contained | client-side CONNECT tunnel + WebSocket (text/binary/close) + permessage-deflate (RFC 7692) negotiation over the RFC 8441 CONNECT path vs. our server (15 checks) |
 | `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
 | `h2rfcpolish`      | self-contained | MUST-level details h2spec misses: padded-DATA flow accounting (§6.1), closed-stream DATA connection-window credit (§6.9), cookie crumb reassembly (§8.2.3) (8 checks) |
 | `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |

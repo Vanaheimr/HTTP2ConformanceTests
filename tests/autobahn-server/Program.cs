@@ -67,14 +67,14 @@ async Task HandleAsync(TcpClient Client)
                              SHA1.HashData(Encoding.ASCII.GetBytes(key + wsGuid)));
 
             // permessage-deflate (RFC 7692): if the client offers it, accept —
-            // forcing no-context-takeover both ways so each message is compressed
-            // independently (which is all a fixed-window codec can do), and
-            // echoing that back in Sec-WebSocket-Extensions.
-            var offered  = HeaderValue(request!, "Sec-WebSocket-Extensions") ?? "";
-            var deflate  = offered.Split(',').Any(e => e.Trim().StartsWith("permessage-deflate", StringComparison.OrdinalIgnoreCase));
-            var extLine  = deflate
-                               ? "Sec-WebSocket-Extensions: permessage-deflate; server_no_context_takeover; client_no_context_takeover\r\n"
-                               : "";
+            // via the shared Core negotiation helper (forcing no-context-takeover
+            // both ways, which is all a fixed-window codec can do) and echoing
+            // that back in Sec-WebSocket-Extensions. Same negotiation the
+            // production HTTP/2 (RFC 8441) path uses, just carried over the
+            // HTTP/1.1 Upgrade response instead.
+            var offered  = HeaderValue(request!, "Sec-WebSocket-Extensions");
+            var deflate  = WebSocketDeflate.ShouldAccept(offered, out var responseExt);
+            var extLine  = deflate ? $"Sec-WebSocket-Extensions: {responseExt}\r\n" : "";
 
             var response = "HTTP/1.1 101 Switching Protocols\r\n" +
                            "Upgrade: websocket\r\n"              +

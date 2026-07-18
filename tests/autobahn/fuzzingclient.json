@@ -1,0 +1,13 @@
+{
+    "_comment": "Autobahn TestSuite fuzzingclient config: drive ALL cases against our WebSocket echo server (tests/autobahn-server) and write a report. The URL reaches the host from inside the Docker container; on Docker Desktop (Windows/macOS) host.docker.internal resolves to the host, on Linux run the container with --network host and use 127.0.0.1 (the autobahn.sh wrapper handles this). See tests/TestingAgainst_Autobahn.md.",
+    "outdir": "/reports",
+    "servers": [
+        {
+            "agent": "HTTP2FromScratch",
+            "url": "ws://host.docker.internal:9010"
+        }
+    ],
+    "cases": ["*"],
+    "exclude-cases": [],
+    "exclude-agent-cases": {}
+}

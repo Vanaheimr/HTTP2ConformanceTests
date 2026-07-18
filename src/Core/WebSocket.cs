@@ -84,6 +84,14 @@ public sealed class WebSocketConnection
 
     private bool   closeSent;
 
+    /// <summary>
+    /// A strict UTF-8 codec that throws on any invalid byte sequence, rather
+    /// than silently substituting U+FFFD. Used to enforce RFC 6455 Section 8.1
+    /// (text message payloads MUST be valid UTF-8) and Section 7.1.6 (a close
+    /// frame's reason MUST be valid UTF-8).
+    /// </summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
 
     public WebSocketConnection(IHTTP2Tunnel Tunnel, WebSocketRole Role = WebSocketRole.Server)
     {
@@ -110,6 +118,7 @@ public sealed class WebSocketConnection
 
         WebSocketOpcode? fragmentOpcode = null;
         List<byte>?      fragmentBuffer = null;
+        Decoder?         textDecoder    = null;   // strict UTF-8 state across a fragmented text message
 
         while (true)
         {
@@ -153,10 +162,32 @@ public sealed class WebSocketConnection
                     }
 
                     if (frame.Fin)
+                    {
+                        // A complete, single-frame message. A text payload MUST
+                        // be valid UTF-8 (RFC 6455 Section 8.1) — else 1007.
+                        if (frame.Opcode == WebSocketOpcode.Text && !IsValidUtf8(frame.Payload))
+                        {
+                            await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
+                            return null;
+                        }
                         return new WebSocketMessage { Opcode = frame.Opcode, Payload = frame.Payload };
+                    }
 
+                    // Start of a fragmented message. Text is validated
+                    // incrementally, per fragment, so an invalid byte fails the
+                    // connection as soon as it arrives (not only at the end).
                     fragmentOpcode = frame.Opcode;
                     fragmentBuffer = [.. frame.Payload];
+
+                    if (frame.Opcode == WebSocketOpcode.Text)
+                    {
+                        textDecoder = StrictUtf8.GetDecoder();
+                        if (!FeedUtf8(textDecoder, frame.Payload, Flush: false))
+                        {
+                            await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
+                            return null;
+                        }
+                    }
                     continue;
 
                 case WebSocketOpcode.Continuation:
@@ -168,6 +199,15 @@ public sealed class WebSocketConnection
                     }
 
                     fragmentBuffer!.AddRange(frame.Payload);
+
+                    // Validate this fragment's bytes against the running UTF-8
+                    // state; on the final fragment, flush so a trailing partial
+                    // multi-byte sequence is caught too.
+                    if (textDecoder is not null && !FeedUtf8(textDecoder, frame.Payload, Flush: frame.Fin))
+                    {
+                        await CloseAsync(1007, "Invalid UTF-8 in text message", CancellationToken);
+                        return null;
+                    }
 
                     if (!frame.Fin)
                         continue;
@@ -185,14 +225,84 @@ public sealed class WebSocketConnection
 
     }
 
+    /// <summary>Whether the whole byte sequence decodes as valid UTF-8 (RFC 6455 Section 8.1).</summary>
+    private static bool IsValidUtf8(byte[] Bytes)
+    {
+        try { StrictUtf8.GetCharCount(Bytes); return true; }
+        catch (DecoderFallbackException) { return false; }
+    }
+
+    /// <summary>
+    /// Feed one fragment into a stateful strict-UTF-8 decoder; returns false on
+    /// an invalid sequence. <see cref="Decoder.Convert"/> (unlike GetCharCount)
+    /// reliably retains the trailing bytes of an incomplete multi-byte character
+    /// between calls, so a code point legitimately split across two frames
+    /// validates cleanly; <paramref name="Flush"/> (set on the final fragment)
+    /// then rejects a sequence left unfinished at the end. The decoded chars are
+    /// discarded — we only care whether the bytes were well-formed. (UTF-8 never
+    /// yields more UTF-16 chars than input bytes, so the buffer can't overflow.)
+    /// </summary>
+    private static bool FeedUtf8(Decoder Decoder, byte[] Bytes, bool Flush)
+    {
+        try
+        {
+            var chars = new char[Bytes.Length + 1];
+            Decoder.Convert(Bytes, 0, Bytes.Length, chars, 0, chars.Length, Flush,
+                            out _, out _, out _);
+            return true;
+        }
+        catch (DecoderFallbackException) { return false; }
+    }
+
     private async Task HandleCloseAsync(byte[] Payload, CancellationToken CancellationToken)
     {
-        // RFC 6455, Section 5.5.1: a peer that receives a close frame MUST
-        // send one back before closing the connection; echoing the status
-        // code/reason it sent us is a valid reply.
+
+        // RFC 6455, Section 5.5: a close frame carries either no payload, or a
+        // 2-byte status code optionally followed by a UTF-8 reason. A single
+        // leftover byte (a truncated status code) is a protocol error → 1002.
+        if (Payload.Length == 1)
+        {
+            await CloseAsync(1002, "Malformed close frame (1-byte payload)", CancellationToken);
+            return;
+        }
+
+        if (Payload.Length >= 2)
+        {
+            // Section 7.4.1: the status code must be one the RFC permits on the
+            // wire; a reserved/undefined code (e.g. 1005, 1006, 1015, <1000,
+            // 1012–2999, >4999) is a protocol error → 1002.
+            var code = BinaryPrimitives.ReadUInt16BigEndian(Payload);
+            if (!IsValidCloseCode(code))
+            {
+                await CloseAsync(1002, "Invalid close status code", CancellationToken);
+                return;
+            }
+
+            // Section 7.1.6: the reason (everything after the code) must be
+            // valid UTF-8 → else 1007.
+            if (Payload.Length > 2 && !IsValidUtf8(Payload[2..]))
+            {
+                await CloseAsync(1007, "Invalid UTF-8 in close reason", CancellationToken);
+                return;
+            }
+        }
+
+        // A well-formed (or empty) close: Section 5.5.1 — echo it back before
+        // closing (the code/reason the peer sent us is a valid reply).
         if (!closeSent)
             await SendFrameAsync(WebSocketOpcode.Close, Payload, CancellationToken);
+
     }
+
+    /// <summary>
+    /// Whether a close status code is valid to appear on the wire (RFC 6455
+    /// Section 7.4.1): 1000–1003, 1007–1011, or the 3000–4999 registered/private
+    /// range. Everything else — including 1004, the "no code"/"abnormal"/"TLS"
+    /// sentinels 1005/1006/1015, the reserved 1012–2999 band, and anything below
+    /// 1000 or above 4999 — must never be sent and is a protocol error if received.
+    /// </summary>
+    private static bool IsValidCloseCode(ushort Code)
+        => Code is (>= 1000 and <= 1003) or (>= 1007 and <= 1011) or (>= 3000 and <= 4999);
 
     #endregion
 

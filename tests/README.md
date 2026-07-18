@@ -19,7 +19,7 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **66/66 harness runs pass** (each self-reports its own check
+Current status: **67/67 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 51/51, h2clienttest 14/14, h2authtest 18/18,
 h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
@@ -44,16 +44,18 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
 | `h2rfcpolish`      | self-contained | MUST-level details h2spec misses: padded-DATA flow accounting (§6.1), closed-stream DATA connection-window credit (§6.9), cookie crumb reassembly (§8.2.3) (8 checks) |
 | `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |
+| `h2wsconformance`  | self-contained | RFC 6455 WebSocket framing conformance — the critical Autobahn cases (framing, fragmentation, UTF-8 §8.1, close §7.4) driven raw against our `WebSocketConnection` (26 checks) |
 | `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range, negotiation (51 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
 | `h2priority`       | demo-driven    | server-side RFC 9218 scheduling: urgency ordering, PRIORITY_UPDATE |
+| `autobahn-server`  | server         | RFC 6455 WebSocket echo server (HTTP/1.1 Upgrade) for the Autobahn TestSuite — not a pass/fail harness, see below |
 | `h2raw`, `h2test`  | diagnostic     | raw frame loggers / ad-hoc request drivers (not in the pass/fail gate) |
 
 "demo-driven" harnesses talk to the Demo host on `https://localhost:8443`.
 "self-contained" harnesses spin up their own server(s) on private ports
-(9443–9466).
+(9443–9467).
 
 ## h2spec conformance
 
@@ -74,3 +76,23 @@ interpreting output, and the two gotchas (`127.0.0.1` not `localhost`; drain the
 demo's console output) — see **[TestingAgainst_h2spec.md](TestingAgainst_h2spec.md)**.
 The conformance history (the initial 136/146 and the six categories that closed
 the 10 failures) is in [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry.
+
+## Autobahn WebSocket conformance
+
+[Autobahn|TestSuite](https://github.com/crossbario/autobahn-testsuite) is the
+canonical RFC 6455 WebSocket conformance suite (~500 cases). It drives the
+`autobahn-server` echo host, which runs the same `WebSocketConnection` framing
+used in production over a plain-TCP tunnel behind an HTTP/1.1 Upgrade handshake
+(Autobahn speaks WebSocket over HTTP/1.1, not RFC 8441 over HTTP/2 — but the
+framing under test is transport-agnostic). Run from the official Docker image:
+
+```bash
+tests/autobahn.sh          # Linux / macOS
+pwsh tests/autobahn.ps1    # Windows (Docker Desktop)
+```
+
+The critical cases (framing, fragmentation, UTF-8 §8.1, close §7.4) are also in
+the committed `h2wsconformance` harness, which runs in the gate above with no
+Docker needed. For the walkthrough (installing Docker, reading the report, the
+HTTP/1.1-handshake rationale, and the UTF-8/close conformance history) see
+**[TestingAgainst_Autobahn.md](TestingAgainst_Autobahn.md)**.

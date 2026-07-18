@@ -1663,6 +1663,72 @@ consumption-driven replenish doesn't stall or miscount a well-behaved consumer)
 and h2spec still **146/146 over both transports** (its flow-control §6.9 tests
 read the body promptly, so the window is replenished as fast as ever).
 
+**WebSocket RFC 6455 conformance — UTF-8 + close validation + Autobahn track**
+(done 2026-07-18) — the WebSocket counterpart of the h2spec track: the framing
+layer (`Core/WebSocket.cs`) is now checked against the canonical
+[Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite), and the
+two conformance gaps that would have failed it (flagged in the earlier
+fresh-eyes review as "F7") are closed. Both fixes are in `Core`, so they harden
+the WebSocket **client** (role-parameterized, same framing) as well as the
+server:
+
+- **UTF-8 validation (RFC 6455 §8.1).** Text message payloads must be valid
+  UTF-8; the old code never checked. Now validated with a strict UTF-8 codec
+  (`throwOnInvalidBytes`) — **incrementally across fragments**: a per-message
+  `Decoder` is fed each fragment as it arrives (`Decoder.Convert`, which unlike
+  `GetCharCount` reliably retains the trailing bytes of a code point split
+  across a frame boundary), and the final fragment is flushed so a truncated
+  trailing sequence is caught too. Any invalid sequence fails the connection
+  with Close `1007`. Incremental validation means an invalid byte fails as soon
+  as it arrives, not only at message end (the strict reading of Autobahn §6.4).
+- **Close-frame validation (RFC 6455 §5.5/§7.4.1).** The old `HandleCloseAsync`
+  echoed any close payload back verbatim. Now: a 1-byte payload is a protocol
+  error (Close `1002`); a status code outside the wire-legal set (1000–1003,
+  1007–1011, 3000–4999 — so 1004/1005/1006/1015, the <1000 and 1012–2999 bands,
+  and >4999 are all rejected) is `1002`; an invalid-UTF-8 reason is `1007`; only
+  a well-formed (or empty) close is echoed back per §5.5.1.
+
+**The Autobahn wrinkle, and how it's run.** Autobahn's client speaks WebSocket
+over the classic **HTTP/1.1 Upgrade** handshake — it can't drive our production
+path (RFC 8441 extended CONNECT over HTTP/2). But the framing under test is
+transport-agnostic by design (it sits on the byte-in/byte-out `IHTTP2Tunnel`
+seam), so a new test-only echo server (`tests/autobahn-server`) runs the **exact
+same `WebSocketConnection`** over a plain-TCP tunnel behind a minimal HTTP/1.1
+handshake — the same reuse the `IHTTP2Tunnel` note anticipated for a future H3
+sibling. The full ~500-case suite is run from the official Docker image via
+`tests/autobahn.{ps1,sh}` (build the echo server → start it with drained output
+→ `docker run` the fuzzingclient → parse the JSON report → stop the server),
+documented cross-platform in `tests/TestingAgainst_Autobahn.md` (mirroring the
+h2spec doc). Docker is the only prerequisite (the native `wstest` is legacy
+Python 2).
+
+**Committed gate coverage.** Because Autobahn needs Docker, the critical cases
+are also encoded in a new self-contained `h2wsconformance` harness (26/26, in
+`tests/run-tests.ps1`) — this is to Autobahn what `h2rfcpolish` is to h2spec. It
+spins up the same echo server in-process and plays a **raw WebSocket client**,
+including deliberately malformed frames a well-behaved client would never send:
+text/binary echo, ping→pong, fragmented-text reassembly (§1/2/5); a set reserved
+bit and a reserved opcode each → Close `1002`, orphan continuation → `1002`
+(§3/4); valid multi-byte/astral UTF-8 echoed, a code point **split across two
+fragments** accepted, and invalid UTF-8 (single frame, in a later fragment, or a
+truncated tail) → `1007` (§6); valid close (`1000` ±reason, app-range
+`3000`/`4999`) echoed, 1-byte payload and reserved/invalid codes
+(`999`/`1004`/`1005`/`1006`/`1016`/`2000`/`65535`) → `1002`, invalid-UTF-8 reason
+→ `1007` (§7). A subtle bug caught during its bring-up: the first UTF-8 fix used
+`Decoder.GetCharCount`, which does **not** reliably retain incomplete-sequence
+state between calls, so a code point split across two frames was wrongly
+rejected — switching to `Decoder.Convert` fixed it (the split-fragment case now
+passes).
+
+Verified: `h2wsconformance` 26/26; the existing WebSocket scenarios unaffected
+(`h2connect` ws-echo/fragmented/ping/close, `h2wsclient` 10/10 — the valid-UTF-8
+and valid-close paths still behave identically); full regression **67/67**
+(h2wsconformance added) and h2spec still **146/146 over both transports** (it
+exercises no WebSocket path, and the `WebSocket.cs` change is isolated). The full
+Autobahn Docker run wasn't executed in this environment (no Docker/sudo available
+in the sandbox), but the wrappers + config + echo server are complete and the
+framing behavior they'd exercise is pinned by `h2wsconformance`.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

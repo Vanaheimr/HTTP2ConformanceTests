@@ -59,7 +59,7 @@ suite (builds, starts the demo host, drives every harness) with:
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-Current status: **66/66 harness runs pass**, and the stack scores **146/146 on
+Current status: **67/67 harness runs pass**, and the stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —
@@ -70,8 +70,15 @@ pwsh tests/h2spec.ps1   # builds, starts the demo, runs h2spec on both transport
 
 — see [`tests/TestingAgainst_h2spec.md`](tests/TestingAgainst_h2spec.md) for the
 full h2spec walkthrough, [`tests/README.md`](tests/README.md) for the harness
-layout, and [`CLAUDE.md`](CLAUDE.md) for the conformance breakdown. Ad-hoc
-`curl` checks against the demo host:
+layout, and [`CLAUDE.md`](CLAUDE.md) for the conformance breakdown.
+
+The WebSocket framing (RFC 6455) is likewise checked against the canonical
+[Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) —
+`pwsh tests/autobahn.ps1` / `tests/autobahn.sh` (Docker) — with the critical
+cases also pinned in the committed `h2wsconformance` harness (no Docker needed);
+see [`tests/TestingAgainst_Autobahn.md`](tests/TestingAgainst_Autobahn.md).
+
+Ad-hoc `curl` checks against the demo host:
 
 ```bash
 curl --http2 -k https://localhost:8443/

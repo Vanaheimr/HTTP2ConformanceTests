@@ -93,6 +93,10 @@ curl --http2 -k -X OPTIONS https://localhost:8443/files/resource.txt  # -> 204 +
 curl --http2 -k -H 'Range: bytes=0-9' https://localhost:8443/files/resource.txt
 curl --http2 -k -H 'If-None-Match: "<etag from a prior response>"' https://localhost:8443/files/resource.txt
 
+# RFC 10008 — the HTTP QUERY method (a safe, body-carrying read). /search:
+curl --http2 -k https://localhost:8443/search                 # GET -> whole corpus
+curl --http2 -k -X QUERY --data 'ap' https://localhost:8443/search   # QUERY -> filtered (note Content-Location)
+
 # RFC 9110 content negotiation — /files/greeting has en/de text + en JSON variants:
 curl --http2 -k https://localhost:8443/files/greeting                        # server default (en text)
 curl --http2 -k -H 'Accept-Language: de' https://localhost:8443/files/greeting   # -> German

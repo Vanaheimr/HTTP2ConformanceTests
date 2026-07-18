@@ -55,6 +55,16 @@ public sealed class HTTPResource
     public string?                 ETag          { get; init; }
 
     public DateTimeOffset?         LastModified  { get; init; }
+
+    /// <summary>
+    /// An optional identifier for a resource that corresponds to this
+    /// representation (RFC 9110, Section 8.7; RFC 10008, Section 3, for QUERY:
+    /// "a successful response can include a Content-Location header field
+    /// containing an identifier for a resource corresponding to the results of
+    /// the operation" — a URI a client can later GET instead of resending the
+    /// query). Emitted as <c>Content-Location</c> on a 200/206. Null = omitted.
+    /// </summary>
+    public string?                 ContentLocation { get; init; }
 }
 
 
@@ -88,6 +98,26 @@ public delegate Task<IReadOnlyList<HTTPResource>> HTTPVariantHandler(
 
 
 /// <summary>
+/// Processes a QUERY request (RFC 10008): the request content (plus its
+/// declared <paramref name="ContentType"/>) is the query; the returned
+/// <see cref="HTTPResource"/> is the *result* of running it, or null for 404.
+/// QUERY is a safe, idempotent, cacheable method that carries its query in the
+/// request body rather than the URL — so unlike <see cref="HTTPResourceHandler"/>
+/// this one also receives the body. <see cref="HTTPSemantics.Wrap"/> then runs
+/// the result through the same conditional-request / negotiation / representation
+/// pipeline as a GET, so a QUERY result gets ETags, 304 revalidation, Accept
+/// negotiation and (optionally) a <c>Content-Location</c> for free.
+/// </summary>
+public delegate Task<HTTPResource?> HTTPQueryHandler(
+    string                             Path,
+    List<(string Name, string Value)>  RequestHeaders,
+    byte[]?                            QueryContent,
+    string?                            ContentType,
+    CancellationToken                  CancellationToken
+);
+
+
+/// <summary>
 /// RFC 9110 (HTTP Semantics) "core mechanics" — the parts with directly
 /// observable, testable wire behavior — layered on top of an
 /// <see cref="HTTPVariantHandler"/> (or, for the single-representation case,
@@ -96,7 +126,10 @@ public delegate Task<IReadOnlyList<HTTPResource>> HTTPVariantHandler(
 /// Accept-Encoding, Accept-Language, Vary), conditional requests (Section 13:
 /// If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since), and
 /// single-range Range requests (Section 14: Range, If-Range, Content-Range,
-/// Accept-Ranges).
+/// Accept-Ranges). Optionally also the QUERY method (RFC 10008) — a safe,
+/// idempotent, cacheable method that carries its query in the request body —
+/// when an <see cref="HTTPQueryHandler"/> is supplied; its result runs through
+/// the very same conditional/negotiation/representation pipeline as a GET.
 ///
 /// Deliberately out of scope (see CLAUDE.md's Track D roadmap note): a generic
 /// authentication challenge framework (WWW-Authenticate / Authorization) and
@@ -133,45 +166,99 @@ public static class HTTPSemantics
     /// opts into, and it never fires unless the client positively lists a
     /// compression coding.
     /// </param>
-    public static HTTP2RequestHandler Wrap(HTTPVariantHandler VariantHandler, bool CompressResponses = false)
+    /// <param name="QueryHandler">
+    /// Optional QUERY-method handler (RFC 10008). When supplied, a QUERY request
+    /// runs its content through this handler and returns the result through the
+    /// same pipeline as a GET (conditional requests, negotiation, Content-Location).
+    /// When null, QUERY is answered <c>405</c> like any other unsupported method.
+    /// Its presence also adds <c>QUERY</c> to the <c>Allow</c> header of OPTIONS
+    /// and 405 responses.
+    /// </param>
+    public static HTTP2RequestHandler Wrap(HTTPVariantHandler VariantHandler, bool CompressResponses = false, HTTPQueryHandler? QueryHandler = null)
         => async (StreamId, RequestHeaders, RequestBody, CancellationToken) =>
         {
 
             var method = RequestHeaders.FirstOrDefault(h => h.Name == ":method").Value ?? "GET";
             var path   = RequestHeaders.FirstOrDefault(h => h.Name == ":path").Value   ?? "/";
 
-            if (method == "OPTIONS")
-                return OptionsResponse();
+            // Allow-set for OPTIONS/405 — QUERY only when a handler backs it.
+            var allow = QueryHandler is null ? "GET, HEAD, OPTIONS" : "GET, HEAD, OPTIONS, QUERY";
 
-            // This wrapper only implements GET/HEAD/OPTIONS (Section 9.3.1,
-            // 9.3.2, 9.3.7) — anything else (POST/PUT/DELETE/PATCH/...) is a
-            // resource-creation/mutation concern this "core mechanics" slice
-            // deliberately doesn't take a position on.
+            if (method == "OPTIONS")
+                return OptionsResponse(allow);
+
+            // QUERY (RFC 10008): a safe, idempotent, cacheable method whose query
+            // lives in the request body. Only handled if an app registered a
+            // QueryHandler; otherwise it falls through to 405 like any other method.
+            if (method == "QUERY" && QueryHandler is not null)
+            {
+
+                var contentType = RequestHeaders.FirstOrDefault(h => h.Name == "content-type").Value;
+
+                // RFC 10008, Section 4: "Servers MUST fail the request if the
+                // Content-Type request field is missing" — we enforce that for a
+                // non-empty query (a bodyless QUERY has nothing to type).
+                if (RequestBody is { Length: > 0 } && contentType is null)
+                    return BadRequest("QUERY request content requires a Content-Type (RFC 10008, Section 4)");
+
+                var queryResult = await QueryHandler(path, RequestHeaders, RequestBody, contentType, CancellationToken);
+
+                // The result runs through the identical representation pipeline as
+                // a GET — QUERY is "like GET" once the result exists.
+                return RunRepresentationPipeline(
+                           RequestHeaders, method,
+                           queryResult is null ? [] : [queryResult],
+                           CompressResponses);
+
+            }
+
+            // This wrapper implements GET/HEAD/OPTIONS (Section 9.3.1, 9.3.2,
+            // 9.3.7) and, optionally, QUERY (above) — anything else
+            // (POST/PUT/DELETE/PATCH/...) is a resource-creation/mutation concern
+            // this "core mechanics" slice deliberately doesn't take a position on.
             if (method is not ("GET" or "HEAD"))
-                return MethodNotAllowed();
+                return MethodNotAllowed(allow);
 
             var variants = await VariantHandler(path, RequestHeaders, CancellationToken);
 
-            if (variants.Count == 0)
-                return NotFound();
-
-            var negotiation = Negotiate(RequestHeaders, variants);
-
-            // No acceptable variant survived (everything was explicitly
-            // forbidden via q=0) — 406, decorated with Vary so a cache still
-            // keys correctly on the negotiating request headers.
-            if (negotiation.Chosen is null)
-                return Decorate(NotAcceptable(), null, negotiation.Vary);
-
-            var resource = negotiation.Chosen;
-            var etag     = resource.ETag ?? ComputeETag(resource.Body);
-
-            var result    = BuildRepresentationResult(RequestHeaders, method, resource, etag);
-            var decorated = Decorate(result, resource, negotiation.Vary);
-
-            return CompressResponses ? ApplyContentCoding(RequestHeaders, decorated) : decorated;
+            return RunRepresentationPipeline(RequestHeaders, method, variants, CompressResponses);
 
         };
+
+    /// <summary>
+    /// The shared tail of every representation-producing method (GET/HEAD and
+    /// QUERY): pick a variant by content negotiation, then run the conditional /
+    /// Range / representation logic and decorate with Vary / Content-* — so GET
+    /// and QUERY are byte-identical downstream of "where did the variants come
+    /// from". Compresses the final full-200 body when opted in.
+    /// </summary>
+    private static (List<(string Name, string Value)> Headers, byte[]? Body) RunRepresentationPipeline(
+        List<(string Name, string Value)>  RequestHeaders,
+        string                              Method,
+        IReadOnlyList<HTTPResource>         Variants,
+        bool                                CompressResponses)
+    {
+
+        if (Variants.Count == 0)
+            return NotFound();
+
+        var negotiation = Negotiate(RequestHeaders, Variants);
+
+        // No acceptable variant survived (everything was explicitly forbidden
+        // via q=0) — 406, decorated with Vary so a cache still keys correctly on
+        // the negotiating request headers.
+        if (negotiation.Chosen is null)
+            return Decorate(NotAcceptable(), null, negotiation.Vary);
+
+        var resource = negotiation.Chosen;
+        var etag     = resource.ETag ?? ComputeETag(resource.Body);
+
+        var result    = BuildRepresentationResult(RequestHeaders, Method, resource, etag);
+        var decorated = Decorate(result, resource, negotiation.Vary);
+
+        return CompressResponses ? ApplyContentCoding(RequestHeaders, decorated) : decorated;
+
+    }
 
     /// <summary>
     /// Single-representation convenience overload — an app that has exactly
@@ -180,12 +267,12 @@ public static class HTTPSemantics
     /// (404), a resource becomes a one-element list (which the negotiator
     /// resolves trivially, emitting no Vary since there's nothing to vary on).
     /// </summary>
-    public static HTTP2RequestHandler Wrap(HTTPResourceHandler ResourceHandler, bool CompressResponses = false)
+    public static HTTP2RequestHandler Wrap(HTTPResourceHandler ResourceHandler, bool CompressResponses = false, HTTPQueryHandler? QueryHandler = null)
         => Wrap(async (path, headers, ct) =>
         {
             var resource = await ResourceHandler(path, headers, ct);
             return resource is null ? [] : (IReadOnlyList<HTTPResource>) [resource];
-        }, CompressResponses);
+        }, CompressResponses, QueryHandler);
 
     /// <summary>
     /// The representation-processing pipeline shared by every request that has
@@ -775,13 +862,14 @@ public static class HTTPSemantics
         if (ifNoneMatch is not null)
         {
             // Section 13.1.2: weak comparison — appropriate for cache
-            // freshness checks. A match (precondition false) is 304 for
-            // GET/HEAD, 412 for anything else this wrapper would otherwise
-            // have let through.
+            // freshness checks. A match (precondition false) is 304 for the
+            // safe/cacheable methods (GET/HEAD, and QUERY per RFC 10008, whose
+            // conditional semantics mirror GET on the "equivalent resource"),
+            // 412 for anything else this wrapper would otherwise have let through.
             if (!IfNoneMatchPasses(ifNoneMatch, ETag))
-                return Method is "GET" or "HEAD" ? NotModified(ETag, LastModified) : PreconditionFailed();
+                return Method is "GET" or "HEAD" or "QUERY" ? NotModified(ETag, LastModified) : PreconditionFailed();
         }
-        else if (Method is "GET" or "HEAD")
+        else if (Method is "GET" or "HEAD" or "QUERY")
         {
             // Section 13.1.4: If-Modified-Since is only evaluated for
             // GET/HEAD, and only when If-None-Match was absent.
@@ -1034,6 +1122,11 @@ public static class HTTPSemantics
         if (Resource.LastModified is not null)
             headers.Add(("last-modified", Resource.LastModified.Value.ToString("r", CultureInfo.InvariantCulture)));
 
+        // RFC 9110, Section 8.7 / RFC 10008, Section 3: point at a resource that
+        // corresponds to this representation (e.g. a QUERY result's own URI).
+        if (Resource.ContentLocation is not null)
+            headers.Add(("content-location", Resource.ContentLocation));
+
         return (headers, Body);
 
     }
@@ -1076,12 +1169,19 @@ public static class HTTPSemantics
         return ([(":status", "404"), ("content-type", "text/plain; charset=utf-8"), ("content-length", body.Length.ToString())], body);
     }
 
-    /// <summary>RFC 9110, Section 15.5.6: a 405 MUST include Allow.</summary>
-    private static (List<(string Name, string Value)> Headers, byte[]? Body) MethodNotAllowed()
-        => ([(":status", "405"), ("allow", "GET, HEAD, OPTIONS")], null);
+    /// <summary>RFC 9110, Section 15.5.1: a malformed request the server won't process (e.g. RFC 10008's missing Content-Type on a QUERY).</summary>
+    private static (List<(string Name, string Value)> Headers, byte[]? Body) BadRequest(string Reason)
+    {
+        var body = System.Text.Encoding.UTF8.GetBytes("400 Bad Request: " + Reason);
+        return ([(":status", "400"), ("content-type", "text/plain; charset=utf-8"), ("content-length", body.Length.ToString())], body);
+    }
 
-    private static (List<(string Name, string Value)> Headers, byte[]? Body) OptionsResponse()
-        => ([(":status", "204"), ("allow", "GET, HEAD, OPTIONS")], null);
+    /// <summary>RFC 9110, Section 15.5.6: a 405 MUST include Allow.</summary>
+    private static (List<(string Name, string Value)> Headers, byte[]? Body) MethodNotAllowed(string Allow)
+        => ([(":status", "405"), ("allow", Allow)], null);
+
+    private static (List<(string Name, string Value)> Headers, byte[]? Body) OptionsResponse(string Allow)
+        => ([(":status", "204"), ("allow", Allow)], null);
 
     #endregion
 

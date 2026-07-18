@@ -29,6 +29,7 @@ curl --http2 -k https://localhost:8443/
 curl --http2 -k https://localhost:8443/echo -d "Hello HTTP/2!"
 curl --http2 -k https://localhost:8443/large   # 128 KiB — exercises flow control
 curl --http2 -k https://localhost:8443/slow    # 2 s handler — exercises multiplexing
+curl --http2 -k -X QUERY --data 'ap' https://localhost:8443/search  # RFC 10008 QUERY
 # cleartext h2c (prior knowledge — no TLS), on :8080:
 curl --http2-prior-knowledge http://localhost:8080/
 ```
@@ -1741,6 +1742,55 @@ on the full RFC 6455 core surface — which matches the `h2wsconformance` gate
 harness exactly. (permessage-deflate is the obvious future extension if this ever
 wants section 12/13 coverage too.)
 
+**The HTTP QUERY method (RFC 10008)** (done 2026-07-18) — RFC 10008 (published
+2026-06-15) standardized QUERY, a **safe, idempotent, cacheable** method that
+carries its query in the **request body** instead of the URL (the first genuinely
+new HTTP method since PATCH). It's version-independent HTTP semantics, so it
+lives entirely in `Core/HTTPSemantics.cs` next to the RFC 9110 core mechanics —
+`HTTP2Connection.cs`/frames/HPACK are untouched, exactly as the layering intends
+(QUERY is just another method the framing carries):
+
+- **The seam.** A new optional `HTTPQueryHandler` — `(path, headers,
+  queryContent, contentType, ct) → HTTPResource?` — added to both `Wrap`
+  overloads (`QueryHandler:` named parameter, default null so every existing
+  caller is unchanged). Unlike `HTTPResourceHandler` it also receives the request
+  body (the query) and its `Content-Type`; it returns the *result* of running the
+  query as an ordinary `HTTPResource`.
+- **QUERY is "GET with a body."** Once the handler produces the result, it runs
+  through the **exact same** representation pipeline as a GET — the shared tail
+  was factored out into `RunRepresentationPipeline` (content negotiation →
+  conditional requests → Range → Vary/Content-* decoration → optional on-the-fly
+  compression), so GET and QUERY are byte-identical downstream of "where did the
+  variants come from." QUERY results thus get ETags, `Accept` negotiation, and
+  `304` revalidation for free. `EvaluateConditionalRequest` now treats QUERY as a
+  safe/cacheable method alongside GET/HEAD (a matched `If-None-Match` → `304`, not
+  `412`; `If-Modified-Since` honored) — RFC 10008's "conditional semantics mirror
+  GET on the equivalent resource."
+- **RFC 10008 specifics.** A QUERY request that carries content but **no
+  `Content-Type` is rejected `400`** (§4 MUST: "Servers MUST fail the request if
+  the Content-Type request field is missing"). A successful result may carry a
+  **`Content-Location`** naming a GET-able URI for that exact result set (§3, new
+  optional `HTTPResource.ContentLocation`, emitted on 200/206). `OPTIONS` and
+  `405` responses advertise `QUERY` in `Allow` — but only when a query handler is
+  actually registered (the `Allow` set is computed per-wrap). With no handler,
+  QUERY falls through to the ordinary `405`.
+- **Demo.** A `/search` endpoint over a small fruit corpus: `GET /search` returns
+  the whole list, `QUERY /search` with a term in the body returns the filtered
+  subset (the search parameters moving out of the query string), with a
+  `Content-Location` for the result set.
+
+Verified with a new `h2query` harness (12/12) against **both** roles — .NET
+`HttpClient` (via `new HttpMethod("QUERY")` + a request body) and our own
+`HTTP2Client`: `GET /search` → full corpus; `QUERY /search` body `"ap"` → exactly
+`["apple","apricot","grape"]` (and `"berry"` → `["blueberry"]`), with a
+`Content-Location` and an `ETag`; `QUERY` + matching `If-None-Match` → `304`
+(safe-method conditional); `OPTIONS` → `204` with `Allow: GET, HEAD, OPTIONS,
+QUERY`; `POST` → `405` with the same `Allow`; a QUERY body with no `Content-Type`
+→ `400` (§4); QUERY on an unknown path → `404`. Full regression **68/68**
+(h2query added; h2semantics unchanged at 51/51 — the `RunRepresentationPipeline`
+extraction and per-wrap `Allow` left GET/HEAD/OPTIONS byte-identical) and h2spec
+still **146/146 over both transports**.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -1874,3 +1924,4 @@ only remaining candidate is a neutral home for the demo — as interest dictates
 - RFC 9113 — HTTP/2
 - RFC 7541 — HPACK
 - RFC 7301 — ALPN
+- RFC 10008 — The HTTP QUERY Method

@@ -19,7 +19,7 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **67/67 harness runs pass** (each self-reports its own check
+Current status: **68/68 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 51/51, h2clienttest 14/14, h2authtest 18/18,
 h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
@@ -46,6 +46,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |
 | `h2wsconformance`  | self-contained | RFC 6455 WebSocket framing conformance — the critical Autobahn cases (framing, fragmentation, UTF-8 §8.1, close §7.4) driven raw against our `WebSocketConnection` (26 checks) |
 | `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
+| `h2query`          | self-contained | RFC 10008 the HTTP QUERY method (safe/idempotent body-carrying read) vs. our client + .NET HttpClient — filtering, Content-Location, ETag/304, Allow, 400/404/405 (12 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range, negotiation (51 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
@@ -55,7 +56,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 "demo-driven" harnesses talk to the Demo host on `https://localhost:8443`.
 "self-contained" harnesses spin up their own server(s) on private ports
-(9443–9467).
+(9443–9468).
 
 ## h2spec conformance
 

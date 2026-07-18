@@ -157,6 +157,62 @@ public static class Program
 
 
     /// <summary>
+    /// A QUERY endpoint at "/search" demonstrating RFC 10008 (the HTTP QUERY
+    /// method): a safe, idempotent, cacheable read whose query travels in the
+    /// request body instead of the URL. GET /search returns the whole corpus;
+    /// QUERY /search filters it by the term in the request body — the same
+    /// endpoint, the search parameters just moving out of the query string. The
+    /// QUERY result carries a Content-Location naming a GET-able URI for that
+    /// exact result set (RFC 10008 §3), and — being safe — supports ETag/304
+    /// conditional revalidation exactly like GET, all from HTTPSemantics.
+    /// </summary>
+    private static readonly string[] searchCorpus =
+        ["apple", "apricot", "avocado", "banana", "blueberry", "cherry", "date", "fig", "grape", "mango"];
+
+    private static readonly HTTP2RequestHandler searchHandler =
+        HTTPSemantics.Wrap(HandleSearchResource, QueryHandler: HandleSearchQuery);
+
+    private static byte[] SearchResults(string Term)
+    {
+        var matches = searchCorpus.Where(x => x.Contains(Term, StringComparison.OrdinalIgnoreCase));
+        return Encoding.UTF8.GetBytes("[" + string.Join(",", matches.Select(x => $"\"{x}\"")) + "]\n");
+    }
+
+    // GET /search -> the whole corpus (no query).
+    private static Task<HTTPResource?> HandleSearchResource(
+        string Path, List<(string Name, string Value)> RequestHeaders, CancellationToken CancellationToken)
+        => Task.FromResult<HTTPResource?>(
+               Path != "/search" ? null : new HTTPResource {
+                   Body        = SearchResults(""),
+                   ContentType = "application/json; charset=utf-8"
+               });
+
+    // QUERY /search -> the corpus filtered by the term in the request body.
+    private static Task<HTTPResource?> HandleSearchQuery(
+        string Path, List<(string Name, string Value)> RequestHeaders,
+        byte[]? QueryContent, string? ContentType, CancellationToken CancellationToken)
+    {
+
+        if (Path != "/search")
+            return Task.FromResult<HTTPResource?>(null);
+
+        var term = (QueryContent is null ? "" : Encoding.UTF8.GetString(QueryContent)).Trim();
+        var body = SearchResults(term);
+
+        // A stable GET-able URI for this exact result set (RFC 10008 §3): the
+        // client could GET it later instead of resending the query content.
+        var key = Convert.ToHexString(SHA256.HashData(QueryContent ?? []))[..8].ToLowerInvariant();
+
+        return Task.FromResult<HTTPResource?>(new HTTPResource {
+            Body            = body,
+            ContentType     = "application/json; charset=utf-8",
+            ContentLocation = $"/search/results/{key}"
+        });
+
+    }
+
+
+    /// <summary>
     /// A protected resource at "/secret" demonstrating the RFC 9110 §11
     /// authentication framework with two schemes wired in — Basic (RFC 7617)
     /// and Bearer (RFC 6750). Demo credentials: Basic <c>alice:secret</c>, or
@@ -219,6 +275,9 @@ public static class Program
 
         if (path == "/files/greeting")
             return await negotiatedHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);
+
+        if (path == "/search")
+            return await searchHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);
 
         if (path.StartsWith("/files/", StringComparison.Ordinal))
             return await resourceHandler(StreamId, RequestHeaders, RequestBody, CancellationToken);

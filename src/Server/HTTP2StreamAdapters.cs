@@ -68,6 +68,23 @@ internal sealed class HTTP2ResponseStream : IHTTP2ResponseStream
     /// <summary>Whether the response has been completed (END_STREAM sent).</summary>
     internal bool Completed   => completed;
 
+    public async Task WriteInterimResponseAsync(int Status, IEnumerable<(string Name, string Value)> Headers, CancellationToken CancellationToken = default)
+    {
+        if (Status is < 100 or >= 200)
+            throw new ArgumentOutOfRangeException(nameof(Status), Status, "An interim response status must be in the 1xx range");
+        if (headersSent)
+            throw new InvalidOperationException("Interim responses must be sent before the final response headers");
+
+        var list = new List<(string Name, string Value)> { (":status", Status.ToString()) };
+        list.AddRange(Headers);
+
+        connection.EnforceOutboundHeaderListSize(stream.StreamId, list);
+
+        // An interim (1xx) response is a HEADERS block that does NOT end the
+        // stream — the final response follows (RFC 9110, Section 15.2).
+        await connection.SendHeaderListAsync(stream.StreamId, list, EndStream: false);
+    }
+
     public async Task WriteHeadersAsync(IEnumerable<(string Name, string Value)> Headers, CancellationToken CancellationToken = default)
     {
         if (headersSent)

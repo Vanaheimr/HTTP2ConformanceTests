@@ -64,6 +64,15 @@ public interface IHTTP2ResponseStream
 {
 
     /// <summary>
+    /// Send an interim (1xx) response — e.g. <c>103 Early Hints</c> (RFC 8297)
+    /// carrying <c>Link</c> preload hints — before the final response. May be
+    /// called any number of times, but only before <see cref="WriteHeadersAsync"/>;
+    /// each is a HEADERS block that does not end the stream (RFC 9110, Section
+    /// 15.2). <paramref name="Status"/> must be in the 1xx range.
+    /// </summary>
+    Task WriteInterimResponseAsync(int Status, IEnumerable<(string Name, string Value)> Headers, CancellationToken CancellationToken = default);
+
+    /// <summary>
     /// Send the response header fields (must include <c>:status</c>). Call once,
     /// before any <see cref="WriteAsync"/>. Does not end the stream.
     /// </summary>

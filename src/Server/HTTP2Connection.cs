@@ -662,8 +662,8 @@ public sealed class HTTP2Connection
                 switch (frame.Type)
                 {
                     case HTTP2FrameType.SETTINGS:       await HandleSettingsAsync(frame);      break;
-                    case HTTP2FrameType.HEADERS:         HandleHeaders(frame);                  break;
-                    case HTTP2FrameType.CONTINUATION:    HandleContinuation(frame);             break;
+                    case HTTP2FrameType.HEADERS:         await HandleHeaders(frame);            break;
+                    case HTTP2FrameType.CONTINUATION:    await HandleContinuation(frame);       break;
                     case HTTP2FrameType.DATA:            await HandleDataAsync(frame);          break;
                     case HTTP2FrameType.WINDOW_UPDATE:   HandleWindowUpdate(frame);             break;
                     case HTTP2FrameType.PING:            await HandlePingAsync(frame);          break;
@@ -835,7 +835,7 @@ public sealed class HTTP2Connection
 
     #region HEADERS (Section 6.2)
 
-    private void HandleHeaders(HTTP2Frame Frame)
+    private async Task HandleHeaders(HTTP2Frame Frame)
     {
 
         if (Frame.StreamId == 0)
@@ -953,7 +953,7 @@ public sealed class HTTP2Connection
 
         if (Frame.EndHeaders)
         {
-            CompleteHeaders(stream, Frame.EndStream);
+            await CompleteHeaders(stream, Frame.EndStream);
         }
         else
         {
@@ -968,7 +968,7 @@ public sealed class HTTP2Connection
 
     #region CONTINUATION (Section 6.10)
 
-    private void HandleContinuation(HTTP2Frame Frame)
+    private async Task HandleContinuation(HTTP2Frame Frame)
     {
 
         if (Frame.StreamId == 0)
@@ -997,7 +997,7 @@ public sealed class HTTP2Connection
         if (Frame.EndHeaders)
         {
             continuationStreamId = null;
-            CompleteHeaders(stream, stream.EndStreamPending);
+            await CompleteHeaders(stream, stream.EndStreamPending);
         }
 
     }
@@ -1019,7 +1019,7 @@ public sealed class HTTP2Connection
     /// <summary>
     /// Decode the complete header block and, if END_STREAM was set, dispatch the request.
     /// </summary>
-    private void CompleteHeaders(HTTP2Stream Stream, bool EndStream)
+    private async Task CompleteHeaders(HTTP2Stream Stream, bool EndStream)
     {
 
         var headerBlock    = Stream.HeaderBuffer!.ToArray();
@@ -1098,6 +1098,19 @@ public sealed class HTTP2Connection
 
             return;
 
+        }
+
+        // RFC 9110 Section 10.1.1 (Expect: 100-continue): a client that sends a
+        // body but wants to be told to proceed first waits for an interim 100
+        // before sending DATA. We always accept, so send the 100 as soon as the
+        // (initial) headers of a body-bearing request arrive; the final response
+        // follows normally after the body. (An unsupported expectation is a
+        // "MAY 417" — we just ignore it and process the request, per §10.1.1.)
+        if (isInitialHeaders && !EndStream)
+        {
+            var expect = Stream.RequestHeaders!.FirstOrDefault(h => h.Name == "expect").Value;
+            if (expect is not null && expect.Equals("100-continue", StringComparison.OrdinalIgnoreCase))
+                await SendHeaderListAsync(Stream.StreamId, [(":status", "100")], EndStream: false);
         }
 
         // Streaming request path (a streaming handler is registered): dispatch

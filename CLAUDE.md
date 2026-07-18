@@ -52,7 +52,7 @@ Core never references the role-specific projects.
 | `HTTP2Stream.cs` | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
-| `HTTP2Streaming.cs` | The streaming seam: `HTTP2StreamingHandler` delegate + `IHTTP2RequestStream`/`IHTTP2ResponseStream` (incremental body + trailers, for gRPC-style bidi) |
+| `HTTP2Streaming.cs` | The streaming seam: `HTTP2StreamingHandler` delegate + `IHTTP2RequestStream`/`IHTTP2ResponseStream` (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocket.cs` doesn't depend on the server's concrete tunnel |
 | `WebSocket.cs` | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` (server vs. client masking) |
 | `HTTPSemantics.cs` | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
@@ -1406,6 +1406,47 @@ the original body — the production-client interop proof. Deliberately opt-in a
 not enabled on the demo, so full regression **62/62** (h2semantics 51/51
 unaffected) and h2spec **146/146** are untouched.
 
+**1xx interim responses — `Expect: 100-continue` + 103 Early Hints** (done
+2026-07-18): a stream can now carry one or more interim (1xx) HEADERS blocks
+before the final response (RFC 9110 §15.2 / RFC 8297), on both roles:
+
+- **Automatic `100 Continue` (server, RFC 9110 §10.1.1).** A client that sends a
+  body but wants to be told to proceed first sets `Expect: 100-continue` and
+  waits before sending DATA. `CompleteHeaders` now sends an interim `:status 100`
+  (a HEADERS block without END_STREAM) as soon as the initial headers of a
+  body-bearing request with that expectation arrive; the final response follows
+  normally after the body. We always accept, so an unsupported expectation is
+  just ignored and the request processed (the §10.1.1 "MAY 417" is declined).
+  This required threading `async` through `HandleHeaders`/`HandleContinuation`/
+  `CompleteHeaders` (previously sync) so the interim send can be awaited from the
+  read loop — a mechanical change verified by the whole attack/idle/trailers
+  suite still passing unchanged.
+- **103 Early Hints (server, handler-driven, RFC 8297).** A new
+  `IHTTP2ResponseStream.WriteInterimResponseAsync(status, headers)` on the
+  streaming seam lets a handler emit any number of 1xx responses (e.g. a 103
+  with `Link: rel=preload` hints) before `WriteHeadersAsync` — each a HEADERS
+  block that doesn't end the stream. Validates the 1xx range and that the final
+  headers haven't gone out yet; reuses the same write-locked `SendHeaderListAsync`
+  as every other header block, so encode-order == wire-order holds across the
+  interim + final blocks. (The buffered seam can't express interim responses by
+  design — it's the streaming seam's job, same as trailers.)
+- **Client (RFC 9110 §15.2).** `CompleteHeaderBlock` now recognizes a 1xx
+  response as *interim*: it records it and keeps waiting for the final response,
+  instead of mistaking the first HEADERS for the final one (which would then
+  have treated the real final response as trailers). Collected interim responses
+  are surfaced on `HTTP2Response.InformationalResponses` (status + headers, in
+  order), so a caller can read a 103's `Link` hints or confirm a 100.
+
+Verified (`h2interim`, 7/7): our own client — a POST with `expect: 100-continue`
+gets an interim 100 surfaced in `InformationalResponses` and the body echoed
+(and a request *without* the header gets no 100); a streaming handler's 103
+Early Hints (two `Link` preload headers) arrives before the final 200 and is
+surfaced with its hints intact. And **.NET `HttpClient`** with
+`ExpectContinue = true` completes the 100-continue handshake and round-trips a
+POST — the production-client interop proof. Full regression **63/63** (the async
+`HandleHeaders`/`CompleteHeaders` refactor left every existing request/attack
+path unchanged) and h2spec still **146/146**.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
@@ -1505,9 +1546,9 @@ the full h2spec-conformance track (146/146), the full HPACK encoder,
 Slowloris/timeout hardening, client robustness, streaming bodies + response
 trailers, a WebSocket/CONNECT-capable client, WINDOW_UPDATE batching +
 larger flow-control windows, and on-the-fly content coding (gzip/brotli/
-deflate). What's left is optional Tier-2 polish: 1xx interim responses
-(`Expect: 100-continue`, 103 Early Hints), h2c (cleartext prior-knowledge), or
-a neutral home for the demo — as interest dictates.
+deflate), and 1xx interim responses (`Expect: 100-continue`, 103 Early Hints).
+What's left is optional Tier-2 polish: h2c (cleartext prior-knowledge), or a
+neutral home for the demo — as interest dictates.
 
 ## Conventions
 - English for code, identifiers, comments, and commit messages.

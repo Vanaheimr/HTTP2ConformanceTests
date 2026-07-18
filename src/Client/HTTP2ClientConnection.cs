@@ -18,6 +18,13 @@ public sealed class HTTP2Response
     /// <summary>Trailer fields, if the server sent a trailing HEADERS block (RFC 9113, Section 8.1). Empty otherwise.</summary>
     public          List<(string Name, string Value)> Trailers { get; init; } = [];
 
+    /// <summary>
+    /// Interim (1xx) responses received before the final response, in order —
+    /// e.g. a <c>100 Continue</c> (RFC 9110) or a <c>103 Early Hints</c>
+    /// (RFC 8297) with <c>Link</c> preload headers. Empty if none were sent.
+    /// </summary>
+    public          List<(int Status, List<(string Name, string Value)> Headers)> InformationalResponses { get; init; } = [];
+
     public string? HeaderValue(string Name)
         => Headers.FirstOrDefault(h => h.Name == Name).Value;
 }
@@ -469,6 +476,7 @@ public sealed class HTTP2ClientConnection
             Exchange.Headers         = null;
             Exchange.HeadersReceived = false;
             Exchange.Trailers        = [];
+            Exchange.Interim         = [];
 
             await IssueOnNewStreamAsync(Exchange);
         }
@@ -848,6 +856,17 @@ public sealed class HTTP2ClientConnection
 
         if (!Exchange.HeadersReceived)
         {
+
+            // An interim (1xx) response (RFC 9110 §15.2 — e.g. 100 Continue, 103
+            // Early Hints) precedes the final response: record it and keep
+            // waiting, rather than mistaking it for the final response.
+            var interimStatusText = decoded.FirstOrDefault(h => h.Name == ":status").Value;
+            if (int.TryParse(interimStatusText, out var interimStatus) && interimStatus is >= 100 and < 200)
+            {
+                Exchange.Interim.Add((interimStatus, decoded));
+                return;   // do NOT set HeadersReceived — the final HEADERS follow
+            }
+
             Exchange.Headers         = decoded;
             Exchange.HeadersReceived = true;
 
@@ -1200,6 +1219,7 @@ public sealed class HTTP2ClientConnection
         public MemoryStream                         Body            { get; } = new();
         public List<(string Name, string Value)>?   Headers         { get; set; }
         public List<(string Name, string Value)>    Trailers        { get; set; } = [];
+        public List<(int Status, List<(string Name, string Value)> Headers)> Interim { get; set; } = [];
         public bool                                 HeadersReceived { get; set; }
         public TaskCompletionSource<HTTP2Response>  Completion      { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1242,10 +1262,11 @@ public sealed class HTTP2ClientConnection
         }
 
         Exchange.Completion.TrySetResult(new HTTP2Response {
-            Status   = status,
-            Headers  = Exchange.Headers!,
-            Body     = Exchange.Body.ToArray(),
-            Trailers = Exchange.Trailers
+            Status                 = status,
+            Headers                = Exchange.Headers!,
+            Body                   = Exchange.Body.ToArray(),
+            Trailers               = Exchange.Trailers,
+            InformationalResponses = Exchange.Interim
         });
 
     }

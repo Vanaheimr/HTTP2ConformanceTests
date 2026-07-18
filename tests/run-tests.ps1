@@ -102,6 +102,7 @@ Invoke-Harness -Label "h2streaming"      -Project "h2streaming"
 Invoke-Harness -Label "h2wsclient"       -Project "h2wsclient"
 Invoke-Harness -Label "h2flowbatch"      -Project "h2flowbatch"
 Invoke-Harness -Label "h2compress"       -Project "h2compress"
+Invoke-Harness -Label "h2interim"        -Project "h2interim"
 
 # ---------------------------------------------------------------------------
 # Demo-driven harnesses — need the Demo host on :8443

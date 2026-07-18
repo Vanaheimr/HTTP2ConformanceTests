@@ -20,7 +20,8 @@ HTTP/2 server for the client). See `CLAUDE.md` for the full status.
 > dynamic table + Huffman), CONNECT + extended CONNECT (RFC 8441) +
 > WebSocket (RFC 6455) tunneling, RFC 9218 priority-aware response
 > scheduling, streaming request/response bodies with response trailers
-> (gRPC-style, verified against .NET `HttpClient`), an RFC 9110 semantics
+> (gRPC-style, verified against .NET `HttpClient`), 1xx interim responses
+> (`Expect: 100-continue`, 103 Early Hints), an RFC 9110 semantics
 > layer (GET/HEAD/OPTIONS, conditional
 > requests, Range requests, proactive content negotiation with `Vary`,
 > opt-in on-the-fly gzip/brotli/deflate compression),
@@ -142,9 +143,12 @@ full bidirectional streaming (gRPC) — register an `HTTP2StreamingHandler` on
 `HTTP2Server` instead (`StreamingHandler:`). It receives an
 `IHTTP2RequestStream` (pull request-body chunks with `ReadAsync` as DATA
 arrives; read request `Trailers` once the body ends) and an
-`IHTTP2ResponseStream` (`WriteHeadersAsync` once, then `WriteAsync` body chunks,
-then `CompleteAsync(trailers)` — e.g. gRPC's `grpc-status`). The handler is
-invoked as soon as the request headers arrive, so both directions flow at once.
+`IHTTP2ResponseStream` (optional `WriteInterimResponseAsync` for 1xx — e.g. a
+103 Early Hints with `Link` preload headers — then `WriteHeadersAsync` once,
+then `WriteAsync` body chunks, then `CompleteAsync(trailers)` — e.g. gRPC's
+`grpc-status`). The handler is invoked as soon as the request headers arrive, so
+both directions flow at once. `Expect: 100-continue` is handled automatically by
+the server.
 
 For authentication, `HTTPAuthentication.RequireAuthentication` wraps a handler
 with the RFC 9110 §11 challenge/response flow (401 + `WWW-Authenticate` when

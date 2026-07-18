@@ -140,7 +140,8 @@ src/  (solution HTTP2.slnx)
 ├── Client/              (→ Core)
 │   ├── HTTP2ClientConnection.cs  Client-role connection (sends requests, assembles responses)
 │   ├── HTTP2Client.cs       Client dialer (TCP connect + TLS/ALPN h2)
-│   └── HTTP2CachingClient.cs  RFC 9111 cache in front of a client connection
+│   ├── HTTP2CachingClient.cs  RFC 9111 cache in front of a client connection
+│   └── HTTP2ClientPool.cs   Single-origin connection pool (failover + self-healing)
 └── Demo/                (→ Server, Client)
     └── Program.cs           Demo host + example request/connect/resource handlers
 ```
@@ -285,6 +286,18 @@ shared-cache semantics):
 var cache = new HTTP2CachingClient(conn, "https", "localhost:8443", HTTPCacheMode.Private);
 var a = await cache.GetAsync("/files/resource.txt");   // MISS — fetched from origin
 var b = await cache.GetAsync("/files/resource.txt");   // HIT  — served from cache
+```
+
+`HTTP2ClientPool` keeps several warm connections to a single origin and hands
+each request to the least-loaded one. A connection may die (GOAWAY, socket loss)
+without the caller noticing — it's reconnected in the background, and a request
+the server provably never processed is transparently retried on another
+connection:
+
+```csharp
+await using var pool = await HTTP2ClientPool.ConnectAsync("localhost", 8443, acceptAnyCert, MaxConnections: 4);
+var r = await pool.SendRequestAsync("GET", "https", "localhost:8443", "/");   // any live connection serves it
+// pool.ConnectionCount / pool.Reconnects / pool.Failovers are all observable
 ```
 
 ## Status & roadmap

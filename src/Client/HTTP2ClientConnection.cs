@@ -271,6 +271,23 @@ public sealed class HTTP2ClientConnection
 
     private readonly TaskCompletionSource settingsReceived = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <summary>
+    /// Completes when the connection has finished — the frame read loop exited,
+    /// whether via a clean <see cref="CloseAsync"/>, a peer GOAWAY teardown, or a
+    /// fatal I/O error. Never faults (it's a lifecycle signal, not a result), so
+    /// a consumer like <see cref="HTTP2ClientPool"/> can simply <c>await</c> it to
+    /// learn the connection died and replace it.
+    /// </summary>
+    private readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Completes as soon as the connection can no longer take *new* streams —
+    /// either it received a GOAWAY (in-flight streams may still be finishing) or
+    /// it fully closed. This is the pool's cue to stop routing here and open a
+    /// replacement, without waiting for the connection to fully drain.
+    /// </summary>
+    private readonly TaskCompletionSource unusable = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private UInt32? continuationStreamId;
     private int     continuationFrameCount;
     private bool    goawayReceived;
@@ -399,7 +416,52 @@ public sealed class HTTP2ClientConnection
         finally
         {
             connectionCts.Cancel();
+            unusable.TrySetResult();   // no new streams from here on
+            closed.TrySetResult();     // wake any pool watcher awaiting this connection's death
         }
+    }
+
+    #endregion
+
+
+    #region Pool support — liveness + load
+
+    /// <summary>
+    /// Completes when this connection has finished (see <see cref="closed"/>) —
+    /// a clean close, a peer GOAWAY teardown, or a fatal error. Never faults.
+    /// </summary>
+    public Task Closed => closed.Task;
+
+    /// <summary>
+    /// Completes as soon as the connection stops accepting new streams — a GOAWAY
+    /// (while in-flight streams finish) or a full close. The pool's cue to prune
+    /// and replace it. Never faults.
+    /// </summary>
+    public Task Unusable => unusable.Task;
+
+    /// <summary>
+    /// Whether this connection can still take *new* requests: it hasn't been torn
+    /// down and hasn't received a GOAWAY (after which the peer accepts no new
+    /// streams). In-flight requests may still be completing; this only gates new
+    /// ones — which is exactly what a pool needs to route around a draining or
+    /// dead connection.
+    /// </summary>
+    public bool IsUsable => !goawayReceived && !cancellationToken.IsCancellationRequested;
+
+    /// <summary>Number of requests currently in flight on this connection.</summary>
+    public int ActiveStreamCount
+    {
+        get { lock (exchangesLock) return exchanges.Count; }
+    }
+
+    /// <summary>
+    /// How many more streams may be opened before hitting the peer's advertised
+    /// MAX_CONCURRENT_STREAMS — a pool prefers the connection with the most free
+    /// slots (least loaded), and knows to open/await another when this is 0.
+    /// </summary>
+    public int AvailableStreamSlots
+    {
+        get { lock (exchangesLock) return Math.Max(0, (int) streamManager.MaxConcurrentStreams - exchanges.Count); }
     }
 
     #endregion
@@ -1392,6 +1454,7 @@ public sealed class HTTP2ClientConnection
         var code         = (HTTP2ErrorCode) BinaryPrimitives.ReadUInt32BigEndian(Frame.Payload.AsSpan(4, 4));
 
         goawayReceived = true;
+        unusable.TrySetResult();   // the peer accepts no new streams — pool should route elsewhere
 
         // Streams above lastStreamId were definitely not processed (RFC 9113
         // §6.8) — fail them with the retry-safe exception so a caller (or a

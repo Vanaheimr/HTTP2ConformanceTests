@@ -77,6 +77,7 @@ Core never references the role-specific projects.
 | `HTTP2ClientConnection.cs` | Client-role connection: sends the preface, allocates odd request streams, sends requests + assembles `HTTP2Response`s |
 | `HTTP2Client.cs` | Dialer: TCP connect + TLS/ALPN `h2` handshake (or optional `Cleartext` h2c prior-knowledge), the client-side counterpart of `HTTP2Server` |
 | `HTTP2CachingClient.cs` | RFC 9111 cache (store + origin wiring) in front of a client connection — serves fresh hits, revalidates stale entries, keys by `Vary` |
+| `HTTP2ClientPool.cs` | Single-origin connection pool — keeps N warm connections, routes to the least-loaded, fails over not-processed requests, and self-heals dead connections in the background |
 
 **`Demo/`** — references `Server` + `Client`:
 
@@ -2114,6 +2115,65 @@ unchanged — that path is byte-identical) and h2spec still **146/146 over both
 transports** (no Range path there; server framing untouched). The demo needed no
 change — `/files/resource.txt` picks up multi-range automatically through the
 shared `HTTPSemantics` wrapper.
+
+**Single-origin connection pool** (done 2026-07-18) — the consumer the
+retry-safe client signals were built for. Client robustness (REFUSED_STREAM
+retry, GOAWAY/exhaustion → `HTTP2RequestNotProcessedException`) had always been
+scoped to a *single* connection, surfacing the not-processed signal for "a
+connection pool" to act on — this is that pool. New `HTTP2ClientPool.cs`
+(Client); the connection gained two small lifecycle signals but no behavior
+change:
+
+- **What it is.** A pool of HTTP/2 connections to **one** origin (host:port),
+  giving callers a "just works" façade while individual connections come and go.
+  For HTTP/2 a pool isn't about parallelism (one connection multiplexes) — its
+  jobs are **failover** (a not-processed request re-issued on another
+  connection), **self-healing** (a target of `MaxConnections`, default 4, kept
+  warm; a dead one dropped and reconnected in the background so the caller never
+  sees the churn), and **load spreading** (each request to the least-loaded
+  usable connection — most free MAX_CONCURRENT_STREAMS slots). Deliberately
+  explicit, not `SocketsHttpHandler`-style automagic: `ConnectionCount`,
+  `Reconnects`, `Failovers` are all observable, and selection is a plain
+  least-loaded pick.
+- **Failover is not-processed-only.** The `SendRequestAsync` loop catches only
+  `HTTP2RequestNotProcessedException` (GOAWAY above last-processed-stream,
+  REFUSED_STREAM past the per-connection budget, stream-ID exhaustion) and
+  re-issues verbatim on another connection, bounded by `MaxFailoverRetries`
+  (default = `MaxConnections`). Anything that *might* have taken effect on the
+  server is surfaced, never silently repeated — the same safety contract the
+  single-connection retry already honored.
+- **Two new connection signals (additive).** `HTTP2ClientConnection` exposes
+  `Closed` (completes on full teardown) and `Unusable` (completes as soon as no
+  new streams can be opened — a GOAWAY *or* a close). The pool watches
+  `Unusable`: a GOAWAY'd connection is pruned from routing *immediately* (and a
+  replacement opened) while its in-flight streams finish on the still-live
+  connection object — removing it from the pool list doesn't disturb requests
+  already awaiting on it. Plus `IsUsable` / `AvailableStreamSlots` /
+  `ActiveStreamCount` for selection. A serialized `ReplenishAsync` (guarded by a
+  `SemaphoreSlim(1,1)`, so a death + a request-nudge can't over-open) refills to
+  target; a slow maintenance loop is the safety net for an origin that was down
+  when a death happened. First connection is opened synchronously in
+  `ConnectAsync` (an unreachable origin fails fast), the rest fill in the
+  background.
+- **Scope.** Buffered `SendRequestAsync` only — streaming requests and CONNECT
+  tunnels bind a caller to one specific connection for their lifetime, so they
+  don't fit the "any connection will do" model (open a dedicated
+  `HTTP2ClientConnection` for those). Single-origin by design (the stated ask);
+  a multi-origin pool would be a dictionary of these.
+
+Verified (`h2pool`, **12/12**): against our real server — the pool warms to 4
+connections, 40 concurrent requests all 200, still 4 after the burst; disposal
+makes further requests throw `ObjectDisposedException`. Against a
+multi-connection raw mock — **load spreading** (MAX_CONCURRENT_STREAMS=2, 8
+concurrent slow requests fan out across all 4 connections); **self-healing** (a
+mock that serves one request then GOAWAYs itself — 6 sequential requests all 200
+while the pool records 6 reconnects and recovers to its 2-connection target);
+and **failover** (the first connection GOAWAYs `lastStreamId=0` = not processed,
+a fresh one serves 200 — with `MaxConnections=1` the pool reconnects and retries,
+`Failovers=1`, `Reconnects=1`). No production code outside the client changed, so
+full regression is **70/70** (h2pool added) and h2spec still **146/146 over both
+transports** (the server is untouched; the connection changes are purely
+additive lifecycle signals).
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

@@ -19,8 +19,8 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **69/69 harness runs pass** (each self-reports its own check
-count — e.g. h2semantics 51/51, h2clienttest 14/14, h2authtest 18/18,
+Current status: **70/70 harness runs pass** (each self-reports its own check
+count — e.g. h2semantics 59/59, h2clienttest 14/14, h2authtest 33/33,
 h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 ## The harnesses
@@ -39,6 +39,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 | `h2cachetest`      | self-contained | RFC 9111 client cache: freshness, revalidation, Vary, shared/private (23 checks) |
 | `h2clientpriority` | self-contained | client-side RFC 9218 emission vs. our server + Kestrel (15 checks) |
 | `h2clientrobust`   | self-contained | client robustness vs. a raw mock server: REFUSED_STREAM retry, MCS gating, GOAWAY retry-safety, keepalive (8 checks) |
+| `h2pool`           | self-contained | `HTTP2ClientPool` single-origin pool: warm-up, load spreading, self-healing (GOAWAY → reconnect), not-processed failover, disposal — vs. our server + a multi-connection mock (12 checks) |
 | `h2streaming`      | self-contained | streaming bodies + response trailers (gRPC-style) vs. our client *and* .NET HttpClient (8 checks) |
 | `h2wsclient`       | self-contained | client-side CONNECT tunnel + WebSocket (text/binary/close) + permessage-deflate (RFC 7692) negotiation over the RFC 8441 CONNECT path vs. our server (15 checks) |
 | `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
@@ -57,7 +58,7 @@ h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
 
 "demo-driven" harnesses talk to the Demo host on `https://localhost:8443`.
 "self-contained" harnesses spin up their own server(s) on private ports
-(9443–9469).
+(9443–9471, plus ephemeral mock-server ports).
 
 ## h2spec conformance
 

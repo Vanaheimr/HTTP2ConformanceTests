@@ -1724,10 +1724,22 @@ Verified: `h2wsconformance` 26/26; the existing WebSocket scenarios unaffected
 (`h2connect` ws-echo/fragmented/ping/close, `h2wsclient` 10/10 — the valid-UTF-8
 and valid-close paths still behave identically); full regression **67/67**
 (h2wsconformance added) and h2spec still **146/146 over both transports** (it
-exercises no WebSocket path, and the `WebSocket.cs` change is isolated). The full
-Autobahn Docker run wasn't executed in this environment (no Docker/sudo available
-in the sandbox), but the wrappers + config + echo server are complete and the
-framing behavior they'd exercise is pinned by `h2wsconformance`.
+exercises no WebSocket path, and the `WebSocket.cs` change is isolated).
+
+**The full Autobahn Docker suite was then run for real** (via `tests/autobahn.sh`
+under WSL/Debian against `crossbario/autobahn-testsuite`): **301 / 301 RFC 6455
+cases pass** — every case in sections 1–10 (framing, pings/pongs, reserved
+bits/opcodes, fragmentation, UTF-8 handling, close handling, limits/performance,
+auto-fragmentation). A first `"cases": ["*"]` run scored 301/517; all 216
+non-passing cases were in sections **12 & 13 (permessage-deflate, RFC 7692)** —
+an **optional** compression extension this stack deliberately does not implement
+(our echo server negotiates no `Sec-WebSocket-Extensions`, so a client offering
+`permessage-deflate` gets an uncompressed connection and its compressed-frame
+cases can't apply). Zero non-passing cases outside 12/13, so those two sections
+are excluded in `fuzzingclient.json` (documented there), leaving a clean 301/301
+on the full RFC 6455 core surface — which matches the `h2wsconformance` gate
+harness exactly. (permessage-deflate is the obvious future extension if this ever
+wants section 12/13 coverage too.)
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

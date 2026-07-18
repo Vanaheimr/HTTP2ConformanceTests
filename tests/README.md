@@ -80,7 +80,9 @@ the 10 failures) is in [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry.
 ## Autobahn WebSocket conformance
 
 [Autobahn|TestSuite](https://github.com/crossbario/autobahn-testsuite) is the
-canonical RFC 6455 WebSocket conformance suite (~500 cases). It drives the
+canonical RFC 6455 WebSocket conformance suite. This stack passes **301 / 301**
+RFC 6455 cases (sections 1–10); sections 12/13 (`permessage-deflate`, RFC 7692 —
+an optional extension not implemented here) are excluded. It drives the
 `autobahn-server` echo host, which runs the same `WebSocketConnection` framing
 used in production over a plain-TCP tunnel behind an HTTP/1.1 Upgrade handshake
 (Autobahn speaks WebSocket over HTTP/1.1, not RFC 8441 over HTTP/2 — but the

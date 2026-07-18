@@ -13,6 +13,12 @@ vendored, driven by a wrapper script per platform, with a committed
 self-contained harness (`h2wsconformance`) covering the critical cases in the
 normal pass/fail gate so the conformance behavior is verified even without Docker.
 
+**Result: 301 / 301 RFC 6455 cases pass** (verified with Autobahn 0.8.2 under
+WSL/Debian) — every case in sections 1–10. Sections **12 & 13
+(permessage-deflate, RFC 7692)** are excluded: that is an *optional* compression
+extension this stack does not implement (see [§ permessage-deflate](#permessage-deflate)
+below), not part of RFC 6455 core.
+
 ---
 
 ## What is actually under test (and the one wrinkle)
@@ -153,6 +159,20 @@ the framing-level response:
 This is to Autobahn what [`h2rfcpolish`](h2rfcpolish/Program.cs) is to h2spec: the
 deep external suite for the full sweep, plus a committed harness that pins the
 important cases in CI.
+
+## permessage-deflate
+
+A first run with `"cases": ["*"]` scores **301 / 517**. All 216 non-passing
+cases are in sections **12 and 13**, which test **`permessage-deflate`
+(RFC 7692)** — an *optional* WebSocket compression extension, negotiated via
+`Sec-WebSocket-Extensions` at the opening handshake. This stack does not
+implement it: the echo server offers no extension, so a client that asks for
+`permessage-deflate` simply gets an uncompressed connection, and the
+compressed-frame cases in 12/13 have nothing to exercise. **Zero** non-passing
+cases fall outside 12/13, so [`fuzzingclient.json`](autobahn/fuzzingclient.json)
+excludes those two sections (`"exclude-cases": ["12.*", "13.*"]`), leaving the
+301 RFC 6455 core cases — all passing. Implementing RFC 7692 is the obvious way
+to light up sections 12/13 in future.
 
 ## 5. Conformance history
 

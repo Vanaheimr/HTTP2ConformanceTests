@@ -920,6 +920,12 @@ public sealed class HTTP2ClientConnection
 
         var exchange = GetExchange(Frame.StreamId);
 
+        // RFC 9113, Section 6.1: the ENTIRE frame payload counts against flow
+        // control — including the Pad Length byte and the padding itself —
+        // so the replenish below must return the full length, not just the
+        // useful data StripPadding leaves over.
+        var flowLength = Frame.Payload.Length;
+
         var payload = StripPadding(Frame, Frame.Payload.AsSpan());
         var length  = payload.Length;
 
@@ -935,8 +941,9 @@ public sealed class HTTP2ClientConnection
                 exchange.Body.Write(payload);
         }
 
-        // Replenish flow control — batched, not one WINDOW_UPDATE per DATA frame.
-        await ReplenishReceiveWindowsAsync(exchange?.Stream, length);
+        // Replenish flow control — batched, not one WINDOW_UPDATE per DATA
+        // frame, and for the full payload incl. padding (Section 6.1).
+        await ReplenishReceiveWindowsAsync(exchange?.Stream, flowLength);
 
         if (Frame.EndStream && exchange is not null)
         {

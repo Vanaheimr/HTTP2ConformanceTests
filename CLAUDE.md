@@ -1538,6 +1538,62 @@ runner's kill-by-port-owner), and probe readiness with a **bare TCP connect**
 (bash `/dev/tcp`), not an HTTP request — a plain HTTP/1.1 curl to the h2c port
 is rejected (prior-knowledge only), so it's a false negative for "is it up?".
 
+**RFC polish: flow-control accounting + cookie reassembly (RFC 9113
+§6.1/§6.9/§8.2.3)** (done 2026-07-18) — three MUST-level deviations found in a
+fresh-eyes RFC review, none of them covered by h2spec (which tests neither
+multi-frame window *arithmetic* over time nor the app-facing header surface):
+
+- **Padding counts against flow control (§6.1).** Both roles accounted (and
+  replenished) only the padding-*stripped* DATA length; §6.1 says "the entire
+  DATA frame payload is included in flow control, including the Pad Length and
+  Padding fields". A padding-sending peer would slowly desync its window view
+  from ours (it debits the full payload, we credited back less). Fixed in both
+  `HandleDataAsync`s: a `flowLength = Frame.Payload.Length` drives window
+  enforcement *and* `ReplenishReceiveWindowsAsync`; `StripPadding` now only
+  decides what reaches the request body. (The §8.1.2.6 content-length check
+  correctly keeps using the stripped length — that one is about the body.)
+- **DATA on a closed stream must still be accounted (§6.9).** The server threw
+  the `STREAM_CLOSED` stream error *before* any window accounting — but a
+  stream error leaves the connection alive, and §6.9 demands closed-stream DATA
+  be counted against (and thus eventually returned to) the connection window
+  ("MUST always account … unless … a connection error"). The peer charged its
+  connection send window for those bytes; never crediting them back leaks the
+  window shut — and the race is *ordinary*: our own RST_STREAM cancellation
+  meets in-flight DATA all the time. The client already did this right
+  (straggler DATA → connection-only replenish); the server now matches:
+  connection window decremented + `FLOW_CONTROL_ERROR` enforced + credited
+  back via `ReplenishReceiveWindowsAsync(null, …)` (the `Stream` parameter is
+  now nullable, mirroring the client), *then* the same `STREAM_CLOSED` stream
+  error as before. Companion hardening: closed-stream DATA now counts against
+  the unproductive-frame flood budget instead of resetting it — now that
+  window is dutifully handed back, an endless closed-stream DATA spray would
+  otherwise be free (previously the peer's shrinking view of our window
+  self-limited it).
+- **Cookie crumbs are reassembled (§8.2.3).** Clients split the `cookie`
+  header into multiple field lines for HPACK efficiency ("crumbling" — real
+  browsers do); before reaching "a generic HTTP server application" they MUST
+  be concatenated with `"; "`. Handlers saw the raw split list. New
+  `CombineCookieFields` in `CompleteHeaders` (after validation, before
+  `RequestHeaders` is set) joins them in original order at the position of the
+  first crumb; zero/one cookie lines and all other fields are untouched.
+
+Verified with a new `h2rfcpolish` harness (8/8), designed so the *first*
+WINDOW_UPDATE's increment discriminates old vs. new arithmetic: 33 padded DATA
+frames (16128 data + 256 padding overhead = exactly 16384 payload each) cross
+the half-window replenish threshold (524288) at frame 32 on padded bytes but
+only at frame 33 (532224) on stripped bytes — both the stream and connection
+WINDOW_UPDATE arrive with increment 524288, and the upload still gets its 200
+(content-length vs. stripped body intact). Closed-stream spray: a cleanly
+finished stream 1 is hit with 33×16 KiB DATA → 33 `RST_STREAM/STREAM_CLOSED`,
+a connection WINDOW_UPDATE crediting 524288 back, and a follow-up request on
+stream 3 still answers 200. Cookie: our client sends `cookie: a=1` +
+`cookie: b=2` as separate lines, the handler sees exactly one
+`cookie: a=1; b=2` (a single line stays untouched). Full regression **65/65**
+(h2rfcpolish added) and h2spec still **146/146 over both transports** — the
+`HandleDataAsync` restructuring (idle/closed checks now ahead of the
+happy-path accounting, flood-counter reset moved after them) changed no
+h2spec-visible behavior.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

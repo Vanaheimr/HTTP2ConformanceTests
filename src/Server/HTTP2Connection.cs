@@ -1052,6 +1052,13 @@ public sealed class HTTP2Connection
         {
 
             ValidateRequestHeaders(Stream.StreamId, decoded);
+
+            // RFC 9113, Section 8.2.3: clients may split the cookie header into
+            // multiple field lines for better HPACK compression ("crumbling");
+            // before handing the request to a generic HTTP application they
+            // MUST be reassembled into a single field, joined with "; ".
+            CombineCookieFields(decoded);
+
             Stream.RequestHeaders = decoded;
 
             // RFC 9218, Section 4: an ordinary (non-pseudo) header field, so
@@ -1555,40 +1562,66 @@ public sealed class HTTP2Connection
             throw new HTTP2ConnectionException(HTTP2ErrorCode.PROTOCOL_ERROR,
                                                "DATA frame must not be on stream 0");
 
-        // Real request traffic — reset the control-frame flood counter.
-        unproductiveFrames = 0;
+        // RFC 9113, Section 6.1: the ENTIRE frame payload counts against flow
+        // control — including the Pad Length byte and the padding itself, not
+        // just the useful data. StripPadding (below) only decides what reaches
+        // the request body, never what is accounted.
+        var flowLength = Frame.Payload.Length;
 
         var stream = streamManager.TryGetStream(Frame.StreamId);
 
-        if (stream is null)
+        if (stream is null || stream.State is not (HTTP2StreamState.Open or HTTP2StreamState.HalfClosedLocal))
         {
 
             // RFC 9113, Section 5.1: a genuinely idle stream (never opened, not
             // implicitly closed by a later stream) only accepts HEADERS/PRIORITY —
             // anything else is a connection error, not merely a stream error.
-            if (streamManager.IsIdle(Frame.StreamId))
+            // (A connection error needs no window accounting — Section 6.9
+            // exempts exactly that case.)
+            if (stream is null && streamManager.IsIdle(Frame.StreamId))
                 throw new HTTP2ConnectionException(HTTP2ErrorCode.PROTOCOL_ERROR,
                     $"DATA frame for idle stream {Frame.StreamId}");
 
+            // RFC 9113, Section 6.9: DATA on an (implicitly) closed stream —
+            // answered with a mere stream error while the connection lives on —
+            // MUST still be counted against, and returned to, the CONNECTION
+            // flow-control window: the peer charged its connection send window
+            // for these bytes, and never crediting them back would leak that
+            // window shut. (The stream window is moot — the stream is gone.)
+            streamManager.ConnectionRecvWindow -= flowLength;
+
+            if (streamManager.ConnectionRecvWindow < 0)
+                throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
+                    "Flow control window exceeded");
+
+            await ReplenishReceiveWindowsAsync(null, flowLength);
+
+            // Closed-stream DATA advances no request, so it counts against the
+            // flood budget instead of resetting it — the necessary companion to
+            // the accounting above: now that window is dutifully handed back,
+            // an endless closed-stream DATA spray would otherwise be free.
+            CountUnproductiveFrame();
+
             throw new HTTP2StreamException(HTTP2ErrorCode.STREAM_CLOSED, Frame.StreamId,
-                "DATA for unknown or closed stream");
+                stream is null
+                    ? "DATA for unknown or closed stream"
+                    : $"DATA received in invalid stream state {stream.State}");
 
         }
 
-        if (stream.State is not (HTTP2StreamState.Open or HTTP2StreamState.HalfClosedLocal))
-            throw new HTTP2StreamException(HTTP2ErrorCode.STREAM_CLOSED, Frame.StreamId,
-                $"DATA received in invalid stream state {stream.State}");
+        // Real request traffic — reset the control-frame flood counter.
+        unproductiveFrames = 0;
 
-        var payload = StripPadding(Frame, Frame.Payload.AsSpan());
-        var dataLength = payload.Length;
-
-        // Flow control accounting
-        stream.RecvWindow                  -= dataLength;
-        streamManager.ConnectionRecvWindow -= dataLength;
+        // Flow control accounting (full payload incl. padding, Section 6.1)
+        stream.RecvWindow                  -= flowLength;
+        streamManager.ConnectionRecvWindow -= flowLength;
 
         if (stream.RecvWindow < 0 || streamManager.ConnectionRecvWindow < 0)
             throw new HTTP2ConnectionException(HTTP2ErrorCode.FLOW_CONTROL_ERROR,
                 "Flow control window exceeded");
+
+        var payload = StripPadding(Frame, Frame.Payload.AsSpan());
+        var dataLength = payload.Length;
 
         // A CONNECT tunnel has no request body to buffer — inbound bytes are
         // handed to the tunnel handler as they arrive via the channel instead
@@ -1612,8 +1645,9 @@ public sealed class HTTP2Connection
             stream.RequestBody?.Write(payload);
         }
 
-        // Replenish flow control — batched, not one WINDOW_UPDATE per DATA frame.
-        await ReplenishReceiveWindowsAsync(stream, dataLength);
+        // Replenish flow control — batched, not one WINDOW_UPDATE per DATA
+        // frame, and for the full payload incl. padding (Section 6.1).
+        await ReplenishReceiveWindowsAsync(stream, flowLength);
 
         if (Frame.EndStream)
         {
@@ -1651,21 +1685,27 @@ public sealed class HTTP2Connection
     /// old "one stream + one connection WINDOW_UPDATE per DATA frame" strategy,
     /// roughly halving flow-control frames on a small window and eliminating
     /// them almost entirely on the large one (a transfer smaller than half the
-    /// window sends none at all).
+    /// window sends none at all). <paramref name="Stream"/> is null for DATA on
+    /// a closed/unknown stream (RFC 9113, Section 6.9 still requires connection-
+    /// window accounting there), in which case only the connection window is
+    /// returned.
     /// </summary>
-    private async Task ReplenishReceiveWindowsAsync(HTTP2Stream Stream, int DataLength)
+    private async Task ReplenishReceiveWindowsAsync(HTTP2Stream? Stream, int DataLength)
     {
 
         if (DataLength <= 0)
             return;
 
-        Stream.PendingRecvUpdate += DataLength;
-        if (Stream.PendingRecvUpdate >= localSettings.InitialWindowSize / 2)
+        if (Stream is not null)
         {
-            var inc = (UInt32) Stream.PendingRecvUpdate;
-            await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(Stream.StreamId, inc));
-            Stream.RecvWindow        += inc;
-            Stream.PendingRecvUpdate  = 0;
+            Stream.PendingRecvUpdate += DataLength;
+            if (Stream.PendingRecvUpdate >= localSettings.InitialWindowSize / 2)
+            {
+                var inc = (UInt32) Stream.PendingRecvUpdate;
+                await SendFrameAsync(HTTP2Frame.CreateWindowUpdate(Stream.StreamId, inc));
+                Stream.RecvWindow        += inc;
+                Stream.PendingRecvUpdate  = 0;
+            }
         }
 
         connectionPendingRecvUpdate += DataLength;
@@ -2624,6 +2664,28 @@ public sealed class HTTP2Connection
     /// <summary>
     /// Strip padding from a frame payload if the PADDED flag is set.
     /// </summary>
+    /// <summary>
+    /// RFC 9113, Section 8.2.3: reassemble a cookie header that the peer split
+    /// into multiple field lines (for HPACK efficiency) back into a single
+    /// field, concatenated with the two-octet delimiter "; " (0x3B 0x20), in
+    /// original order at the position of the first crumb. Field names are
+    /// already validated lowercase, so a plain comparison suffices.
+    /// </summary>
+    private static void CombineCookieFields(List<(string Name, string Value)> Headers)
+    {
+
+        var first = Headers.FindIndex(h => h.Name == "cookie");
+        if (first < 0 || Headers.FindIndex(first + 1, h => h.Name == "cookie") < 0)
+            return;   // zero or one cookie line — nothing to reassemble
+
+        var combined = String.Join("; ", Headers.Where(h => h.Name == "cookie")
+                                                .Select(h => h.Value));
+
+        Headers.RemoveAll(h => h.Name == "cookie");
+        Headers.Insert(first, ("cookie", combined));
+
+    }
+
     private static ReadOnlySpan<byte> StripPadding(HTTP2Frame Frame, ReadOnlySpan<byte> Payload)
     {
 

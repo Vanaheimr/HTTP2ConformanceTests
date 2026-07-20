@@ -24,11 +24,17 @@ sections.
 
 ## Build & Run
 
-The solution (`src/HTTP2.slnx`) has four projects — `Core` (shared library),
-`Server`, `Client`, and `Demo` (the runnable host):
+The HTTP/2 stack lives in the **Hermod** submodule (`libs/Hermod/Hermod/HTTP2/`,
+split into `Core`/`Server`/`Client`/`WebSocket`/`Auth`); this repo wraps it with
+the runnable `Demo`, the remaining live-host harnesses under `tests/`, and the
+root-level solution `HTTP2.slnx` (which also pulls `Hermod`/`Styx` +
+`HermodTests`/`StyxTests` as dependencies). Clone **with submodules**
+(`git clone --recurse-submodules …`, or `git submodule update --init --recursive`
+after the fact) — otherwise `libs/` is empty and nothing builds.
 
 ```bash
-cd src
+# from the repository root (not src/ — that was removed when the stack moved
+# into the Hermod submodule):
 dotnet build HTTP2.slnx
 dotnet run --project Demo/HTTP2.Demo.csproj
 # then, from another shell:
@@ -46,12 +52,22 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
+**Tests:** most coverage is the **102 NUnit tests** in
+`libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
+"FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
+(demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
+`tests/h2spec.ps1` (146/146 over h2 + h2c) and Autobahn (517/517). See
+[`tests/README.md`](tests/README.md).
+
 ## Architecture
 
-Four projects under `src/` (solution `HTTP2.slnx`): a shared **`Core`**
-library, a **`Server`**, a **`Client`**, and a runnable **`Demo`**. Dependency
-direction is `Core ← Server`, `Core ← Client`, and `Server, Client ← Demo` —
-Core never references the role-specific projects.
+The stack lives in the **Hermod** submodule under `libs/Hermod/Hermod/HTTP2/`,
+split by concern into `Core` (shared, direction-neutral), `Server`, `Client`,
+`WebSocket`, and `Auth`; the runnable **`Demo`** (in this repo, `→ Hermod`,
+`Styx`) is the host. Dependency direction is `Core ← Server`, `Core ← Client` —
+Core never references the role-specific code. The concern tables below name the
+primary file(s) per concern; **their paths are relative to
+`libs/Hermod/Hermod/HTTP2/`** (e.g. the `Core/` table → `…/HTTP2/Core/`).
 
 **File layout (updated 2026-07-20):** each public enum / interface / class /
 struct / record now lives in its **own file named after the type**; a

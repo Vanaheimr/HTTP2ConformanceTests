@@ -45,10 +45,24 @@ explicitly out of scope](#explicitly-out-of-scope) are all below. See
 
 - .NET 10 SDK (`net10.0` target)
 
+## Get the sources
+
+The hand-rolled HTTP/2 stack lives in the Vanaheimr **Hermod** library, which —
+together with **Styx** — is pulled in as a git submodule under `libs/`. Clone
+**with submodules**, otherwise `libs/Hermod` and `libs/Styx` are empty and
+nothing builds:
+
+```bash
+git clone --recurse-submodules <repo-url>
+
+# already cloned without --recurse-submodules?
+git submodule update --init --recursive
+```
+
 ## Build & run
 
 ```bash
-cd src
+# from the repository root — the solution lives here, not under src/:
 dotnet build HTTP2.slnx
 dotnet run --project Demo/HTTP2.Demo.csproj
 ```
@@ -59,8 +73,22 @@ HTTP/2 — "h2c" — with prior knowledge, no TLS).
 
 ## Test
 
-The interop + attack harnesses live under [`tests/`](tests/). Run the whole
-suite (builds, starts the demo host, drives every harness) with:
+Most of the coverage is **102 NUnit tests** under
+[`libs/Hermod/HermodTests/HTTP2/`](libs/Hermod/HermodTests/HTTP2) — the
+HPACK/Huffman codec and stream state machine, plus the full in-process
+integration matrix (streaming bodies + trailers, RFC 9111 caching, auth/mTLS,
+timeout hardening, backpressure, the client pool/robustness, WebSocket framing,
+and client interop vs. .NET Kestrel and the real gRPC client). Run them from
+this solution:
+
+```bash
+dotnet test HTTP2.slnx --filter "FullyQualifiedName~Tests.HTTP2"
+```
+
+On top of that, the [`tests/`](tests/) folder holds the **demo-driven**
+raw-frame scenarios (abuse/hardening, CONNECT/WebSocket, RFC 9218 priority
+scheduling, RFC 9110 semantics) that run against a live demo host. Run the whole
+harness suite (builds, starts the demo host, drives every scenario) with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
@@ -127,35 +155,32 @@ silently falls back to HTTP/1.1.
 ## Project layout
 
 Each public enum / interface / class / struct / record lives in its **own file
-named after the type**; the tree below names the primary file per concern (e.g.
-the frame enums, HPACK's two tables, the WebSocket value types, and the auth
-schemes are each their own sibling file).
+named after the type**. The HTTP/2 stack itself lives inside the **Hermod**
+submodule; this repository wraps it with a runnable demo, the remaining
+live-host harnesses, and the solution:
 
 ```
-src/  (solution HTTP2.slnx)
-├── Core/                Shared, direction-neutral library
-│   ├── HTTP2Frame.cs        Frame header + frame factories (+ HTTP2FrameType/Flags/ErrorCode/… enums, exceptions)
-│   ├── HPACKDecoder.cs      RFC 7541 header compression — decoder (+ HPACKEncoder.cs, Huffman{Decoder,Encoder}.cs)
-│   ├── HTTP2Stream.cs       Stream state machine + flow control (+ HTTP2StreamManager/OutboundQueue/Priority.cs)
-│   ├── HTTP2Settings.cs     Connection settings bag
-│   ├── HTTP2RequestHandler.cs  App-logic request-handler delegate
-│   ├── IHTTP2RequestStream.cs  Streaming seam (+ IHTTP2ResponseStream.cs; HTTP2StreamingHandler delegate)
-│   ├── IHTTP2Tunnel.cs      Transport-agnostic byte-tunnel interface
-│   ├── WebSocketConnection.cs  RFC 6455 + RFC 7692 framing over an IHTTP2Tunnel (+ WebSocketDeflate/Opcode/…)
-│   ├── HTTPSemantics.cs     RFC 9110 semantics (GET/HEAD/OPTIONS, conditional + Range, negotiation) (+ HTTPResource.cs)
-│   ├── HTTPAuthentication.cs  RFC 9110 §11 auth framework + Basic/Bearer/Digest/Token schemes (each its own file)
-│   └── HTTPCache.cs         RFC 9111 caching logic (+ HTTPCacheControl/StoredResponse/Mode/… .cs)
-├── Server/              (→ Core)
-│   ├── HTTP2Connection.cs   Preface, SETTINGS, frame dispatch, responses, CONNECT tunneling, priority-aware writer
-│   └── HTTP2Server.cs       TLS listener + ALPN negotiation (+ optional mTLS)
-├── Client/              (→ Core)
-│   ├── HTTP2ClientConnection.cs  Client-role connection (sends requests, assembles responses)
-│   ├── HTTP2Client.cs       Client dialer (TCP connect + TLS/ALPN h2)
-│   ├── HTTP2CachingClient.cs  RFC 9111 cache in front of a client connection
-│   └── HTTP2ClientPool.cs   Single-origin connection pool (failover + self-healing)
-└── Demo/                (→ Server, Client)
-    └── Program.cs           Demo host + example request/connect/resource handlers
+HTTP2FromScratch/                    solution HTTP2.slnx (at the repo root)
+├── libs/
+│   ├── Hermod/                      ← git submodule (Vanaheimr Hermod)
+│   │   ├── Hermod/HTTP2/            the hand-rolled HTTP/2 stack:
+│   │   │   ├── Core/                direction-neutral — framing, HPACK (+ Huffman), the stream
+│   │   │   │                        state machine + flow control, settings, the request/streaming
+│   │   │   │                        seams, RFC 9110 semantics, RFC 9111 cache logic
+│   │   │   ├── Server/              HTTP2Connection + HTTP2Server (TLS/ALPN, mTLS, cleartext h2c)
+│   │   │   ├── Client/              HTTP2ClientConnection + HTTP2Client + caching client + pool
+│   │   │   ├── WebSocket/           RFC 6455 + RFC 7692 framing over IHTTP2Tunnel
+│   │   │   └── Auth/                RFC 9110 §11 framework + Basic/Bearer/Digest/Token schemes
+│   │   └── HermodTests/HTTP2/       the 102 NUnit tests + shared fixtures (H2, TestH2Server,
+│   │                                H2Raw, MockH2Server, KestrelH2Server)
+│   └── Styx/                        ← git submodule (Vanaheimr Styx — Hermod's dependency)
+├── Demo/                            runnable demo host (→ Hermod, Styx) + example handlers
+├── tests/                          demo-driven raw-frame harnesses + h2spec/Autobahn drivers + tools
+└── docs/BUILD_LOG.md                full chronological build history
 ```
+
+For the file-by-file breakdown of the stack, see the Architecture tables in
+[`CLAUDE.md`](CLAUDE.md) and `libs/Hermod/Hermod/HTTP2/README.md`.
 
 ## Where application logic plugs in
 

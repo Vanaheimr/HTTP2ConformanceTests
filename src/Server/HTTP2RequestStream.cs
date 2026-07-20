@@ -15,51 +15,54 @@
  * limitations under the License.
  */
 
-namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2;
-
-using System.Threading.Channels;
-
-/// <summary>
-/// Server-side <see cref="IHTTP2RequestStream"/> over a single streaming
-/// request's <see cref="HTTP2Stream"/>: request headers, the body pulled from
-/// the stream's inbound channel as DATA frames arrive, and the trailers (if any)
-/// once the body ends.
-/// </summary>
-internal sealed class HTTP2RequestStream : IHTTP2RequestStream
+namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
 {
 
-    private static readonly List<(string Name, string Value)> EmptyFields = [];
+    using System.Threading.Channels;
 
-    private readonly HTTP2Connection                         connection;
-    private readonly HTTP2Stream                             stream;
-    private readonly IReadOnlyList<(string Name, string Value)> headers;
-
-    internal HTTP2RequestStream(HTTP2Connection Connection, HTTP2Stream Stream, IReadOnlyList<(string Name, string Value)> Headers)
+    /// <summary>
+    /// Server-side <see cref="IHTTP2RequestStream"/> over a single streaming
+    /// request's <see cref="HTTP2Stream"/>: request headers, the body pulled from
+    /// the stream's inbound channel as DATA frames arrive, and the trailers (if any)
+    /// once the body ends.
+    /// </summary>
+    internal sealed class HTTP2RequestStream : IHTTP2RequestStream
     {
-        connection = Connection;
-        stream     = Stream;
-        headers    = Headers;
-    }
 
-    public IReadOnlyList<(string Name, string Value)> Headers  => headers;
+        private static readonly List<(string Name, string Value)> EmptyFields = [];
 
-    public IReadOnlyList<(string Name, string Value)> Trailers => stream.Trailers ?? EmptyFields;
+        private readonly HTTP2Connection                         connection;
+        private readonly HTTP2Stream                             stream;
+        private readonly IReadOnlyList<(string Name, string Value)> headers;
 
-    public async ValueTask<byte[]?> ReadAsync(CancellationToken CancellationToken = default)
-    {
-        var reader = stream.RequestBodyChannel!.Reader;
-
-        if (await reader.WaitToReadAsync(CancellationToken) && reader.TryRead(out var chunk))
+        internal HTTP2RequestStream(HTTP2Connection Connection, HTTP2Stream Stream, IReadOnlyList<(string Name, string Value)> Headers)
         {
-            // Consumption-driven backpressure: the window for these bytes was
-            // deliberately withheld on receipt (HandleDataAsync) and is returned
-            // only now, as the handler actually consumes them — so an unread body
-            // leaves the peer's window depleted instead of buffering unbounded.
-            await connection.ReplenishConsumedAsync(stream, chunk.Length);
-            return chunk;
+            connection = Connection;
+            stream     = Stream;
+            headers    = Headers;
         }
 
-        return null;   // body ended (channel completed at END_STREAM)
+        public IReadOnlyList<(string Name, string Value)> Headers  => headers;
+
+        public IReadOnlyList<(string Name, string Value)> Trailers => stream.Trailers ?? EmptyFields;
+
+        public async ValueTask<byte[]?> ReadAsync(CancellationToken CancellationToken = default)
+        {
+            var reader = stream.RequestBodyChannel!.Reader;
+
+            if (await reader.WaitToReadAsync(CancellationToken) && reader.TryRead(out var chunk))
+            {
+                // Consumption-driven backpressure: the window for these bytes was
+                // deliberately withheld on receipt (HandleDataAsync) and is returned
+                // only now, as the handler actually consumes them — so an unread body
+                // leaves the peer's window depleted instead of buffering unbounded.
+                await connection.ReplenishConsumedAsync(stream, chunk.Length);
+                return chunk;
+            }
+
+            return null;   // body ended (channel completed at END_STREAM)
+        }
+
     }
 
 }

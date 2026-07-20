@@ -53,7 +53,7 @@ together with **Styx** — is pulled in as a git submodule under `libs/`. Clone
 nothing builds:
 
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules ssh://git@git.graphdefined.com:5001/Vanaheimr/HTTP2FromScratch.git
 
 # already cloned without --recurse-submodules?
 git submodule update --init --recursive

@@ -3,7 +3,7 @@
     "outdir": "/reports",
     "servers": [
         {
-            "agent": "HTTP2FromScratch",
+            "agent": "Hermod.HTTP2",
             "url": "ws://host.docker.internal:9010"
         }
     ],

@@ -110,7 +110,7 @@ cfg="$repdir/fuzzingclient.json"
 cat >"$cfg" <<JSON
 {
     "outdir": "/reports",
-    "servers": [{ "agent": "HTTP2FromScratch", "url": "ws://127.0.0.1:$port" }],
+    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://127.0.0.1:$port" }],
     "cases": ["*"],
     "exclude-cases": [],
     "exclude-agent-cases": {}

@@ -87,10 +87,7 @@ if (-not $NoBuild) {
 # Self-contained harnesses (no external server needed)
 # ---------------------------------------------------------------------------
 Section "Self-contained harnesses"
-Invoke-Harness -Label "h2clienttest"     -Project "h2clienttest"
-Invoke-Harness -Label "h2clientpriority" -Project "h2clientpriority"
 Invoke-Harness -Label "grpc"             -Project "grpc"
-Invoke-Harness -Label "h2c"              -Project "h2c"
 
 # ---------------------------------------------------------------------------
 # Demo-driven harnesses — need the Demo host on :8443

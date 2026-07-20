@@ -19,27 +19,24 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **52/52 harness runs pass** (each self-reports its own check
-count — e.g. h2semantics 59/59, h2clienttest 14/14, h2clientpriority 15/15,
-grpc 16/16, h2c 12/12).
+Current status: **49/49 harness runs pass** (each self-reports its own check
+count — e.g. h2semantics 59/59, grpc 16/16).
 
 The in-process unit + integration tests — HPACK/Huffman, the stream manager,
 1xx interim responses, content coding, the QUERY method, streaming bodies +
 trailers, RFC 9111 caching, auth/mTLS, timeout hardening, backpressure, the
-client pool/robustness, and RFC 6455 WebSocket framing — now live as NUnit
-fixtures in Hermod's `HermodTests/HTTP2/` (83 tests), so they are no longer
-duplicated as harnesses here. What remains under `tests/` are the demo-driven
-raw-frame scenarios (h2attack/h2connect/h2priority/h2semantics), the .NET
-reference-peer interop harnesses (h2clienttest/h2clientpriority/grpc/h2c), and
-the external-suite drivers (h2spec, Autobahn).
+client pool/robustness, RFC 6455 WebSocket framing, and the client interop vs.
+.NET Kestrel (TLS `h2` and cleartext `h2c`) — now live as NUnit fixtures in
+Hermod's `HermodTests/HTTP2/` (93 tests), so they are no longer duplicated as
+harnesses here. What remains under `tests/` are the demo-driven raw-frame
+scenarios (h2attack/h2connect/h2priority/h2semantics), the sole remaining
+reference-peer harness (grpc — pending the `Grpc.Net.Client` NuGet in
+HermodTests), and the external-suite drivers (h2spec, Autobahn).
 
 ## The harnesses
 
 | Harness | Kind | Covers |
 |---|---|---|
-| `h2c`              | self-contained | cleartext HTTP/2 (prior knowledge, no TLS): our client ↔ our server, .NET HttpClient prior-knowledge, and .NET Kestrel h2c (12 checks) |
-| `h2clienttest`     | self-contained | our client vs. our server *and* vs. .NET Kestrel (14 checks) |
-| `h2clientpriority` | self-contained | client-side RFC 9218 emission vs. our server + Kestrel (15 checks) |
 | `grpc`             | self-contained | gRPC over our stack — all four call types (unary, server-/client-streaming, bidi), length-prefix framing, `grpc-status` trailers — vs. our client (incl. the streaming request API) + the real `Grpc.Net.Client` (16 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range (single + multi `multipart/byteranges`), negotiation (59 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |

@@ -15,7 +15,7 @@ HTTP/2 server for the client).
 matrix](#rfc-compliance-matrix), a [feature-by-feature breakdown](#feature-detail),
 the [security-hardening summary](#security-hardening-summary), and [what's
 explicitly out of scope](#explicitly-out-of-scope) are all below. See
-[`CLAUDE.md`](CLAUDE.md) for the full chronological build history.
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the full chronological build history.
 
 > ⚠️ **Reference implementation.** Requests, responses, flow control, real
 > stream multiplexing, CONTINUATION-flood/Rapid-Reset/stream-ID-exhaustion
@@ -77,7 +77,7 @@ pwsh tests/h2spec.ps1   # builds, starts the demo, runs h2spec on both transport
 
 — see [`tests/TestingAgainst_h2spec.md`](tests/TestingAgainst_h2spec.md) for the
 full h2spec walkthrough, [`tests/README.md`](tests/README.md) for the harness
-layout, and [`CLAUDE.md`](CLAUDE.md) for the conformance breakdown.
+layout, and [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the conformance breakdown.
 
 The WebSocket framing (RFC 6455) likewise passes **517/517** cases of the
 canonical [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite)
@@ -584,9 +584,10 @@ they're common in the wild:
 
 ## Status & roadmap
 
-This README is the reference; [`CLAUDE.md`](./CLAUDE.md) is the full
-chronological build log (every feature, why it was built that way, and how it was
-verified) and the working-notes / conventions file.
+This README is the reference. [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) is the full
+chronological build log — every feature, why it was built that way, and how it
+was verified. [`CLAUDE.md`](./CLAUDE.md) holds the architecture, conventions, and
+a current-state summary (the agent/working-notes file).
 
 ## License
 

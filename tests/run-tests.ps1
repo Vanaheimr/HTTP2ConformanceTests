@@ -84,13 +84,9 @@ if (-not $NoBuild) {
 }
 
 # ---------------------------------------------------------------------------
-# Self-contained harnesses (no external server needed)
-# ---------------------------------------------------------------------------
-Section "Self-contained harnesses"
-Invoke-Harness -Label "grpc"             -Project "grpc"
-
-# ---------------------------------------------------------------------------
 # Demo-driven harnesses — need the Demo host on :8443
+# (the former self-contained harnesses now live as NUnit tests in Hermod's
+#  HermodTests/HTTP2/ — see tests/README.md)
 # ---------------------------------------------------------------------------
 Section "Starting Demo host on :8443"
 

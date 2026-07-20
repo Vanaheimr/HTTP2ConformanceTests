@@ -12,32 +12,32 @@ raw-frame clients that exercise the framing layer directly.
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-The runner builds the solution, runs the self-contained harnesses, then starts
-the Demo host on `:8443` and drives the demo-dependent harnesses against it
-(one process per scenario), and prints a pass/fail summary. Flags:
+The runner builds the solution, starts the Demo host on `:8443`, drives the
+demo-dependent harnesses against it (one process per scenario), and prints a
+pass/fail summary. Flags:
 
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **49/49 harness runs pass** (each self-reports its own check
-count — e.g. h2semantics 59/59, grpc 16/16).
+Current status: **48/48 harness runs pass** (each self-reports its own check
+count — e.g. h2semantics 59/59, plus the h2attack / h2connect / h2priority
+raw-frame scenarios).
 
 The in-process unit + integration tests — HPACK/Huffman, the stream manager,
 1xx interim responses, content coding, the QUERY method, streaming bodies +
 trailers, RFC 9111 caching, auth/mTLS, timeout hardening, backpressure, the
-client pool/robustness, RFC 6455 WebSocket framing, and the client interop vs.
-.NET Kestrel (TLS `h2` and cleartext `h2c`) — now live as NUnit fixtures in
-Hermod's `HermodTests/HTTP2/` (93 tests), so they are no longer duplicated as
-harnesses here. What remains under `tests/` are the demo-driven raw-frame
-scenarios (h2attack/h2connect/h2priority/h2semantics), the sole remaining
-reference-peer harness (grpc — pending the `Grpc.Net.Client` NuGet in
-HermodTests), and the external-suite drivers (h2spec, Autobahn).
+client pool/robustness, RFC 6455 WebSocket framing, client interop vs. .NET
+Kestrel (TLS `h2` and cleartext `h2c`), and gRPC (all four call types, vs. the
+real `Grpc.Net.Client`) — now live as NUnit fixtures in Hermod's
+`HermodTests/HTTP2/` (102 tests), so they are no longer harnesses here. What
+remains under `tests/` are the demo-driven raw-frame scenarios
+(h2attack/h2connect/h2priority/h2semantics), the external-suite drivers (h2spec,
+Autobahn), and the diagnostic tools (h2raw, h2test, autobahn-server).
 
 ## The harnesses
 
 | Harness | Kind | Covers |
 |---|---|---|
-| `grpc`             | self-contained | gRPC over our stack — all four call types (unary, server-/client-streaming, bidi), length-prefix framing, `grpc-status` trailers — vs. our client (incl. the streaming request API) + the real `Grpc.Net.Client` (16 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range (single + multi `multipart/byteranges`), negotiation (59 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
@@ -45,9 +45,10 @@ HermodTests), and the external-suite drivers (h2spec, Autobahn).
 | `autobahn-server`  | server         | RFC 6455 WebSocket echo server (HTTP/1.1 Upgrade) for the Autobahn TestSuite — not a pass/fail harness, see below |
 | `h2raw`, `h2test`  | diagnostic     | raw frame loggers / ad-hoc request drivers (not in the pass/fail gate) |
 
-"demo-driven" harnesses talk to the Demo host on `https://localhost:8443`.
-"self-contained" harnesses spin up their own server(s) on private ports
-(9443–9471, plus ephemeral mock-server ports).
+"demo-driven" harnesses talk to the Demo host on `https://localhost:8443`
+(started by the runner). The former "self-contained" harnesses — which spun up
+their own server(s) on private ports — are now NUnit fixtures in Hermod's
+`HermodTests/HTTP2/`.
 
 ## h2spec conformance
 

@@ -53,7 +53,7 @@ together with **Styx** — is pulled in as a git submodule under `libs/`. Clone
 nothing builds:
 
 ```bash
-git clone --recurse-submodules ssh://git@git.graphdefined.com:5001/Vanaheimr/HTTP2FromScratch.git
+git clone --recurse-submodules https://github.com/Vanaheimr/HTTP2ConformanceTests.git
 
 # already cloned without --recurse-submodules?
 git submodule update --init --recursive
@@ -160,7 +160,7 @@ submodule; this repository wraps it with a runnable demo, the remaining
 live-host harnesses, and the solution:
 
 ```
-HTTP2FromScratch/                    solution HTTP2.slnx (at the repo root)
+HTTP2ConformanceTests/               solution HTTP2.slnx (at the repo root)
 ├── libs/
 │   ├── Hermod/                      ← git submodule (Vanaheimr Hermod)
 │   │   ├── Hermod/HTTP2/            the hand-rolled HTTP/2 stack:

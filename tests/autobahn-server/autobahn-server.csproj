@@ -9,7 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Core\HTTP2.Core.csproj" />
+    <ProjectReference Include="..\..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>
 
 </Project>

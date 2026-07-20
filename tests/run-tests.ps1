@@ -28,8 +28,7 @@ param(
 # terminating error. Explicit `throw`s below still abort regardless.
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot          # repo root
-$src  = Join-Path $root "src"
-$sln  = Join-Path $src  "HTTP2.slnx"
+$sln  = Join-Path $root "HTTP2.slnx"
 
 $script:total  = 0
 $script:passed = 0
@@ -123,7 +122,7 @@ Get-NetTCPConnection -LocalPort 8443, 8080 -State Listen -ErrorAction SilentlyCo
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
 $demo = Start-Process -FilePath "dotnet" `
-    -ArgumentList @("run", "--project", (Join-Path $src "Demo/HTTP2.Demo.csproj"), "--no-build") `
+    -ArgumentList @("run", "--project", (Join-Path $root "Demo/HTTP2.Demo.csproj"), "--no-build") `
     -PassThru -WindowStyle Hidden
 
 try {

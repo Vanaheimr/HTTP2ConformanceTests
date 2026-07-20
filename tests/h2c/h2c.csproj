@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Server\HTTP2.Server.csproj" />
-    <ProjectReference Include="..\..\src\Client\HTTP2.Client.csproj" />
+    <ProjectReference Include="..\..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>
 
 </Project>

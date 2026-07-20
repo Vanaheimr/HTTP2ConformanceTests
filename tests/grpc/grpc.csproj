@@ -9,12 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Server\HTTP2.Server.csproj" />
-    <ProjectReference Include="..\..\src\Client\HTTP2.Client.csproj" />
     <!-- Test-only reference peer (the real gRPC client), like HttpClient/Kestrel
          elsewhere — does not count against the core stack's BCL-only rule. -->
     <PackageReference Include="Grpc.Net.Client" Version="2.66.0" />
     <Using Include="System.Buffers.Binary" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>
 
 </Project>

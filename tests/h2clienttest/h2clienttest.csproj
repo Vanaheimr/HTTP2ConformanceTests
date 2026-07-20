@@ -10,10 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The hand-rolled stack, now as project references (Core comes in
-         transitively via both). -->
-    <ProjectReference Include="..\..\src\Server\HTTP2.Server.csproj" />
-    <ProjectReference Include="..\..\src\Client\HTTP2.Client.csproj" />
+    <ProjectReference Include="..\..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>
 
 </Project>

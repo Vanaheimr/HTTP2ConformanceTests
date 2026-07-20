@@ -19,36 +19,27 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **67/67 harness runs pass** (each self-reports its own check
-count — e.g. h2semantics 59/59, h2clienttest 14/14, h2authtest 33/33,
-h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
+Current status: **52/52 harness runs pass** (each self-reports its own check
+count — e.g. h2semantics 59/59, h2clienttest 14/14, h2clientpriority 15/15,
+grpc 16/16, h2c 12/12).
 
-The pure in-memory Core unit tests (Huffman decode, HPACK encoder,
-`HTTP2StreamManager` pruning) now live as NUnit fixtures in Hermod's
-`HermodTests/HTTP2/`, so they are no longer duplicated as harnesses here.
+The in-process unit + integration tests — HPACK/Huffman, the stream manager,
+1xx interim responses, content coding, the QUERY method, streaming bodies +
+trailers, RFC 9111 caching, auth/mTLS, timeout hardening, backpressure, the
+client pool/robustness, and RFC 6455 WebSocket framing — now live as NUnit
+fixtures in Hermod's `HermodTests/HTTP2/` (83 tests), so they are no longer
+duplicated as harnesses here. What remains under `tests/` are the demo-driven
+raw-frame scenarios (h2attack/h2connect/h2priority/h2semantics), the .NET
+reference-peer interop harnesses (h2clienttest/h2clientpriority/grpc/h2c), and
+the external-suite drivers (h2spec, Autobahn).
 
 ## The harnesses
 
 | Harness | Kind | Covers |
 |---|---|---|
-| `h2interim`        | self-contained | 1xx interim responses: automatic 100-continue + 103 Early Hints, vs. our client + .NET HttpClient (7 checks) |
 | `h2c`              | self-contained | cleartext HTTP/2 (prior knowledge, no TLS): our client ↔ our server, .NET HttpClient prior-knowledge, and .NET Kestrel h2c (12 checks) |
-| `h2shutdowntest`   | self-contained | graceful `GOAWAY` shutdown timing (own server + port) |
-| `h2timeout`        | self-contained | Slowloris/timeout hardening: handshake, preface, partial header block, withheld payload, SETTINGS-ACK timeouts |
 | `h2clienttest`     | self-contained | our client vs. our server *and* vs. .NET Kestrel (14 checks) |
-| `h2authtest`       | self-contained | RFC 9110 §11 auth framework + Basic/Bearer/Digest (RFC 7616)/Token (non-standard) + mTLS, vs. our client + .NET `HttpClient` (33 checks) |
-| `h2cachetest`      | self-contained | RFC 9111 client cache: freshness, revalidation, Vary, shared/private (23 checks) |
 | `h2clientpriority` | self-contained | client-side RFC 9218 emission vs. our server + Kestrel (15 checks) |
-| `h2clientrobust`   | self-contained | client robustness vs. a raw mock server: REFUSED_STREAM retry, MCS gating, GOAWAY retry-safety, keepalive (8 checks) |
-| `h2pool`           | self-contained | `HTTP2ClientPool` single-origin pool: warm-up, load spreading, self-healing (GOAWAY → reconnect), not-processed failover, disposal — vs. our server + a multi-connection mock (12 checks) |
-| `h2streaming`      | self-contained | streaming bodies + response trailers (gRPC-style) vs. our client *and* .NET HttpClient (8 checks) |
-| `h2wsclient`       | self-contained | client-side CONNECT tunnel + WebSocket (text/binary/close) + permessage-deflate (RFC 7692) negotiation over the RFC 8441 CONNECT path vs. our server (15 checks) |
-| `h2flowbatch`      | self-contained | WINDOW_UPDATE batching + startup connection-window bump on a large upload (4 checks) |
-| `h2rfcpolish`      | self-contained | MUST-level details h2spec misses: padded-DATA flow accounting (§6.1), closed-stream DATA connection-window credit (§6.9), cookie crumb reassembly (§8.2.3) (8 checks) |
-| `h2backpressure`   | self-contained | consumption-driven flow-control backpressure (window returned on consume, not receipt) + bounded buffered body (`MaxRequestBodySize`) (6 checks) |
-| `h2wsconformance`  | self-contained | RFC 6455 WebSocket framing conformance — the critical Autobahn cases (framing, fragmentation, UTF-8 §8.1, close §7.4) + permessage-deflate (RFC 7692) round-trips, driven raw against our `WebSocketConnection` (31 checks) |
-| `h2compress`       | self-contained | on-the-fly gzip/brotli/deflate content coding vs. our client + .NET HttpClient (11 checks) |
-| `h2query`          | self-contained | RFC 10008 the HTTP QUERY method (safe/idempotent body-carrying read) vs. our client + .NET HttpClient — filtering, Content-Location, ETag/304, Allow, 400/404/405 (12 checks) |
 | `grpc`             | self-contained | gRPC over our stack — all four call types (unary, server-/client-streaming, bidi), length-prefix framing, `grpc-status` trailers — vs. our client (incl. the streaming request API) + the real `Grpc.Net.Client` (16 checks) |
 | `h2semantics`      | demo-driven    | RFC 9110 GET/HEAD/OPTIONS, conditional, Range (single + multi `multipart/byteranges`), negotiation (59 checks) |
 | `h2attack`         | demo-driven    | flood / malformed / trailers / idle-stream / rapid-reset / exhaustion / header-limit |

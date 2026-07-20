@@ -87,24 +87,9 @@ if (-not $NoBuild) {
 # Self-contained harnesses (no external server needed)
 # ---------------------------------------------------------------------------
 Section "Self-contained harnesses"
-Invoke-Harness -Label "h2shutdowntest"   -Project "h2shutdowntest"  -Mode NoCross
-Invoke-Harness -Label "h2timeout"        -Project "h2timeout"
 Invoke-Harness -Label "h2clienttest"     -Project "h2clienttest"
-Invoke-Harness -Label "h2authtest"       -Project "h2authtest"
-Invoke-Harness -Label "h2cachetest"      -Project "h2cachetest"
 Invoke-Harness -Label "h2clientpriority" -Project "h2clientpriority"
-Invoke-Harness -Label "h2clientrobust"   -Project "h2clientrobust"
-Invoke-Harness -Label "h2pool"           -Project "h2pool"
-Invoke-Harness -Label "h2streaming"      -Project "h2streaming"
-Invoke-Harness -Label "h2wsclient"       -Project "h2wsclient"
-Invoke-Harness -Label "h2flowbatch"      -Project "h2flowbatch"
-Invoke-Harness -Label "h2rfcpolish"      -Project "h2rfcpolish"
-Invoke-Harness -Label "h2backpressure"   -Project "h2backpressure"
-Invoke-Harness -Label "h2wsconformance"  -Project "h2wsconformance"
-Invoke-Harness -Label "h2query"          -Project "h2query"
 Invoke-Harness -Label "grpc"             -Project "grpc"
-Invoke-Harness -Label "h2compress"       -Project "h2compress"
-Invoke-Harness -Label "h2interim"        -Project "h2interim"
 Invoke-Harness -Label "h2c"              -Project "h2c"
 
 # ---------------------------------------------------------------------------

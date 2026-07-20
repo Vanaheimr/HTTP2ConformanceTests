@@ -151,7 +151,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
 
-**Verification:** `tests/run-tests.ps1` → **67/67** harness runs; **h2spec
+**Verification:** `tests/run-tests.ps1` → **52/52** harness runs; **h2spec
 146/146** over both transports (Windows + Linux); **Autobahn 517/517** (full RFC
 6455 + permessage-deflate). Reference peers (test-only, don't count against the
 BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`.

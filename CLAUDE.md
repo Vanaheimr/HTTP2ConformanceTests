@@ -17,8 +17,8 @@ in C#).
 
 For a curated, reader-facing reference of everything supported — the RFC
 compliance matrix, feature-by-feature breakdown, security hardening, and what's
-out of scope — see [`FEATURES.md`](FEATURES.md). This file (CLAUDE.md) is the
-chronological build log / working notes.
+out of scope — see the reference sections in [`README.md`](README.md). This file
+(CLAUDE.md) is the chronological build log / working notes.
 
 ## Build & Run
 

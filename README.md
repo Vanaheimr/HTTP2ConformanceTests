@@ -196,4 +196,6 @@ current-state summary (the agent/working-notes file).
 
 ## License
 
-TBD.
+Apache License 2.0 — © 2010-2026 GraphDefined GmbH. The full text is in
+[`LICENSE`](LICENSE), and every source file carries the standard Apache-2.0
+header. The Hermod and Styx submodules are likewise Apache-2.0.

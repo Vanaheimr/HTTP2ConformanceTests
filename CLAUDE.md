@@ -1,26 +1,27 @@
-# HTTP/2 From Scratch — C# / .NET 10
+# HTTP/2 Conformance Tests & Demo — C# / .NET 10
 
-A from-scratch HTTP/2 stack built directly on `SslStream` — no `Kestrel`, no
-`HttpListener`, no `System.Net.Http` HTTP/2 stack. It's **three parts** (Track
-E, done): a **shared protocol library** (`Core` — the direction-neutral code:
-framing, HPACK, the stream layer, WebSocket framing, HTTP semantics), an
-**HTTP/2 server**, and an **HTTP/2 client**, each its own project under
-`src/`. The focus is the **binary framing layer** and everything below the HTTP
-application semantics: frame parsing/serialization, HPACK, the stream state
-machine, flow control, and the TLS+ALPN handshake. HTTP/1.1 is assumed to
-already exist elsewhere; the higher-level request semantics are deliberately
-thin here.
+This repository is the **runnable demo host** plus the **conformance / interop
+test drivers** for the from-scratch HTTP/2 stack (built directly on `SslStream`
+— no `Kestrel`, no `HttpListener`, no `System.Net.Http` HTTP/2 stack). The stack
+itself lives in the Vanaheimr **Hermod** library, pulled in here as a git
+submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — the
+direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
+`Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
+the `tests/` live-host raw-frame harnesses, and the h2spec/Autobahn drivers; the
+102 NUnit unit + integration tests live with the stack in Hermod
+(`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
 Hermod protocol stacks (SMTP, IMAP, HTTP/2, DHCP, NTS-KE, TCP, ... hand-rolled
 in C#).
 
-This file (CLAUDE.md) holds the **architecture, conventions, and a current-state
-summary** — the essentials for working in the codebase. The full **chronological
-build log** (every feature, the design decisions, edge cases found, and how each
-was verified) lives in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md). A curated,
-reader-facing feature/RFC reference is in the [`README.md`](README.md) reference
-sections.
+This file (CLAUDE.md) holds the **working notes for this repo** plus a
+**concern-level map of the stack under test** (the Architecture tables below),
+a current-state summary, and the conventions. The stack's own reader-facing
+reference (API, RFC-compliance matrix, feature detail) lives next to the code in
+`libs/Hermod/Hermod/HTTP2/README.md`; the full chronological **build log** — every
+feature, the design decisions, edge cases found, and how each was verified — is
+in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 ## Build & Run
 
@@ -116,8 +117,9 @@ WebSocket value types, and the auth schemes are each their own file).
 |---|---|
 | `Program.cs` | Demo host (TLS `h2` on :8443 + cleartext `h2c` on :8080) + self-signed cert + example request/connect/resource handlers (the app-logic plug-in point) |
 
-All four projects share the `org.GraphDefined.Vanaheimr.Hermod.HTTP2` namespace
-(the Vanaheimr/Hermod convention).
+The stack (`Core`/`Server`/`Client`/`WebSocket`/`Auth` in Hermod) and the `Demo`
+here all share the `org.GraphDefined.Vanaheimr.Hermod.HTTP2` namespace (the
+Vanaheimr/Hermod convention).
 
 The integration seam for real application logic is the `HTTP2RequestHandler`
 delegate (in `Core`): it receives decoded headers + body and returns response

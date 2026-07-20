@@ -65,7 +65,7 @@ suite (builds, starts the demo host, drives every harness) with:
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-Current status: **69/69 harness runs pass**, and the stack scores **146/146 on
+Current status: **70/70 harness runs pass**, and the stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —

@@ -19,19 +19,20 @@ the Demo host on `:8443` and drives the demo-dependent harnesses against it
 - `-NoBuild` — skip the build step (assumes a current build).
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **70/70 harness runs pass** (each self-reports its own check
+Current status: **67/67 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 59/59, h2clienttest 14/14, h2authtest 33/33,
 h2cachetest 23/23, h2clientpriority 15/15, h2c 12/12).
+
+The pure in-memory Core unit tests (Huffman decode, HPACK encoder,
+`HTTP2StreamManager` pruning) now live as NUnit fixtures in Hermod's
+`HermodTests/HTTP2/`, so they are no longer duplicated as harnesses here.
 
 ## The harnesses
 
 | Harness | Kind | Covers |
 |---|---|---|
-| `h2hufftest`       | self-contained | HPACK Huffman decode: RFC 7541 Appendix B, 5000-round fuzz, §5.2 padding edge cases |
-| `h2hpackenc`       | self-contained | HPACK encoder: static/dynamic-table indexing, Huffman coding, size-update signaling (round-trips via our decoder) |
 | `h2interim`        | self-contained | 1xx interim responses: automatic 100-continue + 103 Early Hints, vs. our client + .NET HttpClient (7 checks) |
 | `h2c`              | self-contained | cleartext HTTP/2 (prior knowledge, no TLS): our client ↔ our server, .NET HttpClient prior-knowledge, and .NET Kestrel h2c (12 checks) |
-| `h2streamtest`     | self-contained | `HTTP2StreamManager` unit tests: pruning, window adjust, ID reuse |
 | `h2shutdowntest`   | self-contained | graceful `GOAWAY` shutdown timing (own server + port) |
 | `h2timeout`        | self-contained | Slowloris/timeout hardening: handshake, preface, partial header block, withheld payload, SETTINGS-ACK timeouts |
 | `h2clienttest`     | self-contained | our client vs. our server *and* vs. .NET Kestrel (14 checks) |

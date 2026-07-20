@@ -151,10 +151,12 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
 
-**Verification:** `tests/run-tests.ps1` → **70/70** harness runs; **h2spec
+**Verification:** `tests/run-tests.ps1` → **67/67** harness runs; **h2spec
 146/146** over both transports (Windows + Linux); **Autobahn 517/517** (full RFC
 6455 + permessage-deflate). Reference peers (test-only, don't count against the
 BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`.
+The pure in-memory Core unit tests (Huffman, HPACK encoder, `HTTP2StreamManager`)
+live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`, not as harnesses here.
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**; nothing is open. The full history — feature by feature, with the design

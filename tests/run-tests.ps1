@@ -87,9 +87,6 @@ if (-not $NoBuild) {
 # Self-contained harnesses (no external server needed)
 # ---------------------------------------------------------------------------
 Section "Self-contained harnesses"
-Invoke-Harness -Label "h2hufftest"       -Project "h2hufftest"
-Invoke-Harness -Label "h2hpackenc"       -Project "h2hpackenc"
-Invoke-Harness -Label "h2streamtest"     -Project "h2streamtest"
 Invoke-Harness -Label "h2shutdowntest"   -Project "h2shutdowntest"  -Mode NoCross
 Invoke-Harness -Label "h2timeout"        -Project "h2timeout"
 Invoke-Harness -Label "h2clienttest"     -Project "h2clienttest"

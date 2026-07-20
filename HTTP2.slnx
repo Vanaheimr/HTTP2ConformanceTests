@@ -23,17 +23,14 @@
     <Project Path="tests/grpc/grpc.csproj" />
     <Project Path="tests/h2pool/h2pool.csproj" />
     <Project Path="tests/autobahn-server/autobahn-server.csproj" />
-    <Project Path="tests/h2hpackenc/h2hpackenc.csproj" />
     <Project Path="tests/h2interim/h2interim.csproj" />
     <Project Path="tests/h2timeout/h2timeout.csproj" />
-    <Project Path="tests/h2hufftest/h2hufftest.csproj" />
     <Project Path="tests/h2priority/h2priority.csproj" />
     <Project Path="tests/h2raw/h2raw.csproj" />
     <Project Path="tests/h2semantics/h2semantics.csproj" />
     <Project Path="tests/h2shutdowntest/h2shutdowntest.csproj" />
     <Project Path="tests/h2streaming/h2streaming.csproj" />
     <Project Path="tests/h2wsclient/h2wsclient.csproj" />
-    <Project Path="tests/h2streamtest/h2streamtest.csproj" />
     <Project Path="tests/h2test/h2test.csproj" />
   </Folder>
   <Project Path="Demo/HTTP2.Demo.csproj" />

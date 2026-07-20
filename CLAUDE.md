@@ -51,35 +51,43 @@ library, a **`Server`**, a **`Client`**, and a runnable **`Demo`**. Dependency
 direction is `Core ← Server`, `Core ← Client`, and `Server, Client ← Demo` —
 Core never references the role-specific projects.
 
+**File layout (updated 2026-07-20):** each public enum / interface / class /
+struct / record now lives in its **own file named after the type**; a
+one-line delegate stays in the file of the type it seams (placed above it), and
+extension/helper static classes likewise. The tables below therefore group the
+files by **concern** and name the primary/representative file(s) per concern —
+not every single type file (e.g. the frame enums, HPACK's two tables, the
+WebSocket value types, and the auth schemes are each their own file).
+
 **`Core/`** — the shared, direction-neutral library:
 
-| File | Responsibility |
+| Concern (primary file[s]) | Responsibility |
 |---|---|
-| `HTTP2Frame.cs` | 9-byte frame header parse/serialize, frame type/flag/error-code/role enums, frame factories, exceptions |
-| `HPACK.cs` | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
-| `HTTP2Stream.cs` | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
+| `HTTP2Frame.cs` (+ `HTTP2FrameType.cs`, `HTTP2FrameFlags.cs`, `HTTP2ErrorCode.cs`, `HTTP2SettingsParameter.cs`, `HTTP2StreamState.cs`, `HTTP2Role.cs`, `HTTP2*Exception.cs`) | 9-byte frame header parse/serialize + frame factories; the frame type/flag/error-code/role enums and the exception types are sibling files |
+| `HPACKDecoder.cs` / `HPACKEncoder.cs` (+ `HuffmanDecoder.cs` / `HuffmanEncoder.cs`) | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
+| `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
-| `HTTP2Streaming.cs` | The streaming seam: `HTTP2StreamingHandler` delegate + `IHTTP2RequestStream`/`IHTTP2ResponseStream` (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
-| `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocket.cs` doesn't depend on the server's concrete tunnel |
-| `WebSocket.cs` | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` (server vs. client masking) |
-| `HTTPSemantics.cs` | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
-| `HTTPAuthentication.cs` | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750), Digest (RFC 7616) & Token (non-standard) schemes, store-agnostic (app-supplied validators) |
-| `HTTPCaching.cs` | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
+| `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
+| `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocketConnection.cs` doesn't depend on the server's concrete tunnel |
+| `WebSocketConnection.cs` (+ `WebSocketDeflate.cs`, `WebSocketOpcode.cs`, `WebSocketMessage.cs`, `WebSocketRole.cs`, `WebSocketProtocolException.cs`) | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) + RFC 7692 permessage-deflate over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` |
+| `HTTPSemantics.cs` (+ `HTTPResource.cs`) | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
+| `HTTPAuthentication.cs` (+ `HTTPAuthenticator.cs`, `IHTTPAuthenticationScheme.cs`, `{Basic,Bearer,Digest,Token}AuthenticationScheme.cs`, `HTTPAuthenticatedIdentity.cs`, `HTTPAuthParams.cs`) | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750), Digest (RFC 7616) & Token (non-standard) schemes, store-agnostic (app-supplied validators) |
+| `HTTPCache.cs` (+ `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs`) | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
 
 **`Server/`** — references `Core`:
 
-| File | Responsibility |
+| Concern (primary file[s]) | Responsibility |
 |---|---|
-| `HTTP2Connection.cs` | Connection preface, SETTINGS handshake, the frame dispatch loop, request assembly, CONNECT tunneling (`HTTP2Tunnel` implements `IHTTP2Tunnel`), the priority-aware DATA writer loop (RFC 9218), streaming dispatch + response trailers, Slowloris/idle timeouts |
-| `HTTP2StreamAdapters.cs` | `HTTP2RequestStream`/`HTTP2ResponseStream` — server-side impls of the Core streaming seam over one `HTTP2Stream` |
+| `HTTP2Connection.cs` (+ `HTTP2ConnectResult.cs` [+ `HTTP2ConnectHandler` delegate], `HTTP2Tunnel.cs`, `HTTP2Timeouts.cs`) | Connection preface, SETTINGS handshake, the frame dispatch loop, request assembly, CONNECT tunneling (`HTTP2Tunnel` implements `IHTTP2Tunnel`), the priority-aware DATA writer loop (RFC 9218), streaming dispatch + response trailers, Slowloris/idle timeouts |
+| `HTTP2RequestStream.cs` / `HTTP2ResponseStream.cs` | Server-side impls of the Core streaming seam over one `HTTP2Stream` |
 | `HTTP2Server.cs` | `TcpListener` + `SslStream` with ALPN `h2` negotiation, TLS-handshake timeout, HTTP/1.1 fallback stub; optional `Cleartext` mode (h2c prior-knowledge, no TLS) |
 
 **`Client/`** — references `Core`:
 
-| File | Responsibility |
+| Concern (primary file[s]) | Responsibility |
 |---|---|
-| `HTTP2ClientConnection.cs` | Client-role connection: sends the preface, allocates odd request streams, sends requests + assembles `HTTP2Response`s |
+| `HTTP2ClientConnection.cs` (+ `HTTP2Response.cs`, `HTTP2ResponseHead.cs`, `HTTP2RequestHandle.cs`, `HTTP2ClientStream.cs`, `HTTP2ClientTunnel.cs`, `HTTP2ClientOptions.cs`) | Client-role connection: sends the preface, allocates odd request streams, sends requests + assembles `HTTP2Response`s; the response/handle/stream/tunnel/options types are sibling files |
 | `HTTP2Client.cs` | Dialer: TCP connect + TLS/ALPN `h2` handshake (or optional `Cleartext` h2c prior-knowledge), the client-side counterpart of `HTTP2Server` |
 | `HTTP2CachingClient.cs` | RFC 9111 cache (store + origin wiring) in front of a client connection — serves fresh hits, revalidates stale entries, keys by `Vary` |
 | `HTTP2ClientPool.cs` | Single-origin connection pool — keeps N warm connections, routes to the least-loaded, fails over not-processed requests, and self-heals dead connections in the background |
@@ -2179,6 +2187,28 @@ a fresh one serves 200 — with `MaxConnections=1` the pool reconnects and retri
 full regression is **70/70** (h2pool added) and h2spec still **146/146 over both
 transports** (the server is untouched; the connection changes are purely
 additive lifecycle signals).
+
+**File-per-type split** (done 2026-07-20) — a pure structural refactor, **no
+behavior change**: every top-level public enum / interface / class / struct /
+record now lives in its own file named after the type, across `Core`, `Server`,
+and `Client`. A one-line delegate stays in the file of the type it seams (placed
+above it, mirroring the extension-class convention) — `HTTP2StreamingHandler`
+with `IHTTP2RequestStream`, `HTTPAuthenticatedRequestHandler` with
+`HTTPAuthenticatedIdentity`, `HTTP2ConnectHandler` with `HTTP2ConnectResult`, the
+three `HTTP*Handler` resource delegates with `HTTPSemantics`; nested types stay
+put. The big multi-type files were split accordingly — e.g. `HTTP2Frame.cs` shed
+its six enums + three exceptions into sibling files; `HPACK.cs` became
+`HPACKDecoder`/`HPACKEncoder`/`HuffmanDecoder`/`HuffmanEncoder.cs`;
+`WebSocket.cs` → `WebSocketConnection.cs` + the value types; `HTTPCaching.cs`,
+`HTTPSemantics.cs`, `HTTPAuthentication.cs`, `HTTP2Stream.cs`,
+`HTTP2Streaming.cs`, `HTTP2Connection.cs`, `HTTP2StreamAdapters.cs`, and
+`HTTP2ClientConnection.cs` likewise. `GlobalUsings.cs` (`global using
+System.Buffers.Binary;`) already covered the cross-cutting using, so most split
+files need no `using` block at all. The architecture tables above were updated
+to group files by concern; the historical entries below still name the original
+files (they describe the state when written). Verified: full solution builds
+0/0, regression **70/70**, and h2spec **146/146 over both transports** — a file
+move touches no wire behavior.
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

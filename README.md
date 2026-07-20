@@ -125,20 +125,25 @@ silently falls back to HTTP/1.1.
 
 ## Project layout
 
+Each public enum / interface / class / struct / record lives in its **own file
+named after the type**; the tree below names the primary file per concern (e.g.
+the frame enums, HPACK's two tables, the WebSocket value types, and the auth
+schemes are each their own sibling file).
+
 ```
 src/  (solution HTTP2.slnx)
 ├── Core/                Shared, direction-neutral library
-│   ├── HTTP2Frame.cs        Frame header + frame factories, enums, exceptions
-│   ├── HPACK.cs             RFC 7541 header compression (full encode + decode: static/dynamic table + Huffman)
-│   ├── HTTP2Stream.cs       Stream state machine + flow control + RFC 9218 priority + role-parameterized manager
+│   ├── HTTP2Frame.cs        Frame header + frame factories (+ HTTP2FrameType/Flags/ErrorCode/… enums, exceptions)
+│   ├── HPACKDecoder.cs      RFC 7541 header compression — decoder (+ HPACKEncoder.cs, Huffman{Decoder,Encoder}.cs)
+│   ├── HTTP2Stream.cs       Stream state machine + flow control (+ HTTP2StreamManager/OutboundQueue/Priority.cs)
 │   ├── HTTP2Settings.cs     Connection settings bag
 │   ├── HTTP2RequestHandler.cs  App-logic request-handler delegate
-│   ├── HTTP2Streaming.cs       Streaming seam (incremental body + trailers, gRPC-style bidi)
+│   ├── IHTTP2RequestStream.cs  Streaming seam (+ IHTTP2ResponseStream.cs; HTTP2StreamingHandler delegate)
 │   ├── IHTTP2Tunnel.cs      Transport-agnostic byte-tunnel interface
-│   ├── WebSocket.cs         RFC 6455 WebSocket framing over an IHTTP2Tunnel
-│   ├── HTTPSemantics.cs     RFC 9110 semantics (GET/HEAD/OPTIONS, conditional + Range, content negotiation)
-│   ├── HTTPAuthentication.cs  RFC 9110 §11 auth framework + Basic/Bearer/Digest/Token schemes
-│   └── HTTPCaching.cs       RFC 9111 caching logic (Cache-Control, freshness, revalidation, Vary)
+│   ├── WebSocketConnection.cs  RFC 6455 + RFC 7692 framing over an IHTTP2Tunnel (+ WebSocketDeflate/Opcode/…)
+│   ├── HTTPSemantics.cs     RFC 9110 semantics (GET/HEAD/OPTIONS, conditional + Range, negotiation) (+ HTTPResource.cs)
+│   ├── HTTPAuthentication.cs  RFC 9110 §11 auth framework + Basic/Bearer/Digest/Token schemes (each its own file)
+│   └── HTTPCache.cs         RFC 9111 caching logic (+ HTTPCacheControl/StoredResponse/Mode/… .cs)
 ├── Server/              (→ Core)
 │   ├── HTTP2Connection.cs   Preface, SETTINGS, frame dispatch, responses, CONNECT tunneling, priority-aware writer
 │   └── HTTP2Server.cs       TLS listener + ALPN negotiation (+ optional mTLS)

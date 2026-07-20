@@ -36,6 +36,30 @@ Those reference peers are test-only and don't count against the BCL-only rule.
 Project references enforce the direction-neutral vs. role-specific boundary
 structurally: `Core` references neither `Server` nor `Client`.
 
+### File organization
+
+Each public enum / interface / class / struct / record lives in its **own file
+named after the type**. A one-line delegate sits in the file of the type it
+seams (placed above it), extension/helper static classes likewise, and nested
+types stay with their parent. So a type is always found at `<TypeName>.cs`.
+
+Entry points and the primary files per concern:
+
+| Project | Primary files |
+|---|---|
+| `Core` — framing | `HTTP2Frame.cs` (+ `HTTP2FrameType.cs`, `HTTP2FrameFlags.cs`, `HTTP2ErrorCode.cs`, `HTTP2SettingsParameter.cs`, `HTTP2StreamState.cs`, `HTTP2Role.cs`, `HTTP2*Exception.cs`) |
+| `Core` — HPACK | `HPACKDecoder.cs`, `HPACKEncoder.cs`, `HuffmanDecoder.cs`, `HuffmanEncoder.cs` |
+| `Core` — streams | `HTTP2Stream.cs`, `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs` |
+| `Core` — streaming seam | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate), `IHTTP2ResponseStream.cs` |
+| `Core` — WebSocket | `WebSocketConnection.cs`, `WebSocketDeflate.cs`, `WebSocketOpcode.cs`, `WebSocketMessage.cs`, `WebSocketRole.cs`, `WebSocketProtocolException.cs` |
+| `Core` — HTTP semantics | `HTTPSemantics.cs`, `HTTPResource.cs` |
+| `Core` — auth | `HTTPAuthentication.cs`, `HTTPAuthenticator.cs`, `IHTTPAuthenticationScheme.cs`, `{Basic,Bearer,Digest,Token}AuthenticationScheme.cs`, `HTTPAuthenticatedIdentity.cs`, `HTTPAuthParams.cs` |
+| `Core` — caching | `HTTPCache.cs`, `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs` |
+| `Core` — misc | `HTTP2Settings.cs`, `HTTP2RequestHandler.cs`, `IHTTP2Tunnel.cs` |
+| `Server` | `HTTP2Connection.cs`, `HTTP2ConnectResult.cs` (+ `HTTP2ConnectHandler` delegate), `HTTP2Tunnel.cs`, `HTTP2Timeouts.cs`, `HTTP2RequestStream.cs`, `HTTP2ResponseStream.cs`, `HTTP2Server.cs` |
+| `Client` | `HTTP2ClientConnection.cs`, `HTTP2Client.cs`, `HTTP2ClientPool.cs`, `HTTP2CachingClient.cs`, `HTTP2ClientStream.cs`, `HTTP2ClientTunnel.cs`, `HTTP2Response.cs`, `HTTP2ResponseHead.cs`, `HTTP2RequestHandle.cs`, `HTTP2ClientOptions.cs` |
+| `Demo` | `Program.cs` |
+
 ---
 
 ## RFC compliance matrix

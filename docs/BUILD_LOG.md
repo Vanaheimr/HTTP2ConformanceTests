@@ -2100,6 +2100,32 @@ files (they describe the state when written). Verified: full solution builds
 0/0, regression **70/70**, and h2spec **146/146 over both transports** — a file
 move touches no wire behavior.
 
+**TimeProvider support — injectable clock across the stack** (done 2026-07-23)
+— every time source in the stack now flows through the BCL
+`System.TimeProvider` abstraction (net8+, so still dependency-free), with
+`TimeProvider.System` as the default everywhere: without injection the
+behavior is byte-identical. The seams: `HTTP2ClientOptions.TimeProvider`
+(client) and `HTTP2Timeouts.TimeProvider` (server), plus optional constructor
+parameters on `HTTP2CachingClient` and `DigestAuthenticationScheme`. What
+moved onto the injected clock: the client keepalive pacing
+(`Task.Delay(interval, tp, ct)`) and liveness tracking (`tp.GetTimestamp()` +
+`GetElapsedTime()` with `Interlocked`, replacing `Environment.TickCount`
+arithmetic), the PING-ACK wait (`WaitAsync(timeout, tp, ct)`), the RFC 9111
+age math in the caching client (`tp.GetUtcNow()` — `HTTPCache.Evaluate`/
+`CurrentAge` already took `Now` as a parameter by design, so only the callers
+changed), the pool poll/backoff/self-heal delays, the server SETTINGS-ACK
+wait, the frame-read (Slowloris/idle/in-progress) and TLS-handshake timeouts
+(`tp.CreateTimer(...)` cancelling the linked CTS — `CancelAfter` has no
+TimeProvider overload), the shutdown notification grace, and the Digest nonce
+issue/age check. (A DateTime-vs-DateTimeOffset audit beforehand confirmed the
+stack itself was already `DateTimeOffset`-clean end to end; the wider Hermod
+library was migrated separately.) Verified: full solution builds 0 errors with
+an unchanged warning set, and the NUnit suite passes **103/103** — the 102
+existing tests over the new code paths plus `DigestNonceExpiry_FakeClock`, a
+deterministic nonce-expiry test driven by a minimal hand-rolled
+`TimeProvider` subclass (only `GetUtcNow()` overridden, no test-clock NuGet
+needed): a five-minute nonce lifetime proven in ~40 ms of wall time.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

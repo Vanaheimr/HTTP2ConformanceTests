@@ -29,7 +29,7 @@ trailers, RFC 9111 caching, auth/mTLS, timeout hardening, backpressure, the
 client pool/robustness, RFC 6455 WebSocket framing, client interop vs. .NET
 Kestrel (TLS `h2` and cleartext `h2c`), and gRPC (all four call types, vs. the
 real `Grpc.Net.Client`) — now live as NUnit fixtures in Hermod's
-`HermodTests/HTTP2/` (102 tests), so they are no longer harnesses here. What
+`HermodTests/HTTP2/` (103 tests), so they are no longer harnesses here. What
 remains under `tests/` are the demo-driven raw-frame scenarios
 (h2attack/h2connect/h2priority/h2semantics), the external-suite drivers (h2spec,
 Autobahn), and the diagnostic tools (h2raw, h2test, autobahn-server).

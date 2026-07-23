@@ -8,7 +8,7 @@ submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — th
 direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, and the h2spec/Autobahn drivers; the
-102 NUnit unit + integration tests live with the stack in Hermod
+103 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -53,7 +53,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **102 NUnit tests** in
+**Tests:** most coverage is the **103 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -150,7 +150,9 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   writer (RFC 9218). Full abuse hardening: Rapid Reset (CVE-2023-44487),
   CONTINUATION-flood (CVE-2024-27316), PING/SETTINGS floods, stream-ID exhaustion,
   in/outbound `MAX_HEADER_LIST_SIZE`, and Slowloris/idle/handshake/SETTINGS-ACK
-  timeouts.
+  timeouts. Every time source is injectable via the BCL `System.TimeProvider`
+  (`HTTP2ClientOptions.TimeProvider` / `HTTP2Timeouts.TimeProvider`, default
+  `TimeProvider.System`) for deterministic clock/timeout tests.
 - **Server + client, two transports:** mirror connection roles over TLS `h2`
   (ALPN, + optional mTLS) and cleartext `h2c` (prior knowledge). The client adds
   robustness (REFUSED_STREAM auto-retry, MAX_CONCURRENT_STREAMS gating,

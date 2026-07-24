@@ -2288,10 +2288,57 @@ warning about assertion design: "the password never appears in the credential"
 was asserted against a request for `/secret`, so the *path* matched the string
 and the assertion failed on a perfectly correct credential.
 
-Still open on the client (tracked separately): conditional requests and `Range`
-(download resume — the item that forces the real refactor, lifting the pure
-functions out of the `Wrap` pipeline), redirect following (which touches the
-single-origin pool), and a cookie jar.
+Still open on the client (tracked separately): redirect following (which touches
+the single-origin pool) and a cookie jar.
+
+**Client-side HTTP semantics, part 2: conditional requests + resumable download**
+(done 2026-07-25) — the slice that forced the refactor the umbrella was really
+about. `HTTPValidators` and `HTTPContentRange` are now direction-neutral Core
+primitives, lifted out of `HTTPSemantics` (which keeps using them through
+delegation, so precondition *evaluation* and precondition *construction* cannot
+drift apart): HTTP-date parse **and** format, entity-tag list parsing,
+strong/weak comparison per §8.8.3.2, and `Content-Range` parse **and** format.
+The parse direction of `Content-Range` had never existed — the server only ever
+formatted it, because only a client resuming a transfer needs to *read* where its
+bytes belong.
+
+`DownloadAsync` writes a representation into a caller-supplied `Stream` and
+continues an interrupted transfer with `Range: bytes=<n>-` plus `If-Range`. The
+design decisions worth recording:
+
+  * It is built on the **streaming** response path, not the buffered one, and
+    that is not a preference: `SendRequestAsync` discards the partial body when
+    the stream dies, and a download whose received prefix has been thrown away
+    cannot be resumed. This is the first thing in the stack that genuinely
+    needed `StartStreamingRequestAsync` on the client side.
+  * `If-Range` means the **server** adjudicates: 206 to splice, 200 to say "that
+    was a different representation, here is the whole thing" — in which case the
+    stale prefix is truncated away and the byte count reset, so nothing is
+    double-counted. A destination that cannot seek cannot restart, and says so
+    with an `InvalidOperationException` rather than gluing a stale prefix onto
+    fresh bytes.
+  * A **weak** entity-tag is deliberately not a resume guard (§13.1.5): it
+    promises equivalence, not identity, and concatenating byte ranges needs
+    identity. A `Last-Modified` date is accepted as the fallback, compared at
+    one-second granularity because HTTP-date has no finer precision.
+  * With no validator at all, the interruption **propagates**. Quietly returning
+    1024 of 4096 bytes would be the worst possible outcome — worse than a failed
+    download, because it looks like success.
+  * A 416 during a resume is not automatically a failure: if its `Content-Range`
+    says the representation is exactly as long as what we already hold, the
+    download is simply finished.
+  * `accept-encoding: identity` is sent explicitly. Saying *nothing* would not be
+    safe — RFC 9110 §12.5.3 lets a server compress when the client states no
+    preference, and byte ranges over a compressed representation would mean
+    splicing compressed fragments and decoding the seam.
+
+Verified: **148/148** NUnit (139 + 9) and **48/48** live harness runs — the
+latter matters here specifically because the h2semantics harness's 59 checks
+cover the server's Range and `multipart/byteranges` paths, which now format
+`Content-Range` through the shared type. The interruption in the tests is
+produced by a streaming handler that writes 1024 of 4096 bytes and then faults,
+so the client exercises its real reset-mid-body path rather than a simulated one;
+the spliced result is asserted byte-identical to the original.
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

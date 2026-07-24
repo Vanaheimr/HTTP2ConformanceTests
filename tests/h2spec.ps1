@@ -39,8 +39,8 @@ param(
 $ErrorActionPreference = "Continue"
 
 $root     = Split-Path -Parent $PSScriptRoot
-$sln      = Join-Path $root "src/HTTP2.slnx"
-$demoProj = Join-Path $root "src/Demo/HTTP2.Demo.csproj"
+$sln      = Join-Path $root "HTTP2.slnx"
+$demoProj = Join-Path $root "Demo/HTTP2.Demo.csproj"
 
 # --- locate h2spec ---------------------------------------------------------
 $cmd = Get-Command $H2spec -ErrorAction SilentlyContinue

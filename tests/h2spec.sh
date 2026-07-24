@@ -52,8 +52,8 @@ esac
 # Repo layout, relative to this script.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
-sln="$root/src/HTTP2.slnx"
-demo="$root/src/Demo/HTTP2.Demo.csproj"
+sln="$root/HTTP2.slnx"
+demo="$root/Demo/HTTP2.Demo.csproj"
 
 # --- locate h2spec ---------------------------------------------------------
 if ! command -v "$h2spec" >/dev/null 2>&1; then
@@ -97,7 +97,7 @@ free_ports
 # $demo_pid IS the server, so the cleanup below actually stops it.
 demo_dll=""
 for cfg in Debug Release; do
-    cand="$root/src/Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
+    cand="$root/Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
     [ -f "$cand" ] && { demo_dll="$cand"; break; }
 done
 if [ -z "$demo_dll" ]; then

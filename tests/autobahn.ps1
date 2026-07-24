@@ -36,7 +36,7 @@ param(
 $ErrorActionPreference = "Continue"
 
 $root    = Split-Path -Parent $PSScriptRoot
-$sln     = Join-Path $root "src/HTTP2.slnx"
+$sln     = Join-Path $root "HTTP2.slnx"
 $srvProj = Join-Path $root "tests/autobahn-server/autobahn-server.csproj"
 $cfgDir  = Join-Path $root "tests/autobahn"
 $repDir  = Join-Path $root "tests/autobahn/reports"

@@ -23,7 +23,7 @@ no-context-takeover mode (see [§ permessage-deflate](#permessage-deflate) below
 ## What is actually under test (and the one wrinkle)
 
 The suite tests the **WebSocket framing layer** — in this project,
-[`Core/WebSocket.cs`](../src/Core/WebSocket.cs) (`WebSocketConnection`): masking,
+[`WebSocketConnection.cs`](../libs/Hermod/Hermod/HTTP2/WebSocket/WebSocketConnection.cs): masking,
 opcodes, fragmentation reassembly, ping→pong, the close handshake, and RFC 6455
 §8.1 UTF-8 validation.
 
@@ -31,7 +31,7 @@ The wrinkle: Autobahn's client speaks WebSocket over the **classic HTTP/1.1
 `Upgrade` handshake**. This project's WebSockets run in production over **RFC 8441
 extended CONNECT on HTTP/2** — Autobahn can't drive that directly. But the
 framing layer under test is deliberately **transport-agnostic**: `WebSocketConnection`
-sits on top of the byte-in/byte-out [`IHTTP2Tunnel`](../src/Core/IHTTP2Tunnel.cs)
+sits on top of the byte-in/byte-out [`IHTTP2Tunnel`](../libs/Hermod/Hermod/HTTP2/Core/IHTTP2Tunnel.cs)
 seam and knows nothing about HTTP/2. So the echo server used here
 ([`tests/autobahn-server`](autobahn-server/Program.cs)) runs the **exact same
 `WebSocketConnection` code** over a plain-TCP tunnel behind a minimal HTTP/1.1
@@ -95,7 +95,7 @@ full human-readable report is written to `tests/autobahn/reports/index.html`.
 Two shells. First, build and start the echo server:
 
 ```bash
-dotnet build src/HTTP2.slnx
+dotnet build HTTP2.slnx
 dotnet tests/autobahn-server/bin/Debug/net10.0/autobahn-server.dll 9010
 # -> [autobahn-server] WebSocket echo server listening on ws://127.0.0.1:9010/
 ```
@@ -170,7 +170,7 @@ WebSocket per-message compression extension, negotiated via
 (all 216 of these cases pass), so [`fuzzingclient.json`](autobahn/fuzzingclient.json)
 runs the full `["*"]` set with nothing excluded.
 
-The framing lives in [`Core/WebSocket.cs`](../src/Core/WebSocket.cs): a message's
+The framing lives in [`WebSocketConnection.cs`](../libs/Hermod/Hermod/HTTP2/WebSocket/WebSocketConnection.cs): a message's
 first frame carries the RSV1 bit when its payload is DEFLATE-compressed; the
 codec is raw DEFLATE (`System.IO.Compression.DeflateStream`) with the RFC 7692
 §7.2 `00 00 FF FF` tail handling. The connection runs in **no-context-takeover**

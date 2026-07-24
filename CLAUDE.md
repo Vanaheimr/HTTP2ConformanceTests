@@ -8,7 +8,7 @@ submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — th
 direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, and the h2spec/Autobahn drivers; the
-103 NUnit unit + integration tests live with the stack in Hermod
+120 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -53,7 +53,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **103 NUnit tests** in
+**Tests:** most coverage is the **120 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -86,6 +86,8 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HPACKDecoder.cs` / `HPACKEncoder.cs` (+ `HuffmanDecoder.cs` / `HuffmanEncoder.cs`) | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
+| `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
+| `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
 | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocketConnection.cs` doesn't depend on the server's concrete tunnel |
@@ -152,7 +154,14 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   in/outbound `MAX_HEADER_LIST_SIZE`, and Slowloris/idle/handshake/SETTINGS-ACK
   timeouts. Every time source is injectable via the BCL `System.TimeProvider`
   (`HTTP2ClientOptions.TimeProvider` / `HTTP2Timeouts.TimeProvider`, default
-  `TimeProvider.System`) for deterministic clock/timeout tests.
+  `TimeProvider.System`) for deterministic clock/timeout tests. The §9.2 TLS
+  profile is enforced on both roles: renegotiation off, and a TLS 1.2 cipher
+  suite from Appendix A answered with `GOAWAY INADEQUATE_SECURITY`.
+- **Authoritative origins:** `:authority` is checked against the server
+  certificate's identities (or an announced Origin Set) and a request for an
+  origin we don't serve gets **421 Misdirected Request** — the counterpart to
+  connection coalescing (§9.1.1). The **ORIGIN frame** (RFC 8336) lets the server
+  state that set explicitly; the client parses and exposes it.
 - **Server + client, two transports:** mirror connection roles over TLS `h2`
   (ALPN, + optional mTLS) and cleartext `h2c` (prior knowledge). The client adds
   robustness (REFUSED_STREAM auto-retry, MAX_CONCURRENT_STREAMS gating,
@@ -171,17 +180,23 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
 
-**Verification:** `tests/run-tests.ps1` → **48/48** harness runs; **h2spec
-146/146** over both transports (Windows + Linux); **Autobahn 517/517** (full RFC
-6455 + permessage-deflate). Reference peers (test-only, don't count against the
-BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`.
-The pure in-memory Core unit tests (Huffman, HPACK encoder, `HTTP2StreamManager`)
-live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`, not as harnesses here.
+**Verification:** **120/120** NUnit tests and `tests/run-tests.ps1` → **48/48**
+harness runs, both current. **h2spec 146/146** over both transports (Windows +
+Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
+— both need an external binary that is not vendored here, so they were *not*
+re-run for the §9.2 / 421 / ORIGIN work. Reference peers (test-only, don't count
+against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
+`Grpc.Net.Client`. The pure in-memory Core unit tests (Huffman, HPACK encoder,
+`HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
+not as harnesses here.
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**; nothing is open. The full history — feature by feature, with the design
-rationale, the bugs caught, and the exact verification for each — is in
-[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+**done**. What is open is a review backlog (see the task list): ALTSVC (RFC
+7838), a parser fuzzing harness, a benchmark harness, client-side HTTP semantics
+parity, a server-side shared cache, an observability seam, the HTTP/1.1 ALPN
+fallback decision, and HTTP/3 + QPACK on the horizon. The full history — feature
+by feature, with the design rationale, the bugs caught, and the exact
+verification for each — is in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 ## Conventions
 - English for code, identifiers, comments, and commit messages.

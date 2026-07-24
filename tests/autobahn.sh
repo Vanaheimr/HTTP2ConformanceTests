@@ -41,7 +41,7 @@ done
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
-sln="$root/src/HTTP2.slnx"
+sln="$root/HTTP2.slnx"
 repdir="$root/tests/autobahn/reports"
 
 command -v docker >/dev/null 2>&1 || {

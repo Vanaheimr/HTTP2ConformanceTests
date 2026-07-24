@@ -77,7 +77,7 @@ Two shells. First, start the demo host (it serves **both** the TLS listener on
 `:8443` and the cleartext h2c listener on `:8080`) — same command everywhere:
 
 ```bash
-dotnet run --project src/Demo/HTTP2.Demo.csproj
+dotnet run --project Demo/HTTP2.Demo.csproj
 ```
 
 Then, in a second shell, point h2spec at whichever listener you want (identical

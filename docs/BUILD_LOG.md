@@ -2126,6 +2126,111 @@ deterministic nonce-expiry test driven by a minimal hand-rolled
 `TimeProvider` subclass (only `GetUtcNow()` overridden, no test-clock NuGet
 needed): a five-minute nonce lifetime proven in ~40 ms of wall time.
 
+**RFC 9113 §9.2 TLS profile — the one real compliance gap** (done 2026-07-24) —
+found by a fresh critical read of the RFC against the code rather than against
+our own README. §9.2.2 forbids carrying HTTP/2 over TLS 1.2 with a cipher suite
+from Appendix A, and lets an endpoint answer one with `INADEQUATE_SECURITY`; the
+server set `Tls12 | Tls13` and then checked *nothing*. The proof it had never
+been built: `HTTP2ErrorCode.INADEQUATE_SECURITY` existed in the enum with no
+caller anywhere in the stack. It had gone unnoticed because h2spec structurally
+cannot catch it — h2spec tests the frame layer, and this lives in the handshake.
+
+The check itself is the interesting part. Appendix A is a ~300-entry table, but
+it is not arbitrary: it is exactly the set of TLS 1.2 suites lacking an
+*ephemeral* key exchange or an *AEAD* cipher — the two properties §9.2.2 states
+outright. `HTTP2CipherSuites` therefore tests those two properties on the IANA
+suite name (which is what .NET's `TlsCipherSuite` members are named after)
+instead of transcribing the table: same verdict for every listed suite, spot
+checks confirmed across all four classes (static RSA / static (EC)DH / anonymous
+/ ephemeral-but-CBC), and it cannot go stale. Deliberate asymmetry: a suite the
+runtime has *no name for* counts as permitted, because Appendix A is a closed
+list and anything registered after RFC 9113 is by definition not on it —
+refusing the unknown would be stricter than the RFC. Detection happens after the
+handshake rather than prevention before it, because `CipherSuitesPolicy` throws
+`PlatformNotSupportedException` on Windows. The server answers with its SETTINGS
+preface *then* `GOAWAY(INADEQUATE_SECURITY)` — the preface MUST come first
+(§3.4) even on a connection being torn down, so the peer can tell "bad cipher
+suite" from "broken HTTP/2 implementation". The client refuses before sending
+its preface at all. Both sides take an overridable predicate rather than a
+boolean, since §9.2.2 makes the rejection a MAY and both laxer and stricter
+policies are legitimate. Also §9.2.1: `AllowRenegotiation = false` explicitly
+(TLS compression is never offered by .NET).
+
+Verified with a probe first — `SslStream.NegotiatedCipherSuite` does populate on
+Windows/.NET 10 (TLS 1.3 → `TLS_AES_256_GCM_SHA384`, forced TLS 1.2 →
+`TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`), so the check has something to read.
+Eight new tests: the decision logic per RFC class on suite *names* (independent
+of which suites a given .NET version has enum members for), the enum overload
+agreeing with it, plus two wire tests — a TLS-1.2-only client is served normally
+(the enforcement path runs and does not false-positive on a modern suite), and,
+with an all-rejecting predicate, receives SETTINGS followed by
+`GOAWAY(INADEQUATE_SECURITY)` with `lastStreamId = 0`. A live *negative* test is
+not portable: forcing a specific suite needs the same `CipherSuitesPolicy` that
+Windows does not support.
+
+That last test then failed intermittently — and the flake turned out to be a
+real bug in the rejection path. By the time we reject, the client has already
+sent its preface and SETTINGS; closing a socket with unread data in the receive
+buffer makes TCP send an RST, which discards the GOAWAY still sitting in the
+send buffer. The peer would see a broken connection instead of the reason —
+exactly the hazard `HTTP2Connection.DrainForCloseAsync` already existed to
+prevent for the ordinary GOAWAY path (RFC 9113 §6.8), and the new path had
+simply not inherited it. Fixed by the same bounded drain (250 ms / 256 KiB) and
+confirmed by five consecutive green runs.
+
+**421 Misdirected Request + the ORIGIN frame (RFC 8336)** (done 2026-07-24) —
+the two halves of "which origins is this connection authoritative for?". RFC
+9113 §9.1.1 lets a client reuse an existing connection for any origin our
+certificate covers (connection coalescing), so `:authority` is not necessarily
+the name the peer dialed — and the server had never looked at it, answering
+happily for origins it knows nothing about. It now declines those with **421**
+(RFC 9110 §15.5.20), a stream-level answer so the connection stays usable for
+the origins we do serve.
+
+The default origin set is derived from the certificate (`HTTPAuthority`): SAN
+dNSNames with RFC 6125 §6.4.3 wildcard matching (left-most label only, one label
+exactly), iPAddress SANs matched only by IP-literal authorities, and the common
+name consulted *only* for certificates carrying no SAN at all. Cleartext h2c has
+no certificate and therefore no basis for the judgement — it checks nothing
+unless the application supplies a predicate. Plain CONNECT is exempt and
+extended CONNECT is not, which looks inconsistent until you notice the two spell
+`:authority` identically and mean opposite things: on a plain CONNECT it is the
+*tunnel target* (a host out there we are asked to reach), on an extended CONNECT
+it is the origin being addressed, exactly as in an ordinary request.
+
+The ORIGIN frame is the other direction: the server *stating* the set instead of
+leaving the client to infer it. `HTTP2Frame.CreateOrigin`/`ParseOrigins` encode
+the length-prefixed origin list; the server emits it right after the preface
+when an `OriginSet` is configured — and only then, since an ORIGIN frame listing
+nothing asserts that this connection is authoritative for *nothing*, the
+opposite of saying nothing. An announced set also outranks the certificate for
+the 421 check: having told the client what we serve, answering for something
+else would contradict our own announcement. The client parses it into
+`HTTP2ClientConnection.OriginSet` and ignores it on a non-zero stream (§2.1) or
+over h2c (§2.4 — an unauthenticated peer's claim about its own identity is worth
+nothing). Purely informational for now: this client pools per origin and never
+coalesces, so the set is surfaced rather than acted on.
+
+Nine new tests (authority parsing incl. IPv6 literals and userinfo, RFC 6125
+wildcards, origin-to-authority matching with default ports, foreign authority →
+421 while the connection survives, the opened-up predicate, h2c having nothing
+to check, ORIGIN announced → received → honored over the certificate, ORIGIN
+ignored over cleartext, and a codec round-trip including a truncated payload
+ending the enumeration rather than throwing). One test needed a wait rather than
+an assert: ORIGIN follows the server's SETTINGS on the wire and the handshake
+only waits for the SETTINGS, so it lands a beat later — unsolicited, exactly as
+RFC 8336 intends.
+
+Verified: **120/120** NUnit (103 + 8 + 9) and **48/48** live harness runs, the
+latter confirming the 421 check does not disturb the demo-driven scenarios (all
+of them use `localhost:8443`, which the demo certificate covers, and the plain
+CONNECT cases target `echo.test` through the exempt path). Also fixed in
+passing: `tests/h2spec.ps1`, `h2spec.sh`, `autobahn.ps1` and `autobahn.sh` still
+pointed at `src/HTTP2.slnx` and `src/Demo/…`, paths that vanished when the stack
+moved into the Hermod submodule — both conformance drivers had been silently
+broken since. h2spec and Autobahn themselves were not re-run here (external
+binaries, not vendored).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

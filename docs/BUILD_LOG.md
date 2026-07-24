@@ -2288,8 +2288,44 @@ warning about assertion design: "the password never appears in the credential"
 was asserted against a request for `/secret`, so the *path* matched the string
 and the assertion failed on a perfectly correct credential.
 
-Still open on the client (tracked separately): redirect following (which touches
-the single-origin pool) and a cookie jar.
+Still open on the client (tracked separately): a cookie jar.
+
+**Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
+`MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with
+`HTTPRedirect` in Core doing the resolution and the rewriting. Two things carried
+the actual thought here.
+
+First, the **rewriting rules are asymmetric on purpose**, and that asymmetry *is*
+the feature: 301/302 turn a POST into a GET (§15.4.2/§15.4.3 permit it "for
+historical reasons", and every agent does it) while preserving other methods; 303
+turns everything except HEAD into a GET; 307/308 MUST preserve method *and* body,
+which is precisely why those two codes were added. Dropping a body also means
+dropping the `content-length` that described it — a follow-up GET still declaring
+the original length would be malformed, and it is the kind of thing that works in
+testing and fails against a strict server. 300 and 304 are excluded from
+following at all: the first needs a choice made, the second is an answer. A
+`Location` naming a non-http(s) scheme is refused outright — a client must not be
+talked into speaking another protocol.
+
+Second, **where following stops was a decision, not an omission.** A connection
+speaks to the origin it dialed, and this stack's pooling is single-origin *by
+design* (the README lists it as an explicit non-goal). Dialing a second origin
+from inside `HTTP2ClientConnection` would quietly turn it into a multi-origin
+client and contradict that. So a cross-origin `Location` is returned unfollowed,
+3xx and header intact, for a layer that does own connection creation. The
+pleasant consequence: since every followed hop is same-origin, the credential
+question answers itself — an `Authorization` header cannot travel to an origin
+that never challenged for it, without any special-casing. Cross-origin following
+stays open as the *multi-origin* question, which is where it belongs.
+
+`SendRequestAsync` was restructured into a redirect loop around the existing
+401-retry logic, so the two compose: a redirect into an authenticated area still
+authenticates, per hop. Verified: **158/158** NUnit (148 + 10) and **48/48** live
+harness runs, the latter confirming the restructured `SendRequestAsync` did not
+disturb anything that drives it. The wire-level tests assert on what each hop
+*looked* like — method, body length, `content-length`, `authorization` — rather
+than only on the final status, since the rewriting is the part that can silently
+be wrong.
 
 **Client-side HTTP semantics, part 2: conditional requests + resumable download**
 (done 2026-07-25) — the slice that forced the refactor the umbrella was really

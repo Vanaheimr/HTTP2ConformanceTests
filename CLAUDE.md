@@ -8,7 +8,7 @@ submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — th
 direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, and the h2spec/Autobahn drivers; the
-120 NUnit unit + integration tests live with the stack in Hermod
+139 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -53,7 +53,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **120 NUnit tests** in
+**Tests:** most coverage is the **139 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -87,6 +87,8 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
+| `HTTPContentCoding.cs` | RFC 9110 §8.4 content codings in **both** directions (gzip/br/deflate encode *and* decode, with a decompression-bomb bound) — the server compresses through it, the client decodes through it |
+| `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the `Auth/` schemes, which only validate |
 | `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
 | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
@@ -179,8 +181,13 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   (RFC 10008); 1xx interim responses (`Expect: 100-continue`, 103 Early Hints);
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
+- **Client-side semantics (in progress):** the client now decodes
+  `content-encoding` (opt-in `AutomaticDecompression`, bomb-bounded) and answers
+  a **401** from a `WWW-Authenticate` challenge (Digest > Bearer > Token >
+  Basic, one retry, never preemptive). Conditional requests / `Range` /
+  redirects / cookies remain server-side-only — see the task list.
 
-**Verification:** **120/120** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **139/139** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*

@@ -2231,6 +2231,68 @@ moved into the Hermod submodule — both conformance drivers had been silently
 broken since. h2spec and Autobahn themselves were not re-run here (external
 binaries, not vendored).
 
+**Client-side HTTP semantics, part 1: content coding + answering a 401**
+(done 2026-07-25) — the first two slices of closing the biggest asymmetry in the
+project. The framing/HPACK/stream layers were direction-neutral from the start;
+the *semantics* were not. The measurable version of that: `grep -rniE
+"accept-encoding|location|set-cookie|www-authenticate" HTTP2/Client/` returned
+nothing at all, and `HTTPSemantics` exposes exactly two public members, both
+`Wrap(…) → HTTP2RequestHandler` — a server-only shape, with nothing in its 1224
+lines a client can call. (RFC 9111 caching *was* already client-side, via
+`HTTP2CachingClient`; it is 9110 that was missing.)
+
+Content coding: the decode direction did not exist anywhere in the stack — the
+server could compress a response, nothing could undo one. `HTTPContentCoding`
+now holds both directions, and `HTTPSemantics.Compress` delegates to it, so the
+codings we can produce and the codings we can consume cannot drift apart. With
+`AutomaticDecompression` the client advertises `br, gzip, deflate` and hands the
+caller the identity representation, reporting what it undid in
+`HTTP2Response.DecodedContentEncoding`. Details that matter: a caller's own
+`accept-encoding` is never widened behind their back (so `identity` still
+switches compression off for one request); chained codings are undone right to
+left (§8.4); an unknown coding leaves the message *exactly* as received, because
+handing back undecodable bytes labelled identity is worse than doing nothing;
+and `content-length` is rewritten to the decoded length rather than deleted,
+since the body is fully buffered here and a stale transferred length would
+simply be false. "deflate" reads both flavours the wire disagrees about — RFC
+9110 names the zlib-wrapped form (RFC 1950), plenty of servers send raw (RFC
+1951), and .NET's `DeflateStream` reads only raw — by sniffing the two-byte zlib
+header, the same way browsers cope. The bomb bound (`MaxDecodedBodySize`, 16 MiB
+like the server's `MaxRequestBodySize`) is enforced *during* decompression: 8 MiB
+of zeroes gzip to under 64 KiB, so checking the output size afterwards would mean
+the bomb had already gone off.
+
+Answering a 401: the `Auth/` schemes existed only as *validators* — every test
+until now had to hand-roll a Digest response to talk to them.
+`HTTPClientAuthenticator` is their mirror image, in Core beside them precisely
+because Digest is one algorithm whose two ends must agree exactly. With
+`Credentials` set the client parses `WWW-Authenticate`, picks the strongest
+scheme it can answer (Digest > Bearer > Token > Basic — Basic last, since it
+hands the password over) and re-issues the request once. Null from `Answer` means
+"do not retry": an unimplemented scheme, a credential we do not hold, a Digest
+algorithm we cannot compute, or an `auth-int`-only qop would all just earn a
+second 401. Nothing is ever sent preemptively, and because the retry re-sends the
+very same request the authority cannot change underneath it — credentials cannot
+leak to an origin that did not ask for them. The authenticator is per-connection
+state because RFC 7616 requires `nc` to increase while a nonce is reused; a
+challenge parser that splits several challenges out of one field line is included,
+cutting only at a comma followed by `token SP`, which is the one unambiguous
+shape in a grammar where commas separate both challenges and auth-params.
+
+Verified: **139/139** NUnit (121 + 8 content-coding + 10 auth). The end-to-end
+Digest test is the closest thing to a self-check the stack has — our client
+computes the RFC 7616 response and our server's validator accepts it, two
+implementations of one algorithm agreeing, with the password never on the wire.
+One test failure along the way was the test's own fault and worth recording as a
+warning about assertion design: "the password never appears in the credential"
+was asserted against a request for `/secret`, so the *path* matched the string
+and the assertion failed on a perfectly correct credential.
+
+Still open on the client (tracked separately): conditional requests and `Range`
+(download resume — the item that forces the real refactor, lifting the pure
+functions out of the `Wrap` pipeline), redirect following (which touches the
+single-origin pool), and a cookie jar.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

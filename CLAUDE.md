@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-193 NUnit unit + integration tests live with the stack in Hermod
+199 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **193 NUnit tests** in
+**Tests:** most coverage is the **199 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -89,6 +89,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HPACKDecoder.cs` / `HPACKEncoder.cs` (+ `HuffmanDecoder.cs` / `HuffmanEncoder.cs`) | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
+| `HTTP2Trailers.cs` | RFC 9113 §8.1 trailer-field validation (no pseudo-headers, lowercase names) — identical whichever direction they travel, so the server's response trailers and the client's request trailers cannot drift apart |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
 | `HTTP2EventSource.cs` (+ `HTTP2Diagnostics.cs`) | The observability seam: structured events + counters via `EventSource`, connection/request spans via `ActivitySource` — both BCL, so no logging dependency. The stack writes nothing to the console itself |
 | `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field |
@@ -183,8 +184,11 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
 - **Tunneling / WebSocket / gRPC:** plain + extended CONNECT (RFC 8441), RFC 6455
   framing + RFC 7692 permessage-deflate (both roles), and real gRPC — all four
   call types — over the streaming seam (`HTTP2StreamingHandler` +
-  request/response streams + response trailers), interop-tested against
-  `Grpc.Net.Client`.
+  request/response streams + trailers in **both** directions:
+  `IHTTP2ResponseStream.CompleteAsync(Trailers)` on the server,
+  `HTTP2ClientStream.CompleteRequestAsync(Trailers)` on the client),
+  interop-tested against `Grpc.Net.Client` and — for the client's request
+  trailers — against Kestrel's `Request.GetTrailer`.
 - **HTTP semantics (Core, version-independent, never touches framing):** RFC 9110
   methods / conditional requests / Range (single + multi `multipart/byteranges`) /
   proactive content negotiation / on-the-fly gzip-brotli-deflate; the QUERY method
@@ -208,7 +212,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **193/193** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **199/199** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*

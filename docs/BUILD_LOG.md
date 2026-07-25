@@ -2751,6 +2751,65 @@ same reason. The `Demo` enables digests on `/files/resource.txt` (the range demo
 where the two fields differ and can be seen side by side) and on `/search` (QUERY,
 where the request direction shows).
 
+**Client request trailers** (done 2026-07-25) — the second pick from the same
+backlog, and the narrowest: the client could already *receive* trailers on both
+the buffered path (`HTTP2Response.Trailers`) and the streaming one
+(`HTTP2ClientStream.GetTrailersAsync`), but could not send any.
+`CompleteRequestAsync` ended the request with an empty END_STREAM DATA frame and
+offered no way to append a trailing HEADERS block, which left the last asymmetry
+in the trailer story: the server had both directions, the client had one.
+
+`CompleteRequestAsync(Trailers)` now mirrors
+`IHTTP2ResponseStream.CompleteAsync(Trailers)` exactly. Two things were less
+obvious than the feature looked:
+
+**The lock.** The obvious implementation encodes the trailer block under the
+write lock, the way the server does. On the client that would be wrong. Request
+HEADERS are encoded under `requestStartLock` and only *written* under the write
+lock, so a trailer block taking only the write lock could be encoded between
+another request's encode and its write — the HPACK dynamic table is stateful, so
+that desynchronizes the peer's decoder. It would have appeared only under
+concurrency, and as a peer-side COMPRESSION_ERROR that looks like the peer's
+fault. Trailers therefore encode under `requestStartLock`, the same lock that
+orders request HEADERS.
+
+**The validation belonged in Core.** `ValidateOutboundTrailers` was a static on
+the server's `HTTP2Connection` — unreachable from `Client`, which references only
+`Core`. Copying it would have been the beginning of a drift between what the two
+roles consider a legal trailer block. It moved to `Core/HTTP2Trailers.cs`; the
+server's method survives as a one-line delegation so its call sites are
+undisturbed. This is the convention working as intended: shared code goes to
+`Core` rather than being duplicated, and the project references make the wrong
+answer impossible rather than merely discouraged.
+
+Unlike `EndTunnelAsync`, the trailer path is not best-effort: a caller who asked
+to send trailers and got no exception is entitled to assume they went out. An
+invalid list (pseudo-header field, uppercase name) throws at the call that made
+it rather than earning a remote stream reset, and the connection stays usable —
+which one of the tests asserts by continuing to use it.
+
+One deliberate source break: `CompleteRequestAsync(CancellationToken)` becomes
+`CompleteRequestAsync(Trailers, CancellationToken)`. An overload pair would have
+been ambiguous for the no-argument call, and putting the token first to preserve
+compatibility would both break the BCL convention and stop mirroring the server's
+seam. It is a compile error, not a silent behaviour change.
+
+Found and *not* fixed here: the client never enforces the peer's advertised
+`MAX_HEADER_LIST_SIZE` on anything it sends, though the server does. Applying it
+to the new trailer path alone would have been arbitrary, and applying it to
+request HEADERS too changes behaviour for oversized requests (a local throw
+instead of a remote reset), which is more than this task asked for. Recorded as
+its own item.
+
+Verified: **199/199** NUnit (193 + 6) and **48/48** live harness runs. The
+interop test is the one that matters: Kestrel's `Request.GetTrailer` reading the
+block our client produced, an independent decoding of the same frames — our
+sender agreeing with our own receiver would prove nothing on its own. Also
+covered: a trailer-only request with no DATA at all (legal per §8.1, and the
+shape of a client-streaming call that ends up with nothing to send), and that the
+no-trailers path still sends the same empty END_STREAM DATA frame every existing
+caller relies on.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

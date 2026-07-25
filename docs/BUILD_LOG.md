@@ -2648,6 +2648,35 @@ Verified: **176/176** NUnit (172 + 4) and **48/48** live harness runs — the
 latter matters because the harnesses drive the demo, whose output path changed
 completely.
 
+**ALPN: stop advertising what we cannot serve** (done 2026-07-25) — the listener
+offered `http/1.1` alongside `h2` and then handed any client that chose it to a
+stub which wrote a fixed response and closed. That is the worst of the available
+options: a promise made in the handshake and broken immediately after, and
+strictly worse than not offering it at all, because a client that *could* have
+spoken h2 may pick http/1.1 on the strength of the offer and get nothing. The
+stub also declared `Content-Length: 39` for a 38-byte ASCII body, so a
+well-behaved client sat waiting for a byte that only ever arrived as EOF.
+
+Resolved as a seam rather than a deletion: `HTTP11Fallback` takes an
+`HTTP11FallbackHandler`, and supplying one is exactly what makes the listener
+*advertise* `http/1.1`. Without a handler this is an h2-only endpoint and an
+http/1.1-only client fails ALPN negotiation outright — honest, and the right
+default for a stack whose entire point is HTTP/2. With one, the handler receives
+the authenticated `SslStream` positioned at the first application byte, which is
+what an existing HTTP/1.1 pipeline (Hermod has one) can take unmodified.
+
+One case improved along the way: a peer offering **no** ALPN at all used to fall
+into an "unknown protocol" branch that logged and dropped it. Over TLS, no ALPN
+means the peer is not speaking h2 (RFC 9113 §3.2 requires it), so it now goes to
+the fallback for the same reason an explicit `http/1.1` does — and is still
+closed cleanly when there is no fallback to go to.
+
+Verified: **180/180** NUnit (176 + 4) and **48/48** live harness runs. The new
+tests assert the promise itself, not just the plumbing: an http/1.1-only client
+is refused at the handshake when no handler exists, is served when one does, a
+no-ALPN client reaches the fallback, and — pinning the bug that was fixed — the
+declared `Content-Length` matches the bytes actually sent.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

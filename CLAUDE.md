@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-176 NUnit unit + integration tests live with the stack in Hermod
+180 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **176 NUnit tests** in
+**Tests:** most coverage is the **180 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -111,7 +111,7 @@ WebSocket value types, and the auth schemes are each their own file).
 |---|---|
 | `HTTP2Connection.cs` (+ `HTTP2ConnectResult.cs` [+ `HTTP2ConnectHandler` delegate], `HTTP2Tunnel.cs`, `HTTP2Timeouts.cs`) | Connection preface, SETTINGS handshake, the frame dispatch loop, request assembly, CONNECT tunneling (`HTTP2Tunnel` implements `IHTTP2Tunnel`), the priority-aware DATA writer loop (RFC 9218), streaming dispatch + response trailers, Slowloris/idle timeouts |
 | `HTTP2RequestStream.cs` / `HTTP2ResponseStream.cs` | Server-side impls of the Core streaming seam over one `HTTP2Stream` |
-| `HTTP2Server.cs` | `TcpListener` + `SslStream` with ALPN `h2` negotiation, TLS-handshake timeout, HTTP/1.1 fallback stub; optional `Cleartext` mode (h2c prior-knowledge, no TLS) |
+| `HTTP2Server.cs` (+ `HTTP11FallbackHandler` delegate) | `TcpListener` + `SslStream` with ALPN `h2` negotiation and TLS-handshake timeout; `http/1.1` advertised only when an `HTTP11Fallback` handler is supplied (h2-only otherwise); optional `Cleartext` mode (h2c prior-knowledge, no TLS) |
 
 **`Client/`** — references `Core`:
 
@@ -200,7 +200,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **176/176** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **180/180** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*

@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-166 NUnit unit + integration tests live with the stack in Hermod
+172 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **166 NUnit tests** in
+**Tests:** most coverage is the **172 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -90,6 +90,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
+| `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field |
 | `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
 | `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
 | `HTTPContentCoding.cs` | RFC 9110 §8.4 content codings in **both** directions (gzip/br/deflate encode *and* decode, with a decompression-bomb bound) — the server compresses through it, the client decodes through it |
@@ -168,7 +169,9 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   certificate's identities (or an announced Origin Set) and a request for an
   origin we don't serve gets **421 Misdirected Request** — the counterpart to
   connection coalescing (§9.1.1). The **ORIGIN frame** (RFC 8336) lets the server
-  state that set explicitly; the client parses and exposes it.
+  state that set explicitly; the client parses and exposes it. **ALTSVC**
+  (RFC 7838) answers the neighbouring question — where else the *same* origin is
+  reachable — completing the set of non-deprecated frame types.
 - **Server + client, two transports:** mirror connection roles over TLS `h2`
   (ALPN, + optional mTLS) and cleartext `h2c` (prior knowledge). The client adds
   robustness (REFUSED_STREAM auto-retry, MAX_CONCURRENT_STREAMS gating,
@@ -196,7 +199,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **166/166** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **172/172** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*
@@ -219,7 +222,7 @@ stream-ID allocation it exists to order. The fix is open (see the task list).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**. What is open is a review backlog (see the task list): the per-request
-serialization above, ALTSVC (RFC 7838), a client cookie jar, a server-side shared
+serialization above, a client cookie jar, a server-side shared
 cache, an observability seam, the HTTP/1.1 ALPN fallback decision, and HTTP/3 +
 QPACK on the horizon. The full history — feature
 by feature, with the design rationale, the bugs caught, and the exact

@@ -2555,6 +2555,47 @@ produced by a streaming handler that writes 1024 of 4096 bytes and then faults,
 so the client exercises its real reset-mid-body path rather than a simulated one;
 the spliced result is asserted byte-identical to the original.
 
+**ALTSVC (RFC 7838) — the last live extension frame** (done 2026-07-25) — with
+ORIGIN already in, this completes the set of frame types that are not deprecated:
+DATA, HEADERS, PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY,
+WINDOW_UPDATE, CONTINUATION, ALTSVC, ORIGIN, PRIORITY_UPDATE.
+
+The distinction that shapes the whole feature is that an alternative service is
+**not a redirect**. It names another protocol, host or port for the *same*
+origin, so the authority in requests never changes and the server stays
+authoritative for it — which is precisely why an alternative can be used without
+re-checking the origin, and why it does not interact with the 421 work at all.
+`HTTPAlternativeService` therefore carries no notion of "the new origin", only a
+route to the existing one.
+
+`Alt-Svc` has more grammar than it looks: `h3="alt.example:8443"; ma=3600;
+persist=1, h2=":443"`. The alt-authority is a *quoted* string containing a colon,
+and parameter values may be quoted too, so splitting on commas or semicolons
+naively corrupts both — the parser splits only outside quotes. Protocol IDs are
+percent-encoded (the field wants a token; ALPN names are arbitrary octets), an
+empty host means "same host", an IPv6 literal keeps its brackets while the port
+is still the last colon, and `ma` defaults to 24 hours. `clear` is handled as a
+separate signal rather than an entry, because "no alternatives were listed" and
+"discard the ones you have" mean opposite things. Malformed entries are skipped
+instead of failing the whole value: this is advisory routing information, and
+dropping one bad alternative beats discarding the good ones beside it.
+
+RFC 7838 §4's two shapes are enforced on receipt: on stream 0 the origin must be
+present, on a request stream it must be absent (the stream already implies it,
+and the client resolves it from that stream's own `:scheme`/`:authority`). Either
+mismatch means **ignore the frame** — there is no error code defined for a bad
+ALTSVC, so a sender that gets it wrong is simply unheard, which is the argument
+for getting the *sending* side right. Servers ignore inbound ALTSVC entirely
+(§4), listed as an explicit case next to the ORIGIN one rather than falling into
+the unknown-frame default, where it would read as an oversight.
+
+The client records alternatives in `AlternativeServices` and deliberately does
+not act on them: acting means dialling HTTP/3, which this stack does not
+implement. Same honest framing as ORIGIN — surfaced because it is the input such
+a decision needs, not because a decision is being made.
+
+Verified: **172/172** NUnit (166 + 6) and **48/48** live harness runs.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

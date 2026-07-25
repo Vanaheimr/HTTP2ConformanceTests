@@ -2290,6 +2290,55 @@ and the assertion failed on a perfectly correct credential.
 
 Still open on the client (tracked separately): a cookie jar.
 
+**Parser fuzzing — and the bug it found in its first run** (done 2026-07-25) —
+`ParserFuzzTests` fuzzes the two parsers a peer reaches before any
+authentication or application code: the frame header (RFC 9113 §4.1) and the
+HPACK decoder (RFC 7541). The invariant is deliberately *not* "it parses
+correctly" — most of this input is garbage and should be rejected — but that
+garbage is rejected **in the protocol's own vocabulary**: a typed
+`HTTP2ConnectionException`/`HTTP2StreamException`, never an
+`IndexOutOfRangeException`, `ArgumentException` or `OverflowException`. That
+distinction is not cosmetic: on the wire it is the difference between the
+correct GOAWAY code and an INTERNAL_ERROR with a logged surprise.
+
+Two generators, because they find different things. Purely random blocks are
+mostly rejected on the first octet; *mutating a valid block* (bit flips,
+truncation, garbage runs, appended noise) reaches the deep paths — string
+literals, Huffman runs, dynamic-table updates, indexed lookups. Seeds are
+deterministic and a failure prints the seed plus the input as hex, so any
+finding replays exactly. The gate runs 20 000 iterations per case;
+`HERMOD_FUZZ_ITERATIONS` soaks further (500 000 per case ≈ 20 s, ~1.5 M cases).
+
+It found a real defect immediately, and from both directions at once — the
+targeted §5.1 case *and* random bytes at seed 8316, independently.
+`DecodeInteger` accumulated in `Int32` and checked `m > 28` only *after* adding
+the shifted octet, and only when the continuation bit was set. So a five-octet
+integer whose last octet *terminates* the encoding wrapped silently:
+`0x7F 0x80 0x80 0x80 0x80 0x7F` decodes to −268 435 329. `DecodeString` then
+passes that negative length to `Data.Slice`, because `Offset + length >
+Data.Length` is trivially false for a negative length — turning an
+RFC-mandated decoding error into an `ArgumentOutOfRangeException`. Any peer
+could reach it with six bytes. A second, quieter bug sat next to it: running out
+of octets with the continuation bit still set fell out of the loop and
+*returned the partial value*, inventing a number the peer never sent.
+
+Fixed by accumulating in `Int64`, bounds-checking the value (not the shift
+count) against `Int32.MaxValue`, and requiring the encoding to terminate. RFC
+7541 §5.1 asks for exactly this: a value exceeding what the implementation can
+represent MUST be a decoding error.
+
+The Huffman decoder, by contrast, came through clean — explicit EOS, over-long
+padding and non-ones padding were all already rejected. Those are now pinned as
+named tests alongside the fuzz cases, together with the zero index (§6.1) and
+the oversized dynamic-table update (§6.3). Writing the last of those also caught
+a mistake in the *test*: the first attempt encoded exactly 4096 against a 4096
+limit and expected a rejection, when the RFC allows equality — so the suite now
+pins both sides of that boundary, since an off-by-one there would reject a
+perfectly conformant peer.
+
+Verified: **166/166** NUnit (158 + 8) and **48/48** live harness runs, plus the
+500 000-iteration soak clean.
+
 **Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
 `MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with
 `HTTPRedirect` in Core doing the resolution and the rewriting. Two things carried

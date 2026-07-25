@@ -2435,10 +2435,39 @@ the flat ~1 000 req/s the first run saw, at any concurrency.
 
 So the original diagnosis was right that "one serialized stage" was to blame and
 wrong about where: not the connection as such, not the server, and — as the two
-earlier dead ends established — neither Nagle nor TLS. The fix is scoped
-separately, because shrinking that critical section touches ordering guarantees
-that HPACK state depends on, and deserves its own verification rather than being
-tacked onto the measurement that found it.
+earlier dead ends established — neither Nagle nor TLS.
+
+**The obvious fix for it does not work** (measured 2026-07-25, and reverted).
+The natural conclusion from the above is "the socket write is the expensive
+thing inside the lock, so move it out": queue the frame instead, let one writer
+task drain the queue and flush once per batch, and have request starts hold the
+lock only long enough to allocate, encode and enqueue. That was implemented in
+full — a `Channel<PendingWrite>`, a single writer loop, batched flushes, the
+write lock removed as redundant — and it is **10× slower**:
+
+| | before | with the writer queue |
+|---|---|---|
+| onto the wire, 1 concurrent | 0.212 ms | **2.115 ms** |
+| onto the wire, 64 concurrent | 11.6 ms | **190 ms** |
+| throughput | ~1 000 req/s | ~613 req/s |
+
+The 166-test suite stayed green throughout, so this was a pure performance
+regression that only the benchmark could catch — which is a decent argument for
+having built it. Reverted in full.
+
+What that negative result teaches is more useful than the change would have
+been: the cost is *not* the socket write as such, or moving it to another thread
+would have helped. Handing the write to a different thread adds two scheduling
+hops per frame, and on this machine those hops cost far more than the write —
+consistent with the Kestrel control's own ~1.2 ms round trip. So the serialized
+~0.22 ms is best understood as "what one `SslStream.WriteAsync` + `FlushAsync`
+plus its continuations costs here", and any real fix has to reduce the *number*
+of writes without adding handoffs — a leader/followers arrangement, where the
+thread that finds the writer idle performs the write inline (picking up anything
+others queued meanwhile) rather than delegating it. That is a different design
+from the one tried here, and it is now the standing hypothesis rather than a
+guess: three hypotheses have been wrong, and the only thing that has reliably
+distinguished them is the measurement.
 
 **Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
 `MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with

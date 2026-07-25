@@ -2810,6 +2810,64 @@ shape of a client-streaming call that ends up with nothing to send), and that th
 no-trailers path still sends the same empty END_STREAM DATA frame every existing
 caller relies on.
 
+**Early data and 425 (RFC 8470)** (done 2026-07-25) — the third pick from the
+backlog, and the one where most of the work was deciding what *not* to build.
+
+The hazard TLS 1.3 early data introduces is replay, not eavesdropping: 0-RTT
+octets carry no proof of freshness, so an attacker who captured them can send
+them again and the server cannot tell the copy from the original. The first
+question is therefore whether we have that exposure at all — and we do not.
+`SslStream` exposes no 0-RTT API: nothing to offer early data with, nothing to
+accept it with, and no way to ask whether bytes arrived that way. That was
+checked rather than assumed (reflecting over `SslStream`,
+`SslServerAuthenticationOptions` and `SslClientAuthenticationOptions` turns up
+`AllowTlsResume` for session resumption and nothing whatsoever for early data),
+because "the BCL probably doesn't support that" is exactly the kind of belief
+that ages badly and then gets written into a README as fact.
+
+So on a connection we terminate there is no replay window, and implementing a
+defence against a condition that cannot arise would have been theatre. What *can*
+reach us is the other case the RFC defines: an intermediary. A CDN or reverse
+proxy that accepted early data and forwarded the request must mark it
+`Early-Data: 1` (§5.1); the origin behind it then holds the risk without having
+seen the handshake, and the field exists precisely so it can decide. Ignoring the
+field is not neutral — it is silently accepting a replay the peer went out of its
+way to warn about, which is what this stack did until now.
+
+**Server.** A flagged request goes through `AcceptEarlyData`, defaulting to
+`HTTP2EarlyData.IsSafeToProcess`; anything else is declined with 425 and
+`Cache-Control: no-store`, so a refusal cannot outlive the reason for it. The
+policy is *safety*, not idempotence — replaying a `PUT` after a later request
+changed the resource undoes that change, so the idempotence guarantee (about
+repetition) does not cover reordering. `_ => true` accepts the risk deliberately
+and restores the old behaviour. Checked on the buffered path *and* the streaming
+one, which is the trap 421 fell into once: a streaming handler is dispatched at
+HEADERS-complete and never passes through `DispatchRequestAsync`, so a refusal
+written in one place silently does not exist in the other. There is now a test
+per path rather than a comment saying to remember.
+
+This one is on by default, unlike the recent opt-in features. It only affects
+requests that explicitly carry `Early-Data: 1` — nothing today sends that unless
+an intermediary put it there — and acting on it is the entire purpose of the
+field.
+
+**Client.** A 425 says the request was not processed and should be repeated once
+the handshake has completed, which on a connection we already own it long since
+has. `SendRequestAsync` repeats it exactly once, dropping any `Early-Data` field
+along the way: leaving it on would restate the very thing the origin refused and
+earn a second identical refusal. A second 425 is an answer, not a hint.
+
+**The two halves hid each other.** Both server tests failed on the first run with
+"expected 425, but was 200" — because the client had already done the right
+thing: refused, repeated without the flag, got a 200. Correct end to end,
+useless for observing the refusal, so the server tests drop one layer to
+`StartRequestAsync` (which bypasses the retry) and read the first answer. The
+composed behaviour then gets a test of its own, which is the more valuable one:
+our server declines the flagged POST, our client repeats it clean, and the caller
+sees a 200 without learning any of it happened.
+
+Verified: **207/207** NUnit (199 + 8) and **48/48** live harness runs.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

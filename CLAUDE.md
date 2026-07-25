@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-199 NUnit unit + integration tests live with the stack in Hermod
+207 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **199 NUnit tests** in
+**Tests:** most coverage is the **207 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -90,6 +90,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2Trailers.cs` | RFC 9113 §8.1 trailer-field validation (no pseudo-headers, lowercase names) — identical whichever direction they travel, so the server's response trailers and the client's request trailers cannot drift apart |
+| `HTTP2EarlyData.cs` | RFC 8470: the `Early-Data` field and the safe-method policy behind 425. We terminate no 0-RTT (`SslStream` has no early-data API), so this is about what an *intermediary* forwards to us |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
 | `HTTP2EventSource.cs` (+ `HTTP2Diagnostics.cs`) | The observability seam: structured events + counters via `EventSource`, connection/request spans via `ActivitySource` — both BCL, so no logging dependency. The stack writes nothing to the console itself |
 | `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field |
@@ -195,6 +196,13 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   (RFC 10008); 1xx interim responses (`Expect: 100-continue`, 103 Early Hints);
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
+- **Early data (RFC 8470):** we terminate no TLS 1.3 0-RTT — `SslStream` exposes
+  no early-data API, verified rather than assumed — so there is no replay window
+  of our own. What is implemented is the reachable half: the server judges an
+  intermediary's `Early-Data: 1` (safe methods pass, everything else gets **425
+  Too Early** with `no-store`; overridable via `AcceptEarlyData`), on both the
+  buffered and the streaming dispatch path, and the client repeats a 425 exactly
+  once with the field removed.
 - **Content integrity (RFC 9530):** opt-in `Content-Digest` / `Repr-Digest` on
   both roles. The server digests every content-bearing response (plus the
   representation digest a 206 needs) and validates an inbound digest on QUERY;
@@ -212,7 +220,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **199/199** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **207/207** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*
@@ -275,3 +283,4 @@ verification for each — is in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 - RFC 7616 — HTTP Digest Access Authentication
 - RFC 10008 — The HTTP QUERY Method
 - RFC 9530 — Digest Fields
+- RFC 8470 — Using Early Data in HTTP

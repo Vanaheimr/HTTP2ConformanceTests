@@ -87,11 +87,23 @@ Indicative figures from the first run (Windows 11, 16 cores, .NET 10, Release):
 | HPACK encode+decode | ~145 k blocks/s, 2.2 KiB per block (270 B on the wire cold, 99 B warm) |
 | frame serialize+parse | ~2 M frames/s, 1 104 B per 1 KiB frame |
 
-The first run also found something the numbers alone do not explain: request
-throughput is flat at ~1 000/s for *every* concurrency while latency grows
-linearly with it — the signature of a ~1 ms serialized stage per request. Nagle
-(ruled out: `NoDelay` changed nothing) and TLS (ruled out: `--cleartext` is
-identical) have both been eliminated; the investigation is tracked separately.
+The `probe` scenario is the diagnostic one: it splits each request at the moment
+`StartRequestAsync` returns (our HEADERS on the wire), so our send path can be
+told apart from server turnaround without instrumenting the library, and it runs
+the same `HttpClient` against **Kestrel** as a control.
+
+That control matters more than it sounds. It is what established that per-request
+*latency* here is not anomalous at all — a loopback HTTP/2 round trip costs about
+a millisecond in this environment, and our server is consistently faster at it
+than Kestrel (0.73–1.14 ms vs 1.15–1.69 ms). An absolute number with nothing to
+compare it against is how "slower than expected" gets mistaken for "slow".
+
+What the split *did* find is real and ours: at 64 concurrent requests, "onto the
+wire" goes from 0.22 ms to 13.65 ms while "waiting for the response" stays at
+0.35 ms. The server multiplexes correctly; the client serialises request starts,
+because `requestStartLock` is held across the HEADERS write and not just the
+stream-ID allocation it exists to order. That caps one connection at roughly
+1 000 req/s regardless of concurrency. The fix is tracked separately.
 
 ## h2spec conformance
 

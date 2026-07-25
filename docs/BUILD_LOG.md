@@ -2387,6 +2387,59 @@ sample each and reported 74–96 MiB/s. Three samples with a warmup pass reporte
 a one-second operation is a number, not a measurement, and the harness now takes
 three.
 
+**Chasing the latency floor down — and the answer being two different things**
+(done 2026-07-25) — the entry above reported an unexplained "~1 ms serialized
+stage per request". That framing was wrong in one half and right in the other,
+and it took a control and a stage split to separate them.
+
+*The half that was wrong: per-request latency was never anomalous.* The
+benchmark had no baseline, so "0.6 ms per round trip" had no scale. Adding one —
+the same `HttpClient`, on the same machine, over the same loopback and TLS,
+against **Kestrel** instead of our server — settled it:
+
+| | p50 |
+|---|---|
+| HttpClient → our server | 0.73–1.14 ms |
+| HttpClient → Kestrel (control) | 1.15–1.69 ms |
+
+A loopback HTTP/2 round trip simply costs about a millisecond in this
+environment, and our server is consistently *faster* than Kestrel at it. There
+was never a millisecond to find in the round trip. The lesson is embarrassing and
+worth keeping: for two rounds of investigation the harness measured an absolute
+number with nothing to compare it against, which is how "slower than I expected"
+gets mistaken for "slow".
+
+*The half that was right: the throughput flatness was real, and it is ours.*
+Splitting each request at the point `StartRequestAsync` returns — which is
+exactly when our HEADERS are on the wire — separates our send path from server
+turnaround, with no instrumentation inside the library:
+
+| stage | 1 concurrent | 64 concurrent |
+|---|---|---|
+| request onto the wire | 0.222 ms | **13.650 ms** |
+| waiting for the response | 0.341 ms | 0.355 ms |
+
+Server turnaround is *flat* under load: it multiplexes exactly as it should.
+Every millisecond of the added latency is in our client, and the arithmetic is
+unambiguous — 64 × 0.22 ms ≈ 14 ms, matching the measured p50 to within a few
+percent.
+
+The cause is `HTTP2ClientConnection.StartRequestAsync`, which holds
+`requestStartLock` across stream-slot waiting, stream allocation, HPACK encoding
+*and the HEADERS write itself*. The lock exists for a real reason — RFC 9113
+§5.1.1 requires new stream IDs to be opened in increasing order, so allocation
+and transmission must stay ordered — but performing the TLS write inside it makes
+every request start wait for every other request's socket write. One connection
+is therefore capped at roughly 1/(cost of one serialized start), which is exactly
+the flat ~1 000 req/s the first run saw, at any concurrency.
+
+So the original diagnosis was right that "one serialized stage" was to blame and
+wrong about where: not the connection as such, not the server, and — as the two
+earlier dead ends established — neither Nagle nor TLS. The fix is scoped
+separately, because shrinking that critical section touches ordering guarantees
+that HPACK state depends on, and deserves its own verification rather than being
+tacked onto the measurement that found it.
+
 **Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
 `MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with
 `HTTPRedirect` in Core doing the resolution and the rewriting. Two things carried

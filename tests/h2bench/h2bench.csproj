@@ -18,4 +18,13 @@
     <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Kestrel, purely as a control: without knowing what a loopback HTTP/2
+         round trip costs on the machine doing the measuring, "our server takes
+         0.6 ms" is a number without a scale. Test-only, like the other reference
+         peers (HttpClient, curl, Grpc.Net.Client) — it does not count against
+         the BCL-only rule for the stack itself. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>

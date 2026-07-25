@@ -206,12 +206,16 @@ against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
-**Performance** is measured for the first time by `tests/h2bench`: ~9.1 KiB
-allocated per trivial request (both roles), a large transfer allocating ~6.2× its
-payload, ~180/~205 MiB/s down/up, ~145 k HPACK blocks/s. It also surfaced a
-**~1 ms serialized stage per request** — throughput is flat at ~1 000 req/s at
-every concurrency while latency grows linearly with it. Nagle and TLS have both
-been ruled out by experiment; the cause is still open (see the task list).
+**Performance** is measured by `tests/h2bench`: ~9.1 KiB allocated per trivial
+request (both roles), a large transfer allocating ~6.2× its payload, ~180/~205
+MiB/s down/up, ~145 k HPACK blocks/s. Per-request *latency* is not anomalous —
+against a Kestrel control on the same machine our server is the faster of the two
+(0.73–1.14 ms vs 1.15–1.69 ms per loopback round trip). What is ours is a
+**throughput cap of ~1 000 req/s per connection at any concurrency**: splitting
+each request shows server turnaround flat under load (0.34 → 0.36 ms) while the
+client's send path goes from 0.22 ms to 13.65 ms at 64 concurrent, because
+`requestStartLock` is held across the HEADERS write rather than just the
+stream-ID allocation it exists to order. The fix is open (see the task list).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**. What is open is a review backlog (see the task list): the per-request

@@ -46,6 +46,14 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
 using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 
 
@@ -180,7 +188,7 @@ if (Wanted("hpack"))
 
 #region Networked scenarios
 
-if (Wanted("requests") || Wanted("throughput") || Wanted("upload"))
+if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("probe"))
 {
 
     var small = "hello, world!"u8.ToArray();
@@ -220,6 +228,133 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload"))
     if (Wanted("requests"))
         foreach (var concurrency in new[] { 1, 8, 64 })
             await ReportRequests(conn, scheme, authority, concurrency, requests);
+
+    // Bisecting the ~1 ms per-request floor (see docs/BUILD_LOG.md). Two splits,
+    // both of which need no instrumentation inside the library:
+    //
+    //   * StartRequestAsync returns once our HEADERS are on the wire, so timing it
+    //     separately from awaiting the response splits "our send path" from
+    //     "server turnaround + our receive path".
+    //   * Driving the same server with .NET's HttpClient replaces our client
+    //     entirely. If that is fast, the cost is ours on the client side; if it is
+    //     equally slow, the cost is in the server or the environment.
+    if (Wanted("probe"))
+    {
+
+        const Int32 probes = 2_000;
+
+        var toWire   = new Int64[probes];
+        var toAnswer = new Int64[probes];
+
+        for (var i = 0; i < probes; i++)
+        {
+            var t0     = Stopwatch.GetTimestamp();
+            var handle = await conn.StartRequestAsync("GET", scheme, authority, "/");
+            var t1     = Stopwatch.GetTimestamp();
+            _          = await handle.Response;
+            var t2     = Stopwatch.GetTimestamp();
+
+            toWire[i]   = t1 - t0;
+            toAnswer[i] = t2 - t1;
+        }
+
+        Percentiles("probe: our client, request onto the wire  (1 concurrent)", toWire);
+        Percentiles("probe: our client, waiting for the response (1 concurrent)", toAnswer);
+
+        // The same split under load. StartRequestAsync holds requestStartLock
+        // across stream allocation *and* the HEADERS write, so if that serialised
+        // section is what caps a connection's throughput, "onto the wire" is where
+        // the time will pile up as concurrency rises — while "waiting for the
+        // response" stays flat.
+        var wireLoaded   = new Int64[probes];
+        var answerLoaded = new Int64[probes];
+        var slot         = -1;
+
+        await Task.WhenAll(Enumerable.Range(0, 64).Select(worker => Task.Run(async () =>
+        {
+            int i;
+            while ((i = Interlocked.Increment(ref slot)) < probes)
+            {
+                var t0       = Stopwatch.GetTimestamp();
+                var handle   = await conn.StartRequestAsync("GET", scheme, authority, "/");
+                var t1       = Stopwatch.GetTimestamp();
+                var response = await handle.Response;
+                var t2       = Stopwatch.GetTimestamp();
+
+                wireLoaded[i]   = t1 - t0;
+                answerLoaded[i] = t2 - t1;
+            }
+        })));
+
+        Percentiles("probe: our client, request onto the wire  (64 concurrent)", wireLoaded);
+        Percentiles("probe: our client, waiting for the response (64 concurrent)", answerLoaded);
+
+        if (!cleartext)
+        {
+
+            using var handler = new SocketsHttpHandler {
+                SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true
+                }
+            };
+
+            using var http = new HttpClient(handler) {
+                DefaultRequestVersion = System.Net.HttpVersion.Version20,
+                DefaultVersionPolicy  = HttpVersionPolicy.RequestVersionExact
+            };
+
+            var url  = $"https://localhost:{port}/";
+            var dotnet = new Int64[probes];
+
+            _ = await http.GetAsync(url);   // warm the connection + TLS
+
+            for (var i = 0; i < probes; i++)
+            {
+                var t0 = Stopwatch.GetTimestamp();
+                using var response = await http.GetAsync(url);
+                dotnet[i] = Stopwatch.GetTimestamp() - t0;
+            }
+
+            Percentiles("probe: .NET HttpClient -> our server", dotnet);
+
+            // The control. Same client, same machine, same loopback, same TLS —
+            // only the server differs. Without it, "0.6 ms" has no scale: it could
+            // be our server being slow or it could be what a loopback HTTP/2 round
+            // trip simply costs here.
+            var kestrelPort = FreePort();
+            var builder     = WebApplication.CreateBuilder();
+
+            builder.Logging.ClearProviders();
+            builder.WebHost.ConfigureKestrel(options =>
+                options.ListenLocalhost(kestrelPort, listen =>
+                {
+                    listen.Protocols = HttpProtocols.Http2;
+                    listen.UseHttps(SelfSignedCertificate());
+                }));
+
+            var kestrel = builder.Build();
+            kestrel.MapGet("/", () => Results.Text("hello, world!"));
+            await kestrel.StartAsync();
+
+            var kestrelUrl     = $"https://localhost:{kestrelPort}/";
+            var kestrelSamples = new Int64[probes];
+
+            _ = await http.GetAsync(kestrelUrl);
+
+            for (var i = 0; i < probes; i++)
+            {
+                var t0 = Stopwatch.GetTimestamp();
+                using var response = await http.GetAsync(kestrelUrl);
+                kestrelSamples[i] = Stopwatch.GetTimestamp() - t0;
+            }
+
+            Percentiles("probe: .NET HttpClient -> Kestrel (control)", kestrelSamples);
+
+            await kestrel.StopAsync();
+
+        }
+
+    }
 
     if (Wanted("throughput"))
     {
@@ -304,6 +439,27 @@ void Report(String Name, Int32 Iterations, Action<Int32> Body, String unit, Int6
                       $"({allocated / 1024.0 / 1024.0:N1} MiB total)");
     Console.WriteLine($"      {"GC",12}   gen0 {GC.CollectionCount(0) - gen0}, " +
                       $"gen1 {GC.CollectionCount(1) - gen1}, gen2 {GC.CollectionCount(2) - gen2}");
+    Console.WriteLine();
+
+}
+
+/// <summary>
+/// Report the distribution of a set of Stopwatch tick samples. A mean would hide
+/// exactly what matters when hunting a fixed per-operation cost: whether the
+/// whole distribution sits at the floor, or only its tail does.
+/// </summary>
+void Percentiles(String Name, Int64[] Samples)
+{
+
+    var sorted = (Int64[]) Samples.Clone();
+    Array.Sort(sorted);
+
+    Double At(Double p)
+        => sorted[(Int32) (p * (sorted.Length - 1))] * 1000.0 / Stopwatch.Frequency;
+
+    Console.WriteLine($"  {Name}");
+    Console.WriteLine($"      ms   p50 {At(0.50):N3}, p90 {At(0.90):N3}, p99 {At(0.99):N3}, " +
+                      $"min {At(0.00):N3}, max {At(1.00):N3}");
     Console.WriteLine();
 
 }

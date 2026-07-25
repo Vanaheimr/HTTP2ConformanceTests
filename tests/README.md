@@ -20,7 +20,7 @@ pass/fail summary. Flags:
 - `-Filter <substr>` — only run harnesses whose label/project matches.
 
 Current status: **48/48 harness runs pass** (each self-reports its own check
-count — e.g. h2semantics 59/59, plus the h2attack / h2connect / h2priority
+count — e.g. h2semantics 66/66, plus the h2attack / h2connect / h2priority
 raw-frame scenarios).
 
 The in-process unit + integration tests — HPACK/Huffman, the stream manager,
@@ -29,7 +29,7 @@ trailers, RFC 9111 caching, auth/mTLS, timeout hardening, backpressure, the
 client pool/robustness, RFC 6455 WebSocket framing, client interop vs. .NET
 Kestrel (TLS `h2` and cleartext `h2c`), and gRPC (all four call types, vs. the
 real `Grpc.Net.Client`) — now live as NUnit fixtures in Hermod's
-`HermodTests/HTTP2/` (180 tests), so they are no longer harnesses here. What
+`HermodTests/HTTP2/` (193 tests), so they are no longer harnesses here. What
 remains under `tests/` are the demo-driven raw-frame scenarios
 (h2attack/h2connect/h2priority/h2semantics), the external-suite drivers (h2spec,
 Autobahn), and the diagnostic tools (h2raw, h2test, autobahn-server).

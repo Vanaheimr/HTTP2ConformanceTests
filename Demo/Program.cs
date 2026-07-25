@@ -117,7 +117,11 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
 
         private static readonly DateTimeOffset resourceLastModified = DateTimeOffset.UtcNow;
 
-        private static readonly HTTP2RequestHandler resourceHandler = HTTPSemantics.Wrap(HandleResourceRequest);
+        // Digests are on here (RFC 9530) because this is the range-request demo: a
+        // partial response is the one place Content-Digest and Repr-Digest differ,
+        // and "curl -r 0-31" shows both side by side.
+        private static readonly HTTP2RequestHandler resourceHandler =
+            HTTPSemantics.Wrap(HandleResourceRequest, ContentDigests: true);
 
         private static Task<HTTPResource?> HandleResourceRequest(
             string                             Path,
@@ -195,8 +199,10 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
         private static readonly string[] searchCorpus =
             ["apple", "apricot", "avocado", "banana", "blueberry", "cherry", "date", "fig", "grape", "mango"];
 
+        // And here for the other direction: QUERY carries request content, so a
+        // Content-Digest sent with it is checked before the query is run.
         private static readonly HTTP2RequestHandler searchHandler =
-            HTTPSemantics.Wrap(HandleSearchResource, QueryHandler: HandleSearchQuery);
+            HTTPSemantics.Wrap(HandleSearchResource, QueryHandler: HandleSearchQuery, ContentDigests: true);
 
         private static byte[] SearchResults(string Term)
         {

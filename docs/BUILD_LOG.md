@@ -2677,6 +2677,80 @@ is refused at the handshake when no handler exists, is served when one does, a
 no-ALPN client reaches the fallback, and — pinning the bug that was fixed — the
 declared `Content-Length` matches the bytes actually sent.
 
+**Digest fields (RFC 9530)** (done 2026-07-25) — the first pick from the
+"smaller RFC extensions" backlog, chosen because it is self-contained, needs no
+framing changes at all, and closes a gap TLS genuinely does not cover: TLS
+protects the *hop*, not the *object*, and says nothing about what a gateway, a
+cache, or a disk did to a representation along the way.
+
+`HTTPDigest` in `Core` implements both fields for both roles. The distinction
+between them is the reason there are two, and it is the design decision the rest
+follows from: `Content-Digest` covers the octets *this message* carries — on a
+206 that is the slice, not the resource — while `Repr-Digest` covers the selected
+representation (RFC 9110 §8.1), unaffected by `Content-Range`. Only the second
+can verify a download assembled out of several range responses, because no single
+range response carries a digest of the whole.
+
+Both are computed **after** content coding, since representation data is defined
+to be in its `Content-Encoding`. That fixes an ordering the client could
+otherwise get wrong quietly: verification has to run on the bytes as they
+arrived, *before* `AutomaticDecompression` rewrites them. One test exists purely
+to pin that order, because the failure mode — every compressed response failing
+verification — would look like a server bug rather than ours.
+
+Only `sha-256` and `sha-512` are computed. The registry's other entries (`md5`,
+`sha`, `unixsum`, `unixcksum`, `adler`, `crc32c`) are deprecated or were never
+collision-resistant, and a digest field is an integrity claim: honouring a broken
+algorithm would make it a false one. The `Want-…` fields select among the two by
+preference, and a peer that weights both 0 gets no digest rather than one it
+declined.
+
+Server side (`HTTPSemantics.Wrap(…, ContentDigests: true)`): a `Content-Digest`
+on everything that carries content, plus the `Repr-Digest` a 206 needs. Bodiless
+responses (HEAD, 304, 412, 416) get neither, deliberately — with content coding
+in play we would have to guess which encoding the corresponding 200 would have
+carried, and a digest of the representation we did not send is a claim we cannot
+stand behind. In the request direction, a `Content-Digest` on a QUERY is checked
+before the query runs and answered 400 if it disagrees; QUERY is the only method
+this wrapper handles that carries content, so it is the only place the assertion
+can be checked at all.
+
+Client side (`VerifyDigests`): sends `Want-Content-Digest`, verifies, and reports
+on `HTTP2Response.DigestVerification`. `DownloadAsync` asks for
+`Want-Repr-Digest` instead and hashes incrementally as it writes, so a resumed
+download is verified end to end without re-reading the file — and a restart
+discards the hash along with the bytes it belonged to. The hash is only ever
+started while nothing has been written yet: one begun mid-file could never match,
+and reporting that as a mismatch would be as wrong as reporting it as a match.
+
+**The bug the tests caught, in my own new code.** A digest mismatch throws, and
+the throw happens on the very statement that returns the download result — which
+sat inside `DownloadAsync`'s resume `try`. The retry filter caught it, went round
+again, and turned a detected corruption back into a success. The corrupt-splice
+test failed with "no exception thrown" and that is the only reason it was found;
+the happy-path test was green throughout. A digest mismatch is now explicitly
+excluded from the resume filter, which is also the correct behaviour on its own
+terms: the whole representation arrived and was wrong, so retrying would only
+fetch the same wrong bytes.
+
+`HTTPDigestVerification` keeps four outcomes apart —
+`NotPresent` / `Unsupported` / `Match` / `Mismatch` — because three of them mean
+nothing was checked. Collapsing "there was no digest" into a boolean `true` would
+quietly turn an unverified body into a verified one, which is the single failure
+this feature exists to prevent. A mismatch throws rather than being returned as a
+flag: a caller who switched verification on did so precisely to not be handed
+those bytes.
+
+Verified: **193/193** NUnit (180 + 13) and **48/48** live harness runs, with
+h2semantics now at **66/66** checks (59 + 7). The harness checks are worth more
+than usual here because it computes the field value from first principles —
+hand-spelled, base64 straight from `System.Security.Cryptography` — so a bug
+shared between our encoder and our verifier cannot make the suite agree with
+itself. The unit fixture pins RFC 9530 §2's own published example vector for the
+same reason. The `Demo` enables digests on `/files/resource.txt` (the range demo,
+where the two fields differ and can be seen side by side) and on `/search` (QUERY,
+where the request direction shows).
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

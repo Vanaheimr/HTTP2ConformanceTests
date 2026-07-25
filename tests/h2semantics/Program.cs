@@ -305,5 +305,56 @@ var etagDe = negDe.Headers.ETag?.Tag ?? "";
 Check("en and de variants have distinct ETags", etagEn.Length > 0 && etagDe.Length > 0 && etagEn != etagDe,
       $"en={etagEn} de={etagDe}");
 
+// RFC 9530 digest fields. Computed here from first principles rather than through
+// the stack's own HTTPDigest, so a bug shared by encoder and verifier cannot make
+// this agree with itself: the field value is spelled out by hand and the base64 is
+// taken straight from System.Security.Cryptography.
+static string Digest(byte[] content, string algorithm)
+    => $"{algorithm}=:{Convert.ToBase64String(algorithm == "sha-512" ? System.Security.Cryptography.SHA512.HashData(content) : System.Security.Cryptography.SHA256.HashData(content))}:";
+
+Console.WriteLine("\n=== RFC 9530: Content-Digest / Repr-Digest ===");
+
+Check("GET carries a matching Content-Digest",
+      FirstHeader(baseline, "Content-Digest") == Digest(baselineBody, "sha-256"),
+      FirstHeader(baseline, "Content-Digest") ?? "(none)");
+
+Check("a full 200 carries no Repr-Digest (it would say the same thing twice)",
+      FirstHeader(baseline, "Repr-Digest") is null);
+
+var want512 = await Send(HttpMethod.Get, Url, r => r.Headers.TryAddWithoutValidation("Want-Content-Digest", "sha-512=10, sha-256=1"));
+var want512Body = await want512.Content.ReadAsByteArrayAsync();
+Check("Want-Content-Digest selects the algorithm",
+      FirstHeader(want512, "Content-Digest") == Digest(want512Body, "sha-512"),
+      FirstHeader(want512, "Content-Digest") ?? "(none)");
+
+var digestRange = await Send(HttpMethod.Get, Url, r => r.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 9));
+var digestRangeBody = await digestRange.Content.ReadAsByteArrayAsync();
+Check("206 Content-Digest covers the slice",
+      FirstHeader(digestRange, "Content-Digest") == Digest(digestRangeBody, "sha-256"),
+      FirstHeader(digestRange, "Content-Digest") ?? "(none)");
+Check("206 Repr-Digest covers the whole representation",
+      FirstHeader(digestRange, "Repr-Digest") == Digest(baselineBody, "sha-256"),
+      FirstHeader(digestRange, "Repr-Digest") ?? "(none)");
+
+// The request direction: QUERY is the one method here that carries content.
+const string SearchUrl = "https://127.0.0.1:8443/search";
+var queryContent = Encoding.UTF8.GetBytes("ap");
+
+var honestQuery = await Send(new HttpMethod("QUERY"), SearchUrl, r => {
+    r.Content = new ByteArrayContent(queryContent);
+    r.Content.Headers.TryAddWithoutValidation("Content-Type",   "text/plain");
+    r.Content.Headers.TryAddWithoutValidation("Content-Digest", Digest(queryContent, "sha-256"));
+});
+Check("QUERY with a correct Content-Digest -> 200",
+      honestQuery.StatusCode == HttpStatusCode.OK, $"{(int) honestQuery.StatusCode}");
+
+var corruptQuery = await Send(new HttpMethod("QUERY"), SearchUrl, r => {
+    r.Content = new ByteArrayContent(queryContent);
+    r.Content.Headers.TryAddWithoutValidation("Content-Type",   "text/plain");
+    r.Content.Headers.TryAddWithoutValidation("Content-Digest", Digest(Encoding.UTF8.GetBytes("xy"), "sha-256"));
+});
+Check("QUERY whose content disagrees with its digest -> 400",
+      corruptQuery.StatusCode == HttpStatusCode.BadRequest, $"{(int) corruptQuery.StatusCode}");
+
 Console.WriteLine($"\n=== {passed}/{passed + failed} checks passed ===");
 Environment.Exit(failed == 0 ? 0 : 1);

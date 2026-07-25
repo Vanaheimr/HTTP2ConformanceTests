@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-180 NUnit unit + integration tests live with the stack in Hermod
+193 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **180 NUnit tests** in
+**Tests:** most coverage is the **193 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -95,6 +95,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
 | `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
 | `HTTPContentCoding.cs` | RFC 9110 §8.4 content codings in **both** directions (gzip/br/deflate encode *and* decode, with a decompression-bomb bound) — the server compresses through it, the client decodes through it |
+| `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire |
 | `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the `Auth/` schemes, which only validate |
 | `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
@@ -190,6 +191,13 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   (RFC 10008); 1xx interim responses (`Expect: 100-continue`, 103 Early Hints);
   the §11 auth framework (Basic/Bearer/Digest/Token + transport-layer mTLS); and
   RFC 9111 client-side caching (freshness, revalidation, `Vary`, shared/private).
+- **Content integrity (RFC 9530):** opt-in `Content-Digest` / `Repr-Digest` on
+  both roles. The server digests every content-bearing response (plus the
+  representation digest a 206 needs) and validates an inbound digest on QUERY;
+  the client asks, verifies *before* decoding, and — the payoff — verifies a
+  resumed `DownloadAsync` against the `Repr-Digest` no single range response
+  could have proven. `HTTPDigestVerification` keeps "nothing was checked" and
+  "it matched" apart; a mismatch throws.
 - **Client-side semantics (in progress):** the client now decodes
   `content-encoding` (opt-in `AutomaticDecompression`, bomb-bounded) and answers
   a **401** from a `WWW-Authenticate` challenge (Digest > Bearer > Token >
@@ -200,7 +208,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **180/180** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **193/193** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*
@@ -262,3 +270,4 @@ verification for each — is in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 - RFC 7692 — Compression Extensions for WebSocket (permessage-deflate)
 - RFC 7616 — HTTP Digest Access Authentication
 - RFC 10008 — The HTTP QUERY Method
+- RFC 9530 — Digest Fields

@@ -244,11 +244,22 @@ client's send path goes from 0.22 ms to 13.65 ms at 64 concurrent, because
 stream-ID allocation it exists to order. The fix is open (see the task list).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. What is open is a review backlog (see the task list): the per-request
-serialization above, a client cookie jar, a server-side shared cache, and two
-remaining small RFCs (9421 message signatures, 9298 CONNECT-UDP).
+**done**. Two things are genuinely open (see the task list): the per-request
+serialization described above, and a decision on a client cookie jar.
 
-**HTTP/3 is not on this list, and never was.** It is a different transport —
+### Optional — parked, not planned
+
+Real candidates, deliberately not scheduled. Each is worth doing *if wanted*;
+none is a gap, and nothing depends on any of them. Listed so the reasoning
+survives and they stop being re-proposed as "what comes next":
+
+| Item | Why it is parked |
+|---|---|
+| **Server-side shared cache** (RFC 9111 reverse-proxy mode) | Would reuse the direction-neutral `HTTPCache` and exercise what is dead today (`s-maxage`, `must-revalidate`, shared-vs-private storability, origin-side `Vary`). The strongest argument for it is architectural — a second consumer proving `Core`'s direction-neutrality — rather than a missing capability. |
+| **RFC 9421** — HTTP Message Signatures | The most expensive of the batch, and the cost is not the crypto: it needs a full RFC 9651 structured-fields implementation, because the signature base must be byte-identical on both ends and the `sf` parameter demands strict re-serialization. We only ever built the slices we needed. Also, `Ed25519` is absent from the BCL on .NET 10 (verified), so the algorithm the RFC's own examples use is unreachable without breaking the no-NuGet rule. Composes well with the RFC 9530 digests already in place — signatures cover `Content-Digest`, not the body. |
+| **RFC 9298** — CONNECT-UDP | Mostly reuse (extended CONNECT + `IHTTP2Tunnel` exist; add `:protocol = connect-udp` and RFC 9297 capsules), but over HTTP/2 it is the *degraded* path. MASQUE's point is HTTP/3 datagrams, so the natural home is the sibling project, not here. |
+
+**HTTP/3 is not on either list, and never was.** It is a different transport —
 QUIC + QPACK + H3 framing — sharing only the version-independent HTTP semantics
 with this stack, which is exactly why `Core` was cut the way it was. It lives in
 the sibling repository **`HTTP3FromScratch`** (same parent directory), not as a

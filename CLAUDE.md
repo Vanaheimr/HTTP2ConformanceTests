@@ -245,11 +245,18 @@ stream-ID allocation it exists to order. The fix is open (see the task list).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**. What is open is a review backlog (see the task list): the per-request
-serialization above, a client cookie jar, a server-side shared
-cache, an observability seam, the HTTP/1.1 ALPN fallback decision, and HTTP/3 +
-QPACK on the horizon. The full history — feature
-by feature, with the design rationale, the bugs caught, and the exact
-verification for each — is in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+serialization above, a client cookie jar, a server-side shared cache, and two
+remaining small RFCs (9421 message signatures, 9298 CONNECT-UDP).
+
+**HTTP/3 is not on this list, and never was.** It is a different transport —
+QUIC + QPACK + H3 framing — sharing only the version-independent HTTP semantics
+with this stack, which is exactly why `Core` was cut the way it was. It lives in
+the sibling repository **`HTTP3FromScratch`** (same parent directory), not as a
+future track here. Anything that says otherwise is stale.
+
+The full history — feature by feature, with the design rationale, the bugs
+caught, and the exact verification for each — is in
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 ## Conventions
 - English for code, identifiers, comments, and commit messages.

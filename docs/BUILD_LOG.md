@@ -2925,6 +2925,15 @@ it's essentially a separate transport (QUIC + QPACK + H3 framing) that shares
 only the HTTP *semantics* with this stack, not the framing/HPACK/flow-control
 core, so it lives in its own project rather than extending this one.
 
+**That project now exists: `HTTP3FromScratch`, in the same parent directory.**
+The decision above was made 2026-07-18 as a plan; it has since been acted on. A
+task on this repo's list still described HTTP/3 as "the real what-comes-next for
+the project" — written in contradiction of this very paragraph, and stale twice
+over once the sibling repo was built. Closed 2026-07-25. Nothing about HTTP/3
+belongs on this repo's backlog; the `Core` split is what makes the two projects
+able to share the semantics layer, and that is the whole of the relationship
+between them.
+
 ### Track A — Stream-management hardening (RFC 9113 §5) — done 2026-07-18
 Rapid Reset mitigation (CVE-2023-44487), stream-ID exhaustion handling, and
 outbound `MAX_HEADER_LIST_SIZE` enforcement — see the "Stream-management

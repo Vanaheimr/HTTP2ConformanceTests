@@ -2339,6 +2339,54 @@ perfectly conformant peer.
 Verified: **166/166** NUnit (158 + 8) and **48/48** live harness runs, plus the
 500 000-iteration soak clean.
 
+**The first measurement — h2bench, and two hypotheses it disproved** (done
+2026-07-25) — every other claim in this repository had a number behind it: 166
+tests, 48 harness runs, h2spec 146/146, Autobahn 517/517. Performance had none,
+which made "readable rather than fast" an assumption rather than a finding.
+`tests/h2bench` turns it into a finding: `frames` and `hpack` in memory (low
+noise), `requests` at 1/8/64 concurrency with latency percentiles, and large
+`throughput`/`upload` transfers — each reporting operations/s, bytes allocated
+per operation, and GC collections. Client and server share the process, which is
+stated loudly in the output and the docs: these figures track the stack against
+itself, they are not a comparison with anyone else's server.
+
+The allocation answers, which were the original question: **~9.1 KiB per trivial
+request** (both roles), a 64 MiB transfer allocating **~6.2× its payload**,
+**1 104 bytes per 1 KiB frame** (`Serialize` copies header and payload into a
+fresh buffer every time), and an HPACK block costing 2.2 KiB to produce and
+consume while compressing to 99 bytes on the wire once the dynamic table is warm.
+So the per-frame allocation the review predicted is real and now quantified.
+
+The unexpected finding was a **latency floor**: request throughput sits at
+~1 000/s on one connection at *every* concurrency, while p50 latency scales
+linearly with it (0.85 ms at 1, 8.6 ms at 8, ~65–95 ms at 64). Flat throughput
+with linearly growing latency is the signature of a single serialized stage
+costing about a millisecond — requests queue behind it instead of overlapping.
+
+Two hypotheses were tested and **both were wrong**, which is worth recording as
+plainly as a success:
+
+  * **Nagle's algorithm.** Plausible — `NoDelay` was set nowhere, and HTTP/2 is
+    unusually exposed to Nagle because it emits many small control frames.
+    Setting it on both roles moved 847 → 995 req/s, inside this harness's noise.
+    The change was kept anyway: it is correct on its own merits.
+  * **TLS.** Ruled out by bisection rather than argument — a `--cleartext` switch
+    runs the same scenarios over h2c, and the numbers are identical (~780–960
+    req/s). The cost is not in `SslStream`.
+
+That leaves our own plumbing, and the visible work does not explain it: HPACK
+encode+decode measures ~7 µs and frame serialize+parse ~0.5 µs, two orders of
+magnitude short of a millisecond. The suspects are the thread-pool hops per
+request and the handoffs between read loop, handler and writer loop — but after
+two wrong guesses the next step is a profiler, not a third guess, so it is filed
+as its own task rather than bolted onto this one.
+
+One methodology lesson landed too: the transfer scenarios first ran a single
+sample each and reported 74–96 MiB/s. Three samples with a warmup pass reported
+~180/~206 MiB/s — the original figures were measuring warmup. A single sample of
+a one-second operation is a number, not a measurement, and the harness now takes
+three.
+
 **Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
 `MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with
 `HTTPRedirect` in Core doing the resolution and the rewriting. Two things carried

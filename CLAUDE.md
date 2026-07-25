@@ -7,7 +7,8 @@ itself lives in the Vanaheimr **Hermod** library, pulled in here as a git
 submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — the
 direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
-the `tests/` live-host raw-frame harnesses, and the h2spec/Autobahn drivers; the
+the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
+h2spec/Autobahn drivers; the
 166 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
@@ -57,7 +58,9 @@ Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
-`tests/h2spec.ps1` (146/146 over h2 + h2c) and Autobahn (517/517). See
+`tests/h2spec.ps1` (146/146 over h2 + h2c) and Autobahn (517/517). Performance is
+measured by `tests/h2bench` (`dotnet run -c Release --project tests/h2bench`) —
+not a pass/fail gate, but the baseline any optimisation has to beat. See
 [`tests/README.md`](tests/README.md).
 
 ## Architecture
@@ -203,11 +206,18 @@ against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
+**Performance** is measured for the first time by `tests/h2bench`: ~9.1 KiB
+allocated per trivial request (both roles), a large transfer allocating ~6.2× its
+payload, ~180/~205 MiB/s down/up, ~145 k HPACK blocks/s. It also surfaced a
+**~1 ms serialized stage per request** — throughput is flat at ~1 000 req/s at
+every concurrency while latency grows linearly with it. Nagle and TLS have both
+been ruled out by experiment; the cause is still open (see the task list).
+
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. What is open is a review backlog (see the task list): ALTSVC (RFC
-7838), a parser fuzzing harness, a benchmark harness, client-side HTTP semantics
-parity, a server-side shared cache, an observability seam, the HTTP/1.1 ALPN
-fallback decision, and HTTP/3 + QPACK on the horizon. The full history — feature
+**done**. What is open is a review backlog (see the task list): the per-request
+serialization above, ALTSVC (RFC 7838), a client cookie jar, a server-side shared
+cache, an observability seam, the HTTP/1.1 ALPN fallback decision, and HTTP/3 +
+QPACK on the horizon. The full history — feature
 by feature, with the design rationale, the bugs caught, and the exact
 verification for each — is in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 

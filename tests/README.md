@@ -43,12 +43,55 @@ Autobahn), and the diagnostic tools (h2raw, h2test, autobahn-server).
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
 | `h2priority`       | demo-driven    | server-side RFC 9218 scheduling: urgency ordering, PRIORITY_UPDATE |
 | `autobahn-server`  | server         | RFC 6455 WebSocket echo server (HTTP/1.1 Upgrade) for the Autobahn TestSuite — not a pass/fail harness, see below |
+| `h2bench`          | benchmark      | throughput, latency distribution and allocation — not a pass/fail harness, see below |
 | `h2raw`, `h2test`  | diagnostic     | raw frame loggers / ad-hoc request drivers (not in the pass/fail gate) |
 
 "demo-driven" harnesses talk to the Demo host on `https://localhost:8443`
 (started by the runner). The former "self-contained" harnesses — which spun up
 their own server(s) on private ports — are now NUnit fixtures in Hermod's
 `HermodTests/HTTP2/`.
+
+## Benchmarks (h2bench)
+
+Everything else in this repository has a number behind it — 166 unit tests, 48
+harness runs, h2spec 146/146, Autobahn 517/517. Performance had none, which made
+"readable rather than fast" an assumption rather than a finding. `h2bench` exists
+to turn it into a finding, and to give any future optimisation a baseline to beat.
+
+```bash
+dotnet run -c Release --project tests/h2bench                 # everything
+dotnet run -c Release --project tests/h2bench -- hpack        # one scenario
+dotnet run -c Release --project tests/h2bench -- --mib 256    # bigger transfers
+dotnet run -c Release --project tests/h2bench -- --cleartext  # h2c instead of TLS
+```
+
+Scenarios: `frames` and `hpack` (pure in-memory, low noise), `requests` (small
+GET at 1/8/64 concurrent, with latency percentiles), `throughput` and `upload`
+(large body). Each reports operations/s, bytes allocated per operation, and the
+GC collections provoked.
+
+**What these numbers are not.** Client and server run in the *same process* over
+loopback, so every figure covers the whole round trip — both roles, TLS and the
+loopback stack, sharing one machine. They track this stack against itself over
+time; they are not a comparison with nginx, and quoting them as one is quoting
+them wrong. Allocation is process-wide (`GC.GetTotalAllocatedBytes`), which is
+the honest answer to "what does one request cost this stack" precisely because
+it includes both roles.
+
+Indicative figures from the first run (Windows 11, 16 cores, .NET 10, Release):
+
+| | |
+|---|---|
+| small GET | ~1 000 req/s, p50 0.85 ms, ~9.1 KiB allocated per request |
+| 64 MiB download / upload | ~180 / ~205 MiB/s, ~6.2× the payload allocated |
+| HPACK encode+decode | ~145 k blocks/s, 2.2 KiB per block (270 B on the wire cold, 99 B warm) |
+| frame serialize+parse | ~2 M frames/s, 1 104 B per 1 KiB frame |
+
+The first run also found something the numbers alone do not explain: request
+throughput is flat at ~1 000/s for *every* concurrency while latency grows
+linearly with it — the signature of a ~1 ms serialized stage per request. Nagle
+(ruled out: `NoDelay` changed nothing) and TLS (ruled out: `--cleartext` is
+identical) have both been eliminated; the investigation is tracked separately.
 
 ## h2spec conformance
 

@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/h2attack/h2attack.csproj" />
+    <Project Path="tests/h2bench/h2bench.csproj" />
     <Project Path="tests/h2connect/h2connect.csproj" />
     <Project Path="tests/autobahn-server/autobahn-server.csproj" />
     <Project Path="tests/h2priority/h2priority.csproj" />

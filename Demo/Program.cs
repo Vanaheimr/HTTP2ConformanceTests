@@ -39,6 +39,14 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
             var portC = 8080;   // cleartext HTTP/2 with prior knowledge ("h2c")
             var cert  = CreateSelfSignedCertificate("localhost");
 
+            // The stack itself writes nothing to the console — it emits structured
+            // events through HTTP2EventSource, and a *consumer* decides what to do
+            // with them. Printing them here is that decision for this demo, and
+            // doubles as the smallest possible worked example of the seam: an
+            // application wanting them in a log file, in OpenTelemetry, or nowhere
+            // at all changes only this listener.
+            using var trace = new ConsoleEventListener();
+
             Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
             Console.WriteLine("║   HTTP/2 Server — pure SslStream + binary framing       ║");
             Console.WriteLine("╠══════════════════════════════════════════════════════════╣");
@@ -593,6 +601,60 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
                 "temp",
                 X509KeyStorageFlags.UserKeySet
             );
+
+        }
+
+    }
+
+
+    /// <summary>
+    /// Prints the stack's <see cref="HTTP2EventSource"/> events to the console —
+    /// the demo's answer to "what should be done with these", and roughly what the
+    /// library used to hardcode before it grew a seam.
+    ///
+    /// Real applications route them somewhere useful instead: a log file, ETW,
+    /// <c>dotnet-counters</c>, or an OpenTelemetry exporter (which would also pick
+    /// up the spans from <see cref="HTTP2Diagnostics.ActivitySourceName"/>). None
+    /// of that requires the library to know anything about the destination.
+    /// </summary>
+    public sealed class ConsoleEventListener : System.Diagnostics.Tracing.EventListener
+    {
+
+        protected override void OnEventSourceCreated(System.Diagnostics.Tracing.EventSource Source)
+        {
+            if (Source.Name == "Vanaheimr-Hermod-HTTP2")
+                EnableEvents(Source, System.Diagnostics.Tracing.EventLevel.Informational);
+        }
+
+        protected override void OnEventWritten(System.Diagnostics.Tracing.EventWrittenEventArgs Event)
+        {
+
+            // Counter payloads arrive through the same channel; they are for
+            // dotnet-counters, not for a human reading a console.
+            if (Event.EventName == "EventCounters")
+                return;
+
+            String text;
+
+            try
+            {
+                text = Event.Message is not null && Event.Payload is not null
+                           ? String.Format(Event.Message, [.. Event.Payload])
+                           : Event.EventName ?? "?";
+            }
+            catch (FormatException)
+            {
+                // A placeholder/argument mismatch in an event definition must not
+                // take down the application that is merely watching. Diagnostics
+                // failing loudly is worse than diagnostics failing plainly.
+                text = $"{Event.EventName}({String.Join(", ", Event.Payload ?? [])})";
+            }
+
+            var writer = Event.Level <= System.Diagnostics.Tracing.EventLevel.Warning
+                             ? Console.Error
+                             : Console.Out;
+
+            writer.WriteLine($"[HTTP/2] {text}");
 
         }
 

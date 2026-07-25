@@ -2596,6 +2596,58 @@ a decision needs, not because a decision is being made.
 
 Verified: **172/172** NUnit (166 + 6) and **48/48** live harness runs.
 
+**An observability seam, and the end of Console.WriteLine** (done 2026-07-25) —
+the stack's entire diagnostic output was 28 console writes (12 `WriteLine`, 16
+`Console.Error.WriteLine` — an earlier count of "12" had grepped only the
+former). No seam, no filtering, no metrics: an application embedding this got
+console spam it could not redirect, and nothing structured about what the
+connection was doing.
+
+It now emits through `HTTP2EventSource` (events + counters) and
+`HTTP2Diagnostics.ActivitySource` (spans). Both are BCL, which is the whole
+reason this was worth doing *this* way: taking a logging abstraction would have
+been the first thing to break the project's no-NuGet rule, while `EventSource`
+and `ActivitySource` give ETW, `dotnet-counters` and OpenTelemetry-shaped tracing
+for free. The library references nothing and knows nothing about destinations.
+
+What is emitted: connection lifecycle including the **negotiated ALPN, TLS
+version and cipher suite** — parameters otherwise invisible after the handshake,
+and exactly what answers "is anyone still reaching us over TLS 1.2, and with
+what?" — plus connection/stream errors, peer resets, GOAWAY with its code,
+handler failures, and per-request method/path/status. Five counters
+(connections, requests, resets, errors, abuse trips), created on first
+subscription rather than at construction, since an unobserved `EventCounter`
+still costs a timer.
+
+Spans nest one request inside its connection, tagged per the OpenTelemetry
+semantic conventions so no translation layer is needed. The nesting is the
+point: it makes "this slow request shared a connection with forty others"
+visible, which no amount of per-line logging does.
+
+The gap this really closed: the **abuse defences** — Rapid Reset, CONTINUATION
+floods, unproductive-frame floods, timeout kills — detected their conditions and
+then told nobody but stdout, leaving them unobservable in precisely the
+situations they exist for. They now have an event and a counter.
+
+Two things were tested rather than asserted in a comment. That events actually
+fire (a seam nobody exercises is indistinguishable from one that does not work,
+and emitting nothing is a perfectly quiet failure mode), and that being
+unobserved costs nothing — `StartActivity` returns null with no listener, and
+the `EventSource` reports itself disabled so payloads are never built. That
+second claim is the justification for putting any of this in a hot path.
+
+The `Demo` gained a ~30-line `ConsoleEventListener`, which is both the consumer
+side of the seam and roughly what the library used to hardcode — the layering
+made explicit. Its formatter catches `FormatException`: a placeholder mismatch
+in an event definition must not take down the application that is merely
+watching. Verified end to end by running the demo and driving it: `[HTTP/2]
+127.0.0.1:55909: h2 over Tls13 (TLS_AES_256_GCM_SHA384)`, which is strictly more
+than the old line said.
+
+Verified: **176/176** NUnit (172 + 4) and **48/48** live harness runs — the
+latter matters because the harnesses drive the demo, whose output path changed
+completely.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

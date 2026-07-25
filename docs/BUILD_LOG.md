@@ -2868,6 +2868,49 @@ sees a 200 without learning any of it happened.
 
 Verified: **207/207** NUnit (199 + 8) and **48/48** live harness runs.
 
+**Outbound `MAX_HEADER_LIST_SIZE` on the client** (done 2026-07-25) — the gap the
+trailer work turned up, closed on its own rather than smuggled in alongside it.
+
+The server had refused to send a header list past the peer's advertised limit
+since the §6.5.2 audit. The client had not: it parsed the setting, stored it,
+enforced it on *inbound* response blocks, and then sent whatever it was handed.
+An oversized request therefore bought a round trip and came back as a stream
+reset with nothing at the call site to explain it. Both project READMEs already
+said "inbound + outbound", which was true of the server and had never been
+qualified by role — the sort of half-truth that survives precisely because
+nobody asks which half.
+
+Three decisions worth recording:
+
+*The accounting moved to `Core`.* `name.Length + value.Length + 32` is one line,
+and precisely because it is one line it was about to be written a third time (the
+server had it inline; the client needed it for request headers and again for
+trailers). Two copies of a formula are two chances to disagree about the 32, so it
+is now `HTTP2HeaderList.UncompressedSize` and the server's method delegates to it.
+
+*The check runs before the stream is allocated.* Validating inside
+`IssueOnNewStreamAsync`'s lock would have been simpler to write but would burn a
+stream ID on a request that never leaves — a permanent gap in an odd-numbered
+sequence that is finite by definition. There is a test asserting the next request
+gets the ID the refused one did not take.
+
+*Two exception types, on purpose.* Request headers throw `InvalidOperationException`
+— nothing is on the wire and there is no stream to blame — while trailers throw
+`HTTP2StreamException(INTERNAL_ERROR)`, matching both the server's behaviour and
+the invalid-trailer check sitting two lines above it in the same method. The
+distinction is whether a stream exists to fail, and it is the same distinction the
+caller cares about: one means "this request cannot be sent", the other "this
+request is now broken".
+
+Note the check is against *our* default limit until the peer's SETTINGS arrive,
+which the first request on a connection may well outrun. That is unavoidable and
+harmless: the setting is advisory in the RFC's own words, and the peer's inbound
+enforcement remains the real one.
+
+Verified: **212/212** NUnit (207 + 5) and **48/48** live harness runs — the
+harnesses matter here because `outbound-headerlimit` exercises the server half
+that the refactor moved.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-207 NUnit unit + integration tests live with the stack in Hermod
+212 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **207 NUnit tests** in
+**Tests:** most coverage is the **212 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
@@ -89,6 +89,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HPACKDecoder.cs` / `HPACKEncoder.cs` (+ `HuffmanDecoder.cs` / `HuffmanEncoder.cs`) | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
+| `HTTP2HeaderList.cs` | RFC 9113 §6.5.2 header-list accounting (name + value + 32 per field, uncompressed) — the one formula both roles measure `MAX_HEADER_LIST_SIZE` against |
 | `HTTP2Trailers.cs` | RFC 9113 §8.1 trailer-field validation (no pseudo-headers, lowercase names) — identical whichever direction they travel, so the server's response trailers and the client's request trailers cannot drift apart |
 | `HTTP2EarlyData.cs` | RFC 8470: the `Early-Data` field and the safe-method policy behind 425. We terminate no 0-RTT (`SslStream` has no early-data API), so this is about what an *intermediary* forwards to us |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
@@ -163,7 +164,8 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   windows, consumption-driven backpressure), and the priority-aware multiplexed
   writer (RFC 9218). Full abuse hardening: Rapid Reset (CVE-2023-44487),
   CONTINUATION-flood (CVE-2024-27316), PING/SETTINGS floods, stream-ID exhaustion,
-  in/outbound `MAX_HEADER_LIST_SIZE`, and Slowloris/idle/handshake/SETTINGS-ACK
+  in/outbound `MAX_HEADER_LIST_SIZE` on both roles (shared accounting in
+  `HTTP2HeaderList`), and Slowloris/idle/handshake/SETTINGS-ACK
   timeouts. Every time source is injectable via the BCL `System.TimeProvider`
   (`HTTP2ClientOptions.TimeProvider` / `HTTP2Timeouts.TimeProvider`, default
   `TimeProvider.System`) for deterministic clock/timeout tests. The §9.2 TLS
@@ -220,7 +222,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **207/207** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **212/212** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*

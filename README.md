@@ -1,4 +1,4 @@
-# HTTP/2 Conformance Tests & Demo (C# / .NET 10)
+# HTTP/2 Conformance & Interoperability Test Suite
 
 The runnable **demo host** and the **conformance / interop test drivers** for the
 from-scratch HTTP/2 stack that lives in the Vanaheimr **Hermod** library (built

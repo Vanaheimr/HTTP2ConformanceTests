@@ -261,9 +261,12 @@ survives and they stop being re-proposed as "what comes next":
 
 **HTTP/3 is not on either list, and never was.** It is a different transport —
 QUIC + QPACK + H3 framing — sharing only the version-independent HTTP semantics
-with this stack, which is exactly why `Core` was cut the way it was. It lives in
-the sibling repository **`HTTP3FromScratch`** (same parent directory), not as a
-future track here. Anything that says otherwise is stale.
+with this stack, which is exactly why `Core` was cut the way it was. It is driven
+from the sibling repository **`HTTP3ConformanceTests`** (same parent directory),
+built the same way this one is: the stack itself lives in Hermod
+(`Hermod/HTTP3` + `Hermod/QUIC`, alongside `Hermod/HTTP2`), and the sibling repo
+adds the host, the harnesses, and the interop drivers. Not a future track here.
+Anything that says otherwise is stale.
 
 The full history — feature by feature, with the design rationale, the bugs
 caught, and the exact verification for each — is in

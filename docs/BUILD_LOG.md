@@ -7,7 +7,11 @@ agent-instructions file lean. For the architecture, conventions, and a
 current-state summary see [`../CLAUDE.md`](../CLAUDE.md); for a reader-facing
 feature/RFC reference see the [`../README.md`](../README.md) reference sections.
 
-## Current State (verified 2026-07-18 with `dotnet build` + live HTTP/2 clients)
+## State as of 2026-07-18 (verified with `dotnet build` + live HTTP/2 clients)
+
+*A snapshot, not the current state — this is a chronological log, and everything
+below this heading records where the stack stood on that date. For where it
+stands now see [`../CLAUDE.md`](../CLAUDE.md).*
 
 **Working:** frame header parse/serialize, reserved-bit masking, SETTINGS
 handshake (server preface → client SETTINGS → ACK), HPACK decode incl. dynamic
@@ -2925,7 +2929,7 @@ it's essentially a separate transport (QUIC + QPACK + H3 framing) that shares
 only the HTTP *semantics* with this stack, not the framing/HPACK/flow-control
 core, so it lives in its own project rather than extending this one.
 
-**That project now exists: `HTTP3FromScratch`, in the same parent directory.**
+**That project now exists: `HTTP3ConformanceTests`, in the same parent directory.**
 The decision above was made 2026-07-18 as a plan; it has since been acted on. A
 task on this repo's list still described HTTP/3 as "the real what-comes-next for
 the project" — written in contradiction of this very paragraph, and stale twice
@@ -3012,6 +3016,14 @@ stack; the framing/HPACK/flow-control core here isn't reused. The one seam that
 *could* be shared is a version-agnostic `HTTP2RequestHandler` (see Track D). It
 belongs in a dedicated project, built on `System.Net.Quic` (MsQuic) the way
 this one builds on `SslStream`.
+
+*Since acted on, and the prediction in that last sentence was wrong on the
+transport: `HTTP3ConformanceTests` went one layer lower and builds on raw UDP
+sockets, hand-rolling QUIC and TLS 1.3 rather than delegating to MsQuic — which
+is the more consistent reading of "from scratch" anyway. Both stacks have since
+been vendored into Hermod (`Hermod/QUIC`, `Hermod/HTTP3`), so the split between
+the two repositories is now the same one this repo has: stack in Hermod, host
+and harnesses in the conformance repo.*
 
 ### Suggested order
 A, B, C, D, and E are all done, plus client-side RFC 9218 priority signaling,

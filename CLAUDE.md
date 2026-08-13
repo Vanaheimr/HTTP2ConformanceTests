@@ -57,8 +57,11 @@ Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 **Tests:** most coverage is the **212 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
-(demo-driven raw-frame scenarios) run via `tests/run-tests.ps1`; conformance via
-`tests/h2spec.ps1` (146/146 over h2 + h2c) and Autobahn (517/517). Performance is
+(demo-driven raw-frame scenarios) run via `tests/run-tests.ps1` or
+`tests/run-tests.sh`; conformance via `tests/h2spec.{ps1,sh}` (146/146 over
+h2 + h2c) and Autobahn (517/517). Every runner comes in both variants because the
+PowerShell ones need `Get-NetTCPConnection` (Windows-only), so they cannot run
+under `pwsh` on Linux. Performance is
 measured by `tests/h2bench` (`dotnet run -c Release --project tests/h2bench`) —
 not a pass/fail gate, but the baseline any optimisation has to beat. See
 [`tests/README.md`](tests/README.md).
@@ -223,7 +226,9 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   A cookie jar remains open — see the task list.
 
 **Verification:** **212/212** NUnit tests and `tests/run-tests.ps1` → **48/48**
-harness runs, both current. **h2spec 146/146** over both transports (Windows +
+harness runs, both current. The bash runner reaches **46/48** on WSL/Debian —
+see *Two harnesses that differ on Linux* below; neither is a regression, but one
+of them is not yet explained. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*
 re-run for the §9.2 / 421 / ORIGIN work. Reference peers (test-only, don't count
@@ -231,6 +236,28 @@ against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
 `Grpc.Net.Client`. The pure in-memory Core unit tests (Huffman, HPACK encoder,
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
+
+**Two harnesses that differ on Linux** (found 2026-08-13, when `run-tests.sh`
+first made the suite runnable there — WSL/Debian 13, .NET 10.0.302, repository
+on `/mnt/d`). Both pass on Windows, so neither is a regression, but they are not
+the same kind of thing:
+
+- `h2priority urgency-header` — **flaky**, and only under load. It passes on its
+  own and failed once in the full 48-run sweep, reporting a `u=7` frame
+  interleaved after the `u=0` stream started. The assertion is about *observed
+  ordering*, so it needs the writer to have enough queued to make the ordering
+  visible; slower I/O shifts that window. Plausibly the harness being too strict
+  about timing rather than the scheduler being wrong.
+- `h2attack trailers no-endstream` — **deterministic** on Linux (2/2 in
+  isolation), and unexplained. The protocol check itself passes: trailers without
+  END_STREAM are answered with `RST_STREAM PROTOCOL_ERROR`. What times out is the
+  *next* step, `OpenAndWait(3, "/")`, which proves the connection survived the
+  reset — no response within 5 s, and since that call is not wrapped the harness
+  aborts (exit 134). Notably the neighbouring cases that make the same follow-up
+  after a reset (`trailers pseudo`, `rst-cancel`, the `idle` implicit-close
+  cases) all pass on the same run, so this is not "resets break the connection on
+  Linux" in general — it is specific to this path. Worth a look before it is
+  written off as environmental.
 
 **Performance** is measured by `tests/h2bench` (figures below from a full default
 run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one

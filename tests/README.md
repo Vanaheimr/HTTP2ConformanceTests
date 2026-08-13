@@ -12,12 +12,24 @@ raw-frame clients that exercise the framing layer directly.
 powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
 ```
 
-The runner builds the solution, starts the Demo host on `:8443`, drives the
+```bash
+# from the repo root, on Linux/macOS/WSL:
+tests/run-tests.sh
+```
+
+Two runners rather than one because the PowerShell version cannot be made to
+work on Linux: it frees and polls the demo's ports with `Get-NetTCPConnection`,
+which lives in the Windows-only `NetTCPIP` module, so installing `pwsh` does not
+help. The bash runner is the Linux path, the same way `h2spec.sh` and
+`autobahn.sh` are for the conformance drivers.
+
+Either runner builds the solution, starts the Demo host on `:8443`, drives the
 demo-dependent harnesses against it (one process per scenario), and prints a
 pass/fail summary. Flags:
 
-- `-NoBuild` — skip the build step (assumes a current build).
-- `-Filter <substr>` — only run harnesses whose label/project matches.
+- `-NoBuild` / `--no-build` — skip the build step (assumes a current build).
+- `-Filter <substr>` / `--filter <substr>` — only run harnesses whose
+  label/project matches.
 
 Current status: **48/48 harness runs pass** (each self-reports its own check
 count — e.g. h2semantics 66/66, plus the h2attack / h2connect / h2priority

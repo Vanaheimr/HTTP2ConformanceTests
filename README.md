@@ -77,7 +77,11 @@ scheduling, RFC 9110 semantics) that run against a live demo host. Run the whole
 harness suite (builds, starts the demo host, drives every scenario) with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
+pwsh tests/run-tests.ps1
+```
+
+```bash
+tests/run-tests.sh          # the same runner on Linux/macOS/WSL
 ```
 
 Current status: **48/48 harness runs pass**, and the stack scores **146/146 on

@@ -58,24 +58,11 @@ docker pull crossbario/autobahn-testsuite   # optional; the wrappers pull on fir
 
 ## 2. The easy way — the wrapper script
 
-Both wrappers build the echo server, start it (**output drained to a file** — same
-gotcha as h2spec: an undrained console pipe can stall a busy server), run the
-Autobahn fuzzingclient against it via Docker, parse the JSON report, and stop the
-echo server again — exiting `0` iff every case passed.
-
-**Windows — [`tests/autobahn.ps1`](autobahn.ps1):**
-
-```powershell
-pwsh tests/autobahn.ps1
-pwsh tests/autobahn.ps1 -NoBuild
-pwsh tests/autobahn.ps1 -Port 9010
-```
-
-On Docker Desktop the container reaches the host via `host.docker.internal`
-(already in [`tests/autobahn/fuzzingclient.json`](autobahn/fuzzingclient.json)),
-so the default bridge network just works.
-
-**Linux / macOS — [`tests/autobahn.sh`](autobahn.sh):**
+[`tests/autobahn.sh`](autobahn.sh) builds the echo server, starts it (**output
+drained to a file** — same gotcha as h2spec: an undrained console pipe can stall
+a busy server), runs the Autobahn fuzzingclient against it via Docker, parses
+the JSON report, and stops the echo server again — exiting `0` iff every case
+passed.
 
 ```bash
 tests/autobahn.sh
@@ -83,12 +70,28 @@ tests/autobahn.sh --no-build
 tests/autobahn.sh --port 9010
 ```
 
-On Linux the wrapper runs the container with `--network host` and generates a
-config pointing at `ws://127.0.0.1:<port>` (Linux has no `host.docker.internal`
-by default). Report parsing prefers `jq`, then `python3`, then a `grep` heuristic.
+**How the container reaches the echo server** is the one place this script has
+to know which platform it is on, and it is a real difference rather than a
+stylistic one:
 
-Both exit non-zero and list the offending case IDs if any case does not pass. The
-full human-readable report is written to `tests/autobahn/reports/index.html`.
+- **Linux / macOS:** `--network host` puts the container in the host's own
+  network namespace, so the generated config points at `ws://127.0.0.1:<port>`.
+- **Windows (Docker Desktop):** `--network host` is a Linux-namespace feature
+  and is either absent or an opt-in beta there, so the script falls back to the
+  default bridge and points the config at `ws://host.docker.internal:<port>`.
+  The `-v` mounts also need `MSYS_NO_PATHCONV=1` and a `cygpath -w` path, since
+  Git Bash would otherwise rewrite `src:/config` as a path list.
+
+This replaced an `autobahn.ps1` that did the Windows half (see
+[`README.md`](README.md) for why the PowerShell runners went away). **The
+Windows branch is unverified**: the nightly runs Autobahn only on
+`ubuntu-latest`, because the suite ships usably only as a Docker image.
+
+Report parsing prefers `jq`, then `python3`, then a `grep` heuristic — the last
+of which only answers yes/no, so install one of the first two if you want a
+count. The script exits non-zero and lists the offending case IDs if any case
+does not pass. The full human-readable report is written to
+`tests/autobahn/reports/index.html`.
 
 ## 3. The manual way
 
@@ -139,7 +142,7 @@ The wrappers treat `OK`/`NON-STRICT`/`INFORMATIONAL` as passing.
 
 Because Autobahn needs Docker, the **critical** conformance cases are also
 encoded in [`tests/h2wsconformance`](h2wsconformance/Program.cs), which runs in
-the normal `tests/run-tests.ps1` gate (no Docker needed). It spins up the same
+the normal `tests/run-tests.sh` gate (no Docker needed). It spins up the same
 echo server in-process and plays a **raw WebSocket client** — including
 deliberately malformed frames a well-behaved client would never send — asserting
 the framing-level response:

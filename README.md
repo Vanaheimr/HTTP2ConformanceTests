@@ -82,12 +82,8 @@ raw-frame scenarios (abuse/hardening, CONNECT/WebSocket, RFC 9218 priority
 scheduling, RFC 9110 semantics) that run against a live demo host. Run the whole
 harness suite (builds, starts the demo host, drives every scenario) with:
 
-```powershell
-pwsh tests/run-tests.ps1
-```
-
 ```bash
-tests/run-tests.sh          # the same runner on Linux/macOS/WSL
+tests/run-tests.sh          # Linux, macOS, WSL — and Windows under Git Bash
 ```
 
 Current status: **48/48 harness runs pass on Windows and on Linux**, and both
@@ -95,15 +91,16 @@ are gated per push. Getting there took closing three scenarios that used to
 differ between the platforms — a real server bug (a rejected trailer block
 desynced the connection's HPACK table), two priority scenarios that asserted
 frame ordering without first establishing that both streams were contending,
-and the PowerShell runner passing no arguments to any harness at all, which is
-why Windows had looked greener throughout. See [`CLAUDE.md`](./CLAUDE.md). The
-stack scores **146/146 on
+and a PowerShell runner that passed no arguments to any harness at all, which
+is why Windows had looked greener throughout. That last one is why there is now
+one runner rather than a PowerShell/bash pair per driver. See
+[`CLAUDE.md`](./CLAUDE.md). The stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —
 
-```powershell
-pwsh tests/h2spec.ps1   # builds, starts the demo, runs h2spec on both transports
+```bash
+tests/h2spec.sh   # builds, starts the demo, runs h2spec on both transports
 ```
 
 — see [`tests/TestingAgainst_h2spec.md`](tests/TestingAgainst_h2spec.md) for the
@@ -113,7 +110,7 @@ layout, and [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the conformance breakdo
 The WebSocket framing (RFC 6455) likewise passes **517/517** cases of the
 canonical [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite)
 — the full suite, including `permessage-deflate` (RFC 7692) compression —
-`pwsh tests/autobahn.ps1` / `tests/autobahn.sh` (Docker), with the critical
+via `tests/autobahn.sh` (Docker), with the critical
 cases also pinned in the committed `h2wsconformance` harness (no Docker needed);
 see [`tests/TestingAgainst_Autobahn.md`](tests/TestingAgainst_Autobahn.md).
 

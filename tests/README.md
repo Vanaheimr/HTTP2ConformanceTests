@@ -7,29 +7,28 @@ raw-frame clients that exercise the framing layer directly.
 
 ## Running everything
 
-```powershell
-# from the repo root, Windows PowerShell or pwsh:
-powershell -ExecutionPolicy Bypass -File tests/run-tests.ps1
-```
-
 ```bash
-# from the repo root, on Linux/macOS/WSL:
+# from the repo root — Linux, macOS, WSL, and Windows under Git Bash:
 tests/run-tests.sh
 ```
 
-Two runners rather than one because the PowerShell version cannot be made to
-work on Linux: it frees and polls the demo's ports with `Get-NetTCPConnection`,
-which lives in the Windows-only `NetTCPIP` module, so installing `pwsh` does not
-help. The bash runner is the Linux path, the same way `h2spec.sh` and
-`autobahn.sh` are for the conformance drivers.
+One runner, not two. There used to be a `run-tests.ps1` beside this, because
+the PowerShell version could never work on Linux (it frees and polls the demo's
+ports with `Get-NetTCPConnection`, which lives in the Windows-only `NetTCPIP`
+module). Keeping both turned out to cost more than it bought: they drifted, the
+PowerShell one silently ran every harness with no arguments for weeks, and
+"Windows says 48/48" read as corroboration of the Linux number when it was a
+different and mostly empty measurement. The bash runner works under the Git Bash
+that ships with Git for Windows; the one genuinely platform-specific piece —
+freeing a stale listener — lives in [`lib.sh`](lib.sh), which is also where
+`h2spec.sh` and `autobahn.sh` get it.
 
 Either runner builds the solution, starts the Demo host on `:8443`, drives the
 demo-dependent harnesses against it (one process per scenario), and prints a
 pass/fail summary. Flags:
 
-- `-NoBuild` / `--no-build` — skip the build step (assumes a current build).
-- `-Filter <substr>` / `--filter <substr>` — only run harnesses whose
-  label/project matches.
+- `--no-build` — skip the build step (assumes a current build).
+- `--filter <substr>` — only run harnesses whose label/project matches.
 
 Current status: **48/48 harness runs pass on both platforms** (each self-reports
 its own check count — e.g. h2semantics 66/66, plus the h2attack / h2connect /
@@ -48,8 +47,9 @@ settled is worth knowing before trusting any number here:
   streams window-blocked and release them with one SETTINGS frame.
 - `run-tests.ps1` was **passing no arguments to any harness**, so every
   demo-driven scenario ran its default mode. That is why Windows had looked
-  greener — it had not been running most of what its 48/48 named. The bash
-  runner passes arguments positionally and never had the problem.
+  greener — it had not been running most of what its 48/48 named. It is also
+  why there is only one runner now: the bash one, which passes its arguments
+  positionally and never had the problem.
 
 See *Harnesses that differed on Linux* in [`../CLAUDE.md`](../CLAUDE.md) for the
 full account.
@@ -142,13 +142,12 @@ stream-ID allocation it exists to order. That caps one connection at roughly
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2
 conformance suite (RFC 9113 + RFC 7541). This stack passes **146 / 146** over
 *both* the TLS (`h2`, :8443) and cleartext (`h2c`, :8080) listeners, on Windows
-*and* Linux (WSL/Debian). The easiest way to reproduce it — a wrapper for each
-platform that builds, starts the demo, runs h2spec on both transports, and stops
-the demo again:
+*and* Linux (WSL/Debian). The easiest way to reproduce it — a wrapper that
+builds, starts the demo, runs h2spec on both transports, and stops the demo
+again:
 
 ```bash
-tests/h2spec.sh          # Linux / macOS
-pwsh tests/h2spec.ps1    # Windows
+tests/h2spec.sh
 ```
 
 For the full walkthrough — installing h2spec, running individual sections,
@@ -169,9 +168,14 @@ used in production over a plain-TCP tunnel behind an HTTP/1.1 Upgrade handshake
 framing under test is transport-agnostic). Run from the official Docker image:
 
 ```bash
-tests/autobahn.sh          # Linux / macOS
-pwsh tests/autobahn.ps1    # Windows (Docker Desktop)
+tests/autobahn.sh
 ```
+
+On Windows this needs Docker Desktop, and that path is written but unverified:
+`--network host` is a Linux-namespace feature, so the script switches to the
+default bridge and `host.docker.internal` there — the way the PowerShell runner
+it replaced did it. Nothing exercises that branch, since the nightly runs
+Autobahn only on `ubuntu-latest`.
 
 The critical cases (framing, fragmentation, UTF-8 §8.1, close §7.4) are also in
 the committed `h2wsconformance` harness, which runs in the gate above with no

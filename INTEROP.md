@@ -42,11 +42,11 @@ tools/h2load.sh
 **Conformance suites** — h2spec and Autobahn, both wrapped so they need one command each:
 
 ```bash
-tests/h2spec.sh          # or: pwsh tests/h2spec.ps1
+tests/h2spec.sh
 ```
 
 ```bash
-tests/autobahn.sh        # or: pwsh tests/autobahn.ps1   (needs Docker)
+tests/autobahn.sh        # needs Docker
 ```
 
 Both also run nightly on GitHub — see [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml).

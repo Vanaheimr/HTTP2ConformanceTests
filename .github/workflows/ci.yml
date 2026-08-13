@@ -75,12 +75,14 @@ jobs:
           dotnet-version: '10.0.x'
 
       # Debug, not Release, which is where this gate diverges from the sibling
-      # repositories — and it is the harness runners that force it. run-tests.ps1
-      # drives each harness through `dotnet run --no-build`, which resolves the
-      # default configuration; against a Release-only build it would find no
-      # assembly. Both runners would need a configuration flag before this can
-      # match Hermod's `--configuration Release`. The tests below are correctness
-      # checks, not benchmarks, so Debug costs nothing but wall-clock here.
+      # repositories — and it is the harness runner that forces it.
+      # run-tests.sh looks for a built assembly under bin/Debug first and
+      # bin/Release second; against a Release-only build it does find one, but
+      # the demo host it starts is located the same way, so the two would have
+      # to agree. Adding a configuration flag is what this needs before it can
+      # match Hermod's `--configuration Release`. The tests below are
+      # correctness checks, not benchmarks, so Debug costs nothing but
+      # wall-clock here.
       - name: Build
         run: dotnet build HTTP2.slnx
 
@@ -103,40 +105,38 @@ jobs:
       # abuse/hardening, CONNECT/WebSocket, RFC 9218 priority, RFC 9110
       # semantics. The runner starts the demo on :8443/:8080, drives one process
       # per scenario, and stops it again.
-      - name: Harness suite (48 runs, Windows)
-        if: runner.os == 'Windows'
-        timeout-minutes: 30
-        run: pwsh tests/run-tests.ps1 -NoBuild
-
-      # Gated, like the Windows leg - which it was not for its first weeks, and
-      # the history is worth keeping because both things it found were found by
-      # disagreeing with Windows rather than by agreeing with it.
       #
-      # It was added to answer a question WSL could not - whether /mnt/d and
-      # Windows-hosted networking explained the 46/48 the bash runner first
-      # reported - and the first CI run said no: 45/48 here, sharing no kernel,
+      # ONE step for both legs, and one runner behind it. There used to be two,
+      # a PowerShell one for Windows and a bash one for Linux, and the pair is
+      # worth a paragraph because of how it failed.
+      #
+      # Both things this matrix found, it found by the legs DISAGREEING. The
+      # Linux leg was added to answer a question WSL could not — whether /mnt/d
+      # and Windows-hosted networking explained the 46/48 the bash runner first
+      # reported — and the first run said no: 45/48 here, sharing no kernel,
       # filesystem or hardware with that box, and `h2attack trailers
       # no-endstream` failing with a byte-identical stack trace. That was a real
       # server bug (a rejected trailer block was not HPACK-decoded, desyncing
       # the connection's dynamic table so the NEXT request died with a
       # COMPRESSION_ERROR), fixed in Hermod and pinned by
-      # RejectedTrailers_DoNotDesyncHPACK.
+      # RejectedTrailers_DoNotDesyncHPACK. The two `h2priority` scenarios were
+      # harness defects: they asserted which stream the writer prefers without
+      # ever establishing that both streams were candidates.
       #
-      # The remaining two - `h2priority urgency-header` and `priority-update` -
-      # were harness defects, not server ones: both tried to observe which
-      # stream the writer prefers without ever establishing that both streams
-      # were candidates, so on a slower machine they reported a scheduling
-      # failure that had not happened. They now park both streams
-      # window-blocked and release them in a single SETTINGS frame, which makes
-      # the contention a fact rather than a hope.
+      # And the third finding was the runner itself. run-tests.ps1 declared its
+      # harness-argument parameter as $Args — an automatic PowerShell variable,
+      # so it was never bound — and every demo-driven harness therefore ran with
+      # no arguments, i.e. its default mode. Twelve h2attack labels, one
+      # scenario executed twelve times, 48/48 reported. That is why Windows
+      # "passed" the trailers scenario the server bug was hiding behind: it
+      # never ran it. Two runners produced two numbers that read as agreement.
       #
-      # Chasing the last of those also turned up why Windows had been so much
-      # greener: run-tests.ps1 passed no arguments to any harness at all, so
-      # every scenario ran its default mode - including the trailers one that
-      # the server bug was hiding behind. Fixed there; the bash runner passes
-      # its arguments positionally and never had the problem.
-      - name: Harness suite (48 runs, Linux)
-        if: runner.os == 'Linux'
+      # So the PowerShell runner is gone rather than fixed. The bash one works
+      # under the Git Bash that ships on GitHub's Windows images (verified
+      # locally too, including the stale-listener path that needs a Windows
+      # branch — see tests/lib.sh). One implementation, one scenario list, and
+      # a disagreement between the legs now means a real platform difference.
+      - name: Harness suite (48 runs)
         timeout-minutes: 30
         shell: bash
         run: tests/run-tests.sh --no-build

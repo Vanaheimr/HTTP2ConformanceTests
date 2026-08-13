@@ -83,6 +83,12 @@ jobs:
           curl -fsSL "https://github.com/summerwind/h2spec/releases/download/v${H2SPEC_VERSION}/h2spec_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin
           h2spec --version
 
+      # The install stays pwsh — Expand-Archive is the least fuss for a .zip —
+      # but it ends by putting the directory on GITHUB_PATH rather than handing
+      # the binary's location to the next step. That is what lets the run step
+      # below be one step instead of two: tests/h2spec.sh finds h2spec.exe via
+      # `command -v` like any other tool, and no backslash path has to survive
+      # a trip through bash.
       - name: Install h2spec (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -93,6 +99,7 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/summerwind/h2spec/releases/download/v$env:H2SPEC_VERSION/h2spec_windows_amd64.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath $dir -Force
           & (Join-Path $dir 'h2spec.exe') --version
+          $dir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
       # Debug, for the same reason as ci.yml: the runner scripts resolve the
       # default configuration.
@@ -111,8 +118,10 @@ jobs:
       # overwrite $? / $LASTEXITCODE and the step could never fail, and running
       # the pipeline under `set -e` would abort before the summary on exactly the
       # night the summary is worth having.
-      - name: h2spec over h2 and h2c (Linux)
-        if: runner.os == 'Linux'
+      # One step for both legs: tests/h2spec.ps1 was removed along with the
+      # other two PowerShell runners (see ci.yml's harness step for why), and
+      # the bash one runs under the Git Bash on GitHub's Windows images.
+      - name: h2spec over h2 and h2c
         timeout-minutes: 30
         shell: bash
         run: |
@@ -129,25 +138,6 @@ jobs:
             tail -40 "$log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          exit $code
-
-      # pwsh rather than bash here: $RUNNER_TEMP is a backslash path on Windows,
-      # and handing it through bash to a PowerShell parameter is a good way to
-      # lose the separators. Invoked with -File so the runner is a child process
-      # with a real exit code, rather than an `exit` that unwinds this shell.
-      - name: h2spec over h2 and h2c (Windows)
-        if: runner.os == 'Windows'
-        timeout-minutes: 30
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $h2spec = Join-Path $env:RUNNER_TEMP 'h2spec\h2spec.exe'
-          $log    = "artifacts/h2spec-${{ matrix.leg }}.txt"
-          pwsh -File tests/h2spec.ps1 -NoBuild -H2spec $h2spec 2>&1 | Tee-Object -FilePath $log
-          $code = $LASTEXITCODE
-          "## h2spec — ${{ matrix.leg }}", "", '```' | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          Get-Content $log -Tail 40                 | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          '```'                                     | Out-File -Append $env:GITHUB_STEP_SUMMARY
           exit $code
 
       # !cancelled() rather than success(): the night h2spec reports a failure is
@@ -300,17 +290,18 @@ jobs:
       - name: Build
         run: dotnet build HTTP2.slnx
 
-      - name: Test (212 HTTP/2 tests, against upstream master)
+      - name: Test (213 HTTP/2 tests, against upstream master)
         timeout-minutes: 30
         run: dotnet test libs/Hermod/HermodTests/HermodTests.csproj --no-build --filter "FullyQualifiedName~Hermod.Tests.HTTP2" --logger "console;verbosity=normal"
 
-      # Windows only, and deliberately: this leg is 48/48, so a failure here is a
-      # real signal about upstream. The Linux harness suite has three of its own
-      # differences to settle first (see CLAUDE.md) and would drown that signal.
+      # Both legs now. This used to be Windows-only because the Linux harness
+      # suite had three differences of its own that would have drowned the
+      # signal about upstream; all three are settled and both legs are 48/48,
+      # so restricting it would now hide exactly the case it was protecting.
       - name: Harness suite (48 runs)
-        if: runner.os == 'Windows'
         timeout-minutes: 30
-        run: pwsh tests/run-tests.ps1 -NoBuild
+        shell: bash
+        run: tests/run-tests.sh --no-build
 
   interop:
     # Our client against eight foreign HTTP/2 servers over the public internet —

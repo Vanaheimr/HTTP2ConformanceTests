@@ -57,11 +57,15 @@ Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 **Tests:** most coverage is the **213 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
-(demo-driven raw-frame scenarios) run via `tests/run-tests.ps1` or
-`tests/run-tests.sh`; conformance via `tests/h2spec.{ps1,sh}` (146/146 over
-h2 + h2c) and Autobahn (517/517). Every runner comes in both variants because the
-PowerShell ones need `Get-NetTCPConnection` (Windows-only), so they cannot run
-under `pwsh` on Linux. Performance is
+(demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
+`tests/h2spec.sh` (146/146 over h2 + h2c) and `tests/autobahn.sh` (517/517).
+**One runner each, in bash** — including on Windows, under the Git Bash that
+ships with Git for Windows. Each used to have a PowerShell twin, and that pair
+is the subject of the `$Args` entry under *Harnesses that differed on Linux*
+below: they drifted, and two runners produced two numbers that read as
+agreement. What is genuinely platform-specific — freeing a stale listener, and
+Docker's networking model — lives in `tests/lib.sh` and in one branch of
+`autobahn.sh`. Performance is
 measured by `tests/h2bench` (`dotnet run -c Release --project tests/h2bench`) —
 not a pass/fail gate, but the baseline any optimisation has to beat. See
 [`tests/README.md`](tests/README.md).
@@ -226,8 +230,8 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   A cookie jar remains open — see the task list.
 
 **Verification:** **213/213** NUnit tests and **48/48** harness runs on *both*
-platforms — `tests/run-tests.ps1` on Windows, `tests/run-tests.sh` on Linux —
-all gated per push by `.github/workflows/ci.yml` on Windows and Debian 13. The
+platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
+Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
 differ there are settled, and *Harnesses that differed on Linux* below records
 what each turned out to be, because none of the three was what it first looked
@@ -306,6 +310,19 @@ had noticed either:
   its arguments positionally and could not trip over this, which is why the
   disagreement between the two platforms was worth taking seriously rather than
   explaining away.
+- **Consequence: there is one runner per driver now, in bash.** The
+  PowerShell twins of `run-tests`, `h2spec` and `autobahn` were removed rather
+  than fixed. The argument is not that bash is nicer — it is that two
+  implementations of the same runner produce two numbers that *look* like
+  corroboration, and this repository has now paid for that twice over. The bash
+  runner was verified under Git Bash on Windows before the swap, 48/48 and
+  including the stale-listener path; what is genuinely platform-specific went
+  to `tests/lib.sh` (`free_ports`, which needs `Get-NetTCPConnection` via
+  `powershell.exe` because `netstat` is *localized* — a German Windows prints
+  "ABHÖREN") and to one branch in `autobahn.sh` (Docker Desktop has no
+  `--network host`, so it uses the default bridge and `host.docker.internal`,
+  as the PowerShell version did). That Autobahn branch is written but
+  **unverified** — the nightly runs Autobahn only on `ubuntu-latest`.
 
 **Performance** is measured by `tests/h2bench` (figures below from a full default
 run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one

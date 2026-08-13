@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 #
-# Test runner for the hand-rolled HTTP/2 stack (Linux/macOS/WSL).
+# Test runner for the hand-rolled HTTP/2 stack. Linux, macOS, WSL -- and
+# Windows, under the Git Bash that ships with Git for Windows.
 #
-# The counterpart of tests/run-tests.ps1, and not merely a convenience alias:
-# the PowerShell runner uses Get-NetTCPConnection, which lives in the Windows-
-# only NetTCPIP module, so it cannot run under pwsh on Linux at all. This is
-# the Linux path.
+# There used to be a PowerShell twin of this file, because the Windows-only
+# Get-NetTCPConnection made the reverse impossible. It is gone, and the reason
+# is worth a sentence: the two drifted, the PowerShell one silently ran every
+# harness with no arguments for weeks, and "Windows says 48/48" read as
+# corroboration when it was a different and mostly empty measurement. Two
+# runners produce two numbers that look like agreement. See docs/BUILD_LOG.md.
+# The one platform-specific bit that remains -- freeing a stale listener --
+# lives in tests/lib.sh.
 #
 # The harnesses under tests/ are demo-driven -- raw frame-level clients that
 # talk to the running Demo host on https://localhost:8443. They print per-check
@@ -40,6 +45,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
 sln="$root/HTTP2.slnx"
 
+# shellcheck source=tests/lib.sh
+. "$here/lib.sh"
+
 # The marks the harnesses print. Matched as raw UTF-8 bytes, which is what .NET
 # writes on Linux regardless of the shell's locale.
 CHECK="✓"
@@ -65,23 +73,10 @@ if [ "$nobuild" -eq 0 ]; then
     printf '  %sBuild OK%s\n' "$C_GREEN" "$C_OFF"
 fi
 
-# --- free the demo ports ---------------------------------------------------
-# Kill whatever still listens on 8443/8080: a stale demo would fault the new
-# one's bind, and the demo serves both listeners as one set. Prefer fuser and
-# fall back to ss (fuser/lsof aren't always installed, ss usually is).
-free_ports() {
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k 8443/tcp 8080/tcp >/dev/null 2>&1 || true
-    elif command -v ss >/dev/null 2>&1; then
-        local pids
-        # The '|| true' matters: with `set -o pipefail`, grep finding no match
-        # (the common "nothing stale is bound" case) would otherwise abort the
-        # whole script under `set -e`.
-        pids="$(ss -ltnpH 'sport = :8443 or sport = :8080' 2>/dev/null \
-                | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u || true)"
-        [ -n "$pids" ] && kill $pids 2>/dev/null && sleep 0.5 || true
-    fi
-}
+# The demo serves both listeners as one set, so both ports are freed together.
+# free_ports lives in lib.sh (it is needed by all three runners and has a
+# Windows branch worth writing once).
+demo_ports="8443 8080"
 
 # Locate a built assembly, Debug first (what a plain `dotnet build` produces).
 find_dll() {  # $1 = project name, $2 = directory holding the project
@@ -96,7 +91,7 @@ find_dll() {  # $1 = project name, $2 = directory holding the project
 # --- start the demo --------------------------------------------------------
 section "Starting Demo host on :8443"
 
-free_ports
+free_ports $demo_ports
 
 # Run the built DLL directly, NOT `dotnet run`: the latter forks a child it does
 # not forward signals to, so killing it would orphan the real server and leave
@@ -123,7 +118,7 @@ cleanup() {
     section "Stopping Demo host"
     kill "$demo_pid" 2>/dev/null || true
     wait "$demo_pid" 2>/dev/null || true
-    free_ports
+    free_ports $demo_ports
     rm -f "$demo_log"
 }
 trap cleanup EXIT

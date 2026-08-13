@@ -45,7 +45,10 @@ hang), run h2spec against both listeners, and stop the demo again (even on
 error / Ctrl-C). Each exits `0` iff every selected transport reports `0 failed`,
 so it drops straight into a CI gate.
 
-**Linux / macOS — [`tests/h2spec.sh`](h2spec.sh):**
+**[`tests/h2spec.sh`](h2spec.sh)** — Linux, macOS, WSL, and Windows under the
+Git Bash that ships with Git for Windows (there used to be an `h2spec.ps1`
+beside it; see [`README.md`](README.md) for why the PowerShell runners were
+removed rather than kept in step):
 
 ```bash
 tests/h2spec.sh                          # both transports (TLS + h2c)
@@ -59,17 +62,9 @@ Options: `--transport both|tls|cleartext` (default `both`), `--h2spec <path>`,
 `--path <endpoint>` (default `/echo`), `--spec "<ids>"` (e.g. `"http2/6.5 hpack"`),
 `--strict` (h2spec's `-S`), `--no-build`.
 
-**Windows — [`tests/h2spec.ps1`](h2spec.ps1):**
-
-```powershell
-pwsh tests/h2spec.ps1                                # both transports
-pwsh tests/h2spec.ps1 -H2spec C:\tools\h2spec.exe    # if not on PATH
-pwsh tests/h2spec.ps1 -Transport tls                 # just one transport
-pwsh tests/h2spec.ps1 -NoBuild -Spec http2/6.5       # skip build, one section
-```
-
-Options mirror the bash script: `-Transport`, `-H2spec`, `-Path`, `-Spec`,
-`-Strict`, `-NoBuild`.
+On Windows, pass `--h2spec /c/tools/h2spec.exe` in Git Bash's own path syntax,
+or simply put the directory on `PATH` and let `command -v` find it — which is
+what the nightly does.
 
 ## 3. The manual way
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Run the h2spec HTTP/2 conformance suite against the demo host (Linux/macOS).
+# Run the h2spec HTTP/2 conformance suite against the demo host. Linux, macOS,
+# WSL -- and Windows, under the Git Bash that ships with Git for Windows (this
+# replaced a PowerShell twin; see the header of tests/run-tests.sh for why
+# there is only one of each runner now).
 #
 # h2spec (https://github.com/summerwind/h2spec) is the canonical RFC 9113 +
 # RFC 7541 conformance suite. It is an external binary and is NOT vendored in
@@ -12,7 +15,7 @@
 #   * frees ports 8443 (TLS) and 8080 (cleartext h2c) if a stale demo is bound,
 #   * starts the demo host with its output redirected to a file (so h2spec's
 #     flood of malformed cases can't fill an undrained console pipe and stall
-#     the demo -- the same gotcha the PowerShell runner documents),
+#     the demo -- which then looks like a conformance failure, not backpressure),
 #   * runs h2spec against the TLS and/or cleartext listener,
 #   * stops the demo again (via an EXIT trap, even on error/Ctrl-C).
 #
@@ -55,6 +58,9 @@ root="$(dirname "$here")"
 sln="$root/HTTP2.slnx"
 demo="$root/Demo/HTTP2.Demo.csproj"
 
+# shellcheck source=tests/lib.sh
+. "$here/lib.sh"
+
 # --- locate h2spec ---------------------------------------------------------
 if ! command -v "$h2spec" >/dev/null 2>&1; then
     echo "h2spec not found ('$h2spec'). Download it from" >&2
@@ -72,23 +78,10 @@ if [ "$nobuild" -eq 0 ]; then
 fi
 
 # --- free the demo ports ---------------------------------------------------
-# Kill whatever still listens on 8443/8080 (a stale demo would fault the new
-# one's bind). Prefer fuser; fall back to ss (fuser/lsof aren't always
-# installed, but ss usually is).
-free_ports() {
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k 8443/tcp 8080/tcp >/dev/null 2>&1 || true
-    elif command -v ss >/dev/null 2>&1; then
-        local pids
-        # The '|| true' matters: with `set -o pipefail`, grep finding no match
-        # (the common "nothing stale is bound" case) would otherwise abort the
-        # whole script under `set -e`.
-        pids="$(ss -ltnpH 'sport = :8443 or sport = :8080' 2>/dev/null \
-                | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u || true)"
-        [ -n "$pids" ] && kill $pids 2>/dev/null && sleep 0.5 || true
-    fi
-}
-free_ports
+# Both listeners come up as one set, so both are freed together. free_ports
+# itself lives in tests/lib.sh, shared with the other two runners.
+demo_ports="8443 8080"
+free_ports $demo_ports
 
 # --- start the demo, output redirected to a file (see header) --------------
 # Run the built DLL directly, NOT `dotnet run`: the latter forks a child that
@@ -111,7 +104,7 @@ demo_pid=$!
 cleanup() {
     kill "$demo_pid" 2>/dev/null || true
     wait "$demo_pid" 2>/dev/null || true
-    free_ports
+    free_ports $demo_ports
     rm -f "$demo_log"
 }
 trap cleanup EXIT

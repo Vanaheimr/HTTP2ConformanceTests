@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 #
-# Run the Autobahn TestSuite WebSocket conformance run against our echo server
-# (Linux/macOS). See tests/TestingAgainst_Autobahn.md for the full walkthrough.
+# Run the Autobahn TestSuite WebSocket conformance run against our echo server.
+# See tests/TestingAgainst_Autobahn.md for the full walkthrough.
+#
+# Linux, macOS and WSL are the verified paths. Windows (Git Bash + Docker
+# Desktop) is supported here -- it is where the PowerShell twin's knowledge
+# went when that file was removed -- but is NOT exercised by anything: the
+# nightly runs Autobahn only on ubuntu-latest, because the suite ships usably
+# only as a Docker image. Treat the Windows branch as untested until someone
+# with Docker Desktop runs it.
 #
 # The Autobahn TestSuite (https://github.com/crossbario/autobahn-testsuite) is
 # the canonical RFC 6455 WebSocket conformance suite; its "fuzzingclient" drives
@@ -44,6 +51,9 @@ root="$(dirname "$here")"
 sln="$root/HTTP2.slnx"
 repdir="$root/tests/autobahn/reports"
 
+# shellcheck source=tests/lib.sh
+. "$here/lib.sh"
+
 command -v docker >/dev/null 2>&1 || {
     echo "docker not found. Install Docker and retry. See tests/TestingAgainst_Autobahn.md." >&2
     exit 127
@@ -64,16 +74,8 @@ done
 [ -n "$srv_dll" ] || { echo "Echo server not built (no autobahn-server.dll). Run without --no-build first." >&2; exit 1; }
 
 # --- free the port (a stale server would fault the new bind) ----------------
-free_port() {
-    if command -v fuser >/dev/null 2>&1; then
-        fuser -k "${port}/tcp" >/dev/null 2>&1 || true
-    elif command -v ss >/dev/null 2>&1; then
-        local pids
-        pids="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u || true)"
-        [ -n "$pids" ] && kill $pids 2>/dev/null && sleep 0.5 || true
-    fi
-}
-free_port
+# free_ports lives in tests/lib.sh, shared with the other two runners.
+free_ports "$port"
 
 # --- start the echo server, output drained to a file -----------------------
 # Run the DLL directly (not `dotnet run`, whose forked child a plain kill would
@@ -85,7 +87,7 @@ srv_pid=$!
 cleanup() {
     kill "$srv_pid" 2>/dev/null || true
     wait "$srv_pid" 2>/dev/null || true
-    free_port
+    free_ports "$port"
     rm -f "$srv_log"
 }
 trap cleanup EXIT
@@ -104,23 +106,49 @@ done
 [ "$ready" -eq 1 ] || { echo "Echo server did not start listening on port $port" >&2; exit 1; }
 echo "Echo server up (pid $srv_pid) on ws://127.0.0.1:$port/"
 
-# --- write a Linux config (host networking -> 127.0.0.1) and run Autobahn ---
+# --- how the container reaches the echo server -----------------------------
+# The one genuine platform difference in this script, inherited from the
+# PowerShell runner this replaced.
+#
+# `--network host` puts the container in the host's own network namespace, so
+# 127.0.0.1 inside the container *is* the host. That is a Linux-namespace
+# feature: on Docker Desktop it either does not exist or is an opt-in beta, so
+# the container would loop back to itself and reach nothing. There the default
+# bridge plus the host.docker.internal alias is the documented way in.
+#
+# The mount paths need the same care. Git Bash reports this repo as
+# /d/Coding/..., and MSYS rewrites an argument beginning with a slash into a
+# Windows path before docker sees it -- worse, it treats the colon in
+# "src:/config" as a path-list separator and mangles both halves.
+# MSYS_NO_PATHCONV=1 turns that off, and cygpath hands docker the D:\... form
+# Docker Desktop actually wants. Both are inert on Linux.
+if is_windows; then
+    docker_net=""
+    ws_host="host.docker.internal"
+    mount_src="$(cygpath -w "$repdir")"
+else
+    docker_net="--network host"
+    ws_host="127.0.0.1"
+    mount_src="$repdir"
+fi
+
 rm -rf "$repdir"; mkdir -p "$repdir"
 cfg="$repdir/fuzzingclient.json"
 cat >"$cfg" <<JSON
 {
     "outdir": "/reports",
-    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://127.0.0.1:$port" }],
+    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://$ws_host:$port" }],
     "cases": ["*"],
     "exclude-cases": [],
     "exclude-agent-cases": {}
 }
 JSON
 
-echo "Running Autobahn fuzzingclient (Docker image $image)..."
-docker run --rm --network host \
-    -v "$repdir:/config" \
-    -v "$repdir:/reports" \
+echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port)..."
+# shellcheck disable=SC2086  # $docker_net is a fixed literal or empty, on purpose
+MSYS_NO_PATHCONV=1 docker run --rm $docker_net \
+    -v "$mount_src:/config" \
+    -v "$mount_src:/reports" \
     "$image" \
     wstest -m fuzzingclient -s /config/fuzzingclient.json || echo "docker run returned $?"
 

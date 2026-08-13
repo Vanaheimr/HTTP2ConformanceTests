@@ -3092,6 +3092,70 @@ than one: the disagreement between them is what surfaced all three of these, and
 each time the platform difference turned out to be a defect wearing a platform
 difference's clothes.
 
+### One runner per driver, in bash (2026-08-13)
+
+Immediate follow-on from the `$Args` finding above, and the decision it forced.
+Every driver here had a PowerShell/bash pair — `run-tests`, `h2spec`,
+`autobahn` — on a reason that was true when written: the PowerShell versions
+free and poll ports with `Get-NetTCPConnection`, which is Windows-only, so they
+could never run on Linux. The bash ones were added as the Linux path.
+
+What that reasoning missed is that the converse was never tested. Bash on
+Windows was assumed not to work rather than tried, and it works: `run-tests.sh`
+runs 48/48 under the Git Bash that ships with Git for Windows, and — the part
+worth checking, since it is where a `kill` has to cross the MSYS/native
+boundary — it starts the demo, stops it, and leaves the ports released.
+
+So the pairs are gone and the bash ones are the runners. The argument is not
+that bash is nicer. It is that two implementations of the same runner produce
+two numbers that *look* like corroboration, and this repository has now paid
+for that twice: the trailers bug survived because Windows "agreed", and the
+`$Args` bug survived because nothing compared what the two were actually doing.
+The scenario list was also duplicated verbatim in two syntaxes — still in step,
+but one edit away from silently covering less on one platform.
+
+Three platform differences were real and had to be carried across rather than
+dropped:
+
+- **Freeing a stale listener.** Neither `fuser` nor `ss` exists under Git Bash,
+  and the existing `if fuser … elif ss …` would have fallen straight through
+  and freed nothing — silently, which is the bad kind. `netstat` is present but
+  **localized**: a German Windows prints `ABHÖREN` where an English one prints
+  `LISTENING`, so keying on its state column would have worked on exactly one
+  machine. The Windows branch therefore queries `Get-NetTCPConnection` through
+  `powershell.exe` and kills via `taskkill //PID` (doubled slashes, or MSYS
+  rewrites the argument into a path). That is a system query, the counterpart
+  of `ss` — not a second runner. It lives in the new `tests/lib.sh`, shared by
+  all three.
+- **Docker networking, for Autobahn.** `--network host` puts the container in
+  the host's network namespace, which is a Linux feature; on Docker Desktop it
+  is absent or an opt-in beta, so the container would loop back to itself. The
+  PowerShell runner used the default bridge plus `host.docker.internal`, and
+  that knowledge moved into `autobahn.sh` as a branch. The `-v` mounts need
+  `MSYS_NO_PATHCONV=1` and `cygpath -w` besides, because Git Bash treats the
+  colon in `src:/config` as a path-list separator.
+- **h2spec's location in CI.** The Windows step used to be pwsh specifically to
+  keep `$RUNNER_TEMP`'s backslashes intact on the way to a parameter. The
+  install step now appends the directory to `GITHUB_PATH` instead, so
+  `h2spec.sh` finds the binary with `command -v` like any other tool and no
+  path has to survive the trip. One step for both legs.
+
+Verified before the swap, not after: `run-tests.sh` 48/48 on Windows (including
+with a stale demo deliberately left bound, which is the case the new branch
+exists for) and 48/48 on Linux, plus the same stale-listener check there to
+confirm the refactor did not break the POSIX path. `ci.yml` and the nightly's
+drift job each collapse from two steps to one, and the nightly's harness leg is
+no longer Windows-only — it was restricted because Linux had three unsettled
+differences, and keeping the restriction now would hide the exact case it was
+meant to protect.
+
+One honest gap: **the Windows Autobahn branch is unverified.** This machine has
+no Docker Desktop, and the nightly runs Autobahn only on `ubuntu-latest`,
+because the suite ships usably only as a Docker image. It is written from the
+PowerShell version it replaces and marked as untested in both the script header
+and `TestingAgainst_Autobahn.md` — which is strictly better than the file it
+replaced, whose Windows path was equally unverified and did not say so.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

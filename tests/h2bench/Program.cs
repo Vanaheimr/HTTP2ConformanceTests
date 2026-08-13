@@ -54,6 +54,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 
 
@@ -222,7 +223,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
     await WaitUntilListening(port);
 
     var authority = $"localhost:{port}";
-    var scheme    = cleartext ? "http" : "https";
+    var scheme    = cleartext ? URIScheme.http : URIScheme.https;
     var conn      = await HTTP2Client.ConnectAsync("localhost", port, (_, _, _, _) => true, Cleartext: cleartext);
 
     if (Wanted("requests"))
@@ -249,7 +250,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         for (var i = 0; i < probes; i++)
         {
             var t0     = Stopwatch.GetTimestamp();
-            var handle = await conn.StartRequestAsync("GET", scheme, authority, "/");
+            var handle = await conn.StartRequestAsync(HTTPMethod.GET, scheme, authority, "/");
             var t1     = Stopwatch.GetTimestamp();
             _          = await handle.Response;
             var t2     = Stopwatch.GetTimestamp();
@@ -276,7 +277,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
             while ((i = Interlocked.Increment(ref slot)) < probes)
             {
                 var t0       = Stopwatch.GetTimestamp();
-                var handle   = await conn.StartRequestAsync("GET", scheme, authority, "/");
+                var handle   = await conn.StartRequestAsync(HTTPMethod.GET, scheme, authority, "/");
                 var t1       = Stopwatch.GetTimestamp();
                 var response = await handle.Response;
                 var t2       = Stopwatch.GetTimestamp();
@@ -367,7 +368,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         {
             for (var i = 0; i < iterations; i++)
             {
-                var response = conn.SendRequestAsync("GET", scheme, authority, "/large").GetAwaiter().GetResult();
+                var response = conn.SendRequestAsync(HTTPMethod.GET, scheme, authority, "/large").GetAwaiter().GetResult();
                 if (response.Body.Length != large.Length)
                     throw new Exception($"short read: {response.Body.Length} of {large.Length}");
             }
@@ -382,7 +383,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         {
             for (var i = 0; i < iterations; i++)
             {
-                var response = conn.SendRequestAsync("POST", scheme, authority, "/sink", Body: large).GetAwaiter().GetResult();
+                var response = conn.SendRequestAsync(HTTPMethod.POST, scheme, authority, "/sink", Body: large).GetAwaiter().GetResult();
                 if (response.Status != 200)
                     throw new Exception($"status {response.Status}");
             }
@@ -469,7 +470,7 @@ void Percentiles(String Name, Int64[] Samples)
 /// reporting throughput plus the latency distribution — a mean alone hides
 /// exactly the tail behaviour multiplexing is supposed to protect.
 /// </summary>
-async Task ReportRequests(HTTP2ClientConnection Connection, String Scheme, String Authority, Int32 Concurrency, Int32 Total)
+async Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, String Authority, Int32 Concurrency, Int32 Total)
 {
 
     var latencies = new Int64[Total];
@@ -481,7 +482,7 @@ async Task ReportRequests(HTTP2ClientConnection Connection, String Scheme, Strin
         while ((index = Interlocked.Increment(ref next)) < Total)
         {
             var started = Stopwatch.GetTimestamp();
-            _ = await Connection.SendRequestAsync("GET", Scheme, Authority, "/");
+            _ = await Connection.SendRequestAsync(HTTPMethod.GET, Scheme, Authority, "/");
             latencies[index] = Stopwatch.GetTimestamp() - started;
         }
     }

@@ -204,8 +204,14 @@ tests** + **48 live-host harness runs** + **h2spec 146/146** + **Autobahn
 517/517**. The first two run per push on Windows and Debian 13
 ([`ci.yml`](.github/workflows/ci.yml)), the latter two nightly
 ([`nightly.yml`](.github/workflows/nightly.yml)), which is also where the h2spec
-and Autobahn numbers get re-measured rather than merely remembered. The stack's
-own reference lives in
+and Autobahn numbers get re-measured rather than merely remembered.
+
+The split between the two is deliberate. The push gate builds against the
+**pinned** Hermod commit, so a red run always means *this* change broke
+something; the nightly adds a **drift** job that builds the same tests against
+Hermod and Styx as they are right now, which answers the question the gate
+cannot — whether the pin is still safe to advance. The stack's own reference
+lives in
 [`libs/Hermod/Hermod/HTTP2/README.md`](libs/Hermod/Hermod/HTTP2/README.md);
 [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) is the full chronological build log
 (every feature, why it was built that way, and how it was verified); and

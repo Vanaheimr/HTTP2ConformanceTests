@@ -224,6 +224,82 @@ jobs:
             tests/autobahn/reports/
             artifacts/autobahn.txt
 
+  drift:
+    # "Is the pin still safe to advance?" — the one question ci.yml structurally
+    # cannot answer, because it tests the pinned submodule commit by design.
+    #
+    # That design is right for a gate: a push gate exists to answer "did MY
+    # change break something", and a gate floating on someone else's master is
+    # green today and red tomorrow for the same commit, which stops identifying
+    # the culprit and starts training people to click past a red badge.
+    #
+    # But the blind spot is real and has already cost us. Hermod's
+    # URL/URIScheme/HTTPMethod refactoring broke tests/h2bench here, and nothing
+    # reported it: the pin had not moved, so the gate kept testing the old code
+    # and stayed green for weeks. This job is that missing signal — same build
+    # and same tests as the gate, but against Hermod and Styx as they are NOW.
+    #
+    # Green: the pin can be advanced whenever convenient. Red: upstream broke us,
+    # and we find out the next morning rather than at the next bump.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            leg: windows-latest
+          - os: ubuntu-latest
+            container: debian:13
+            leg: debian-13-container
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Install prerequisites (Debian container)
+        if: runner.os == 'Linux'
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git libicu76 libssl3t64 libstdc++6 tzdata
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # The whole point of this job, in one command. No `branch` is configured in
+      # .gitmodules, so --remote follows each submodule's default branch.
+      #
+      # The commit ids are printed and summarised because they are what makes a
+      # red run actionable: the gate's pin plus these two ids bound exactly which
+      # upstream commits could be responsible.
+      - name: Advance the submodules to their masters
+        shell: bash
+        run: |
+          git submodule update --remote --recursive
+          hermod=$(git -C libs/Hermod rev-parse HEAD)
+          styx=$(git -C libs/Styx   rev-parse HEAD)
+          echo "Hermod -> $hermod"
+          echo "Styx   -> $styx"
+          {
+            echo '## Drift check — ${{ matrix.leg }}'
+            echo
+            echo "Hermod \`${hermod:0:12}\` · Styx \`${styx:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build HTTP2.slnx
+
+      - name: Test (212 HTTP/2 tests, against upstream master)
+        timeout-minutes: 30
+        run: dotnet test libs/Hermod/HermodTests/HermodTests.csproj --no-build --filter "FullyQualifiedName~Hermod.Tests.HTTP2" --logger "console;verbosity=normal"
+
+      # Windows only, and deliberately: this leg is 48/48, so a failure here is a
+      # real signal about upstream. The Linux harness suite has three of its own
+      # differences to settle first (see CLAUDE.md) and would drown that signal.
+      - name: Harness suite (48 runs)
+        if: runner.os == 'Windows'
+        timeout-minutes: 30
+        run: pwsh tests/run-tests.ps1 -NoBuild
+
   interop:
     # Our client against eight foreign HTTP/2 servers over the public internet —
     # see INTEROP.md for what the matrix covers and why it exists.

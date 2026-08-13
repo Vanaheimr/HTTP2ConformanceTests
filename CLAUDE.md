@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-212 NUnit unit + integration tests live with the stack in Hermod
+213 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **212 NUnit tests** in
+**Tests:** most coverage is the **213 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.ps1` or
@@ -225,7 +225,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **212/212** NUnit tests and `tests/run-tests.ps1` → **48/48**
+**Verification:** **213/213** NUnit tests and `tests/run-tests.ps1` → **48/48**
 harness runs, both current and both gated per push by `.github/workflows/ci.yml`
 on Windows and Debian 13. The bash runner reaches **45–46/48** on Linux — see
 *Harnesses that differ on Linux* below; none of the three is a regression, two
@@ -254,12 +254,12 @@ what it surfaced. The pure in-memory Core unit tests (Huffman, HPACK encoder,
 not as harnesses here.
 
 **Harnesses that differ on Linux** (found 2026-08-13, when `run-tests.sh` first
-made the suite runnable there; confirmed the same day by the first CI run).
-Windows is 48/48 on both a local run and the `windows-latest` leg. Linux is not,
-and the two environments tried so far disagree on the count but not on the kind:
-**46/48** on WSL/Debian 13 with the repository on `/mnt/d`, **45/48** in the
-`debian:13` container on GitHub's runners. Three distinct scenarios are involved,
-falling into two groups:
+made the suite runnable there). Windows is 48/48; Linux was 45–46/48 across WSL
+and the CI container. Three scenarios were involved, in two groups — and the
+groups turned out to be as different as they looked. **One was a real server bug
+and is fixed**; the other two are flaky assertions in the harness. Linux is
+**47/48** since the fix, the remainder being whichever of the two flaky ones
+loses the race on the day:
 
 - `h2priority urgency-header` and `h2priority priority-update` — **flaky**. Each
   passes in isolation, and *which* of them fails varies per run: WSL failed only
@@ -269,21 +269,18 @@ falling into two groups:
   between runs is the signature of a timing assumption in the harness rather than
   a scheduler defect — but it has not been proven, and a flaky check is worth
   little either way.
-- `h2attack trailers no-endstream` — **deterministic on Linux, and unexplained.**
-  The protocol check itself passes: trailers without END_STREAM are answered with
-  `RST_STREAM PROTOCOL_ERROR`. What times out is the *next* step,
-  `OpenAndWait(3, "/")`, which proves the connection survived the reset — no
-  response within 5 s, and since that call is not wrapped the harness aborts
-  (exit 134). Two things narrow it. First, the neighbouring cases making the same
-  follow-up after a reset (`trailers pseudo`, `rst-cancel`, the `idle`
-  implicit-close cases) pass in the same run, so this is not "resets break the
-  connection on Linux" in general — it is this path. Second, the environmental
-  explanation is now **ruled out**: the CI container shares no kernel, filesystem
-  or hardware with the WSL box, and reproduces the failure with a byte-identical
-  stack trace. Five seconds on loopback is generous, which points at the stack
-  rather than the harness — though that is an inference, not a diagnosis. This is
-  the reason the Linux harness step in `ci.yml` is `continue-on-error`, and
-  fixing it is what would let that come off.
+- `h2attack trailers no-endstream` — **found, fixed 2026-08-13.** It was a real
+  server bug, not a harness assumption. Trailers without END_STREAM were rejected
+  in `HandleHeaders`, which throws *before* the field block reaches the HPACK
+  decoder — but the peer had already folded that block into its encoder's dynamic
+  table. From then on the two tables differed by one entry, and the stream that
+  misbehaved was not the one that paid: the *next* request indexed an entry we did
+  not have and died with `COMPRESSION_ERROR: HPACK dynamic table index 63 out of
+  range`. The check now lives in `CompleteHeaders`, after the decode. The
+  neighbouring `trailers pseudo` case passed throughout precisely because a
+  pseudo-header *has* to be decoded to be recognised, so that path always decoded
+  first. Pinned by `RejectedTrailers_DoNotDesyncHPACK` in Hermod's
+  `RfcPolishTests` — the 212 in-process tests had missed it, and it is 213 now.
 
 **Performance** is measured by `tests/h2bench` (figures below from a full default
 run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one

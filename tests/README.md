@@ -33,13 +33,15 @@ pass/fail summary. Flags:
 
 Current status: **48/48 harness runs pass on Windows** (each self-reports its own
 check count — e.g. h2semantics 66/66, plus the h2attack / h2connect / h2priority
-raw-frame scenarios). On Linux it is **45–46/48**: two `h2priority` scenarios are
-flaky — which of them fails varies per run — and `h2attack trailers no-endstream`
-fails reproducibly for a reason not yet diagnosed. That last one is not an
-environment artifact: a WSL box and a `debian:13` container on GitHub's runners
-produce a byte-identical stack trace. See *Harnesses that differ on Linux* in
-[`../CLAUDE.md`](../CLAUDE.md); it is also why CI runs the Linux harness step
-without gating on it.
+raw-frame scenarios). On Linux it is **47/48**: two `h2priority` scenarios are
+flaky — which of them fails varies per run — so one of them is usually red.
+
+The third Linux difference, `h2attack trailers no-endstream`, was a **real server
+bug** and is fixed: a rejected trailer block was not being HPACK-decoded, which
+desynced the connection's dynamic table and killed the *next* request. Windows
+had been passing it by luck of timing. See *Harnesses that differ on Linux* in
+[`../CLAUDE.md`](../CLAUDE.md). The two flaky assertions are the only reason CI
+still runs the Linux harness step without gating on it.
 
 The in-process unit + integration tests — HPACK/Huffman, the stream manager,
 1xx interim responses, content coding, the QUERY method, streaming bodies +

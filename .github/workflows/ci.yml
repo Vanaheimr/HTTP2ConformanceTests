@@ -98,21 +98,22 @@ jobs:
       # Observed, NOT gated — the one deliberate soft spot in this workflow, and
       # it should be removed rather than kept.
       #
-      # This step was added to answer a question WSL could not: the bash runner
-      # reached 46/48 the first time the suite ran on Linux, and it was unclear
-      # whether /mnt/d and Windows-hosted networking were to blame. The first CI
-      # run answered it - 45/48 here, sharing no kernel, filesystem or hardware
-      # with that box, and `h2attack trailers no-endstream` failing with a
-      # byte-identical stack trace. It is a real Linux/Windows difference, not an
-      # environment artifact.
+      # It has already earned its keep. It was added to answer a question WSL
+      # could not - whether /mnt/d and Windows-hosted networking explained the
+      # 46/48 the bash runner first reported - and the first CI run said no:
+      # 45/48 here, sharing no kernel, filesystem or hardware with that box, and
+      # `h2attack trailers no-endstream` failing with a byte-identical stack
+      # trace. That turned out to be a real server bug: a rejected trailer block
+      # was not HPACK-decoded, desyncing the connection's dynamic table so the
+      # NEXT request died with a COMPRESSION_ERROR. Fixed in Hermod, pinned by
+      # RejectedTrailers_DoNotDesyncHPACK, and Linux is 47/48 since.
       #
-      # So this stays soft for one remaining reason: nobody has diagnosed it yet.
-      # Of the three failures, the two h2priority ones are flaky (which of them
-      # fails varies per run) and no-endstream is reproducible - see "Harnesses
-      # that differ on Linux" in CLAUDE.md. Gating today would mean a permanently
-      # red badge, which is how people learn to click past one. Fixing
-      # no-endstream and settling the two ordering assertions is what lets this
-      # become a real gate like the Windows leg.
+      # What keeps this soft is now only the remainder: `h2priority
+      # urgency-header` and `priority-update` are flaky - which of them fails
+      # varies per run - so gating would mean a red badge on a coin flip, which
+      # is how people learn to click past one. Both assert observed frame
+      # ordering; settling them is all that stands between this and a real gate
+      # like the Windows leg.
       - name: Harness suite (48 runs, Linux — observed, not gated)
         if: runner.os == 'Linux'
         continue-on-error: true

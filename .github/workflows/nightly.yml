@@ -270,6 +270,14 @@ jobs:
       - name: Advance the submodules to their masters
         shell: bash
         run: |
+          # The container runs as root while the workspace belongs to a different
+          # uid, so git refuses it as "dubious ownership". actions/checkout
+          # arranges this for its own operations, but that does not carry over to
+          # a plain git command in a later step — which is exactly how this job
+          # failed on its first run, on the Linux leg only. The wildcard is
+          # acceptable in a single-purpose ephemeral container and survives
+          # --recursive reaching paths not known up front.
+          git config --global --add safe.directory '*'
           git submodule update --remote --recursive
           hermod=$(git -C libs/Hermod rev-parse HEAD)
           styx=$(git -C libs/Styx   rev-parse HEAD)

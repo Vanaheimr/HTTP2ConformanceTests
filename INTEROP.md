@@ -33,6 +33,12 @@ battery, and exits non-zero if anything failed:
 pwsh tools/browser-interop.ps1
 ```
 
+**Load** — thousands of concurrent streams, from inside Linux/WSL:
+
+```bash
+tools/h2load.sh
+```
+
 **Conformance suites** — h2spec and Autobahn, both wrapped so they need one command each:
 
 ```bash
@@ -105,17 +111,45 @@ nghttp2 gets HTTP/1.1 from both.
 
 ## Server interop
 
-Our demo host is driven by five independent foreign client stacks:
+Our demo host is driven by six independent foreign client stacks:
 
 | Client | Stack | Verified |
 |---|---|---|
 | .NET `HttpClient` | `System.Net.Http` HTTP/2 | The strict reference client — requests, responses, flow control, multiplexing, trailers |
 | `curl` | **nghttp2** | `GET /`, `POST /echo`, `GET /large` (128 KiB, flow control), `GET /slow` (multiplexing), `QUERY /search` (RFC 10008), and h2c prior-knowledge on `:8080` |
+| `h2load` 1.64 | **nghttp2** | Concurrency rather than features — see below |
 | `Grpc.Net.Client` | gRPC over HTTP/2 | Real gRPC, **all four call types** — unary, server-streaming, client-streaming, bidirectional — over the streaming seam, with `grpc-status` in trailers |
 | Chrome 151 / Edge 151 | **Chromium** + BoringSSL | 4/4 checks below, both browsers, headless |
 | Kestrel | ASP.NET Core | The mirror direction: our **client** against a .NET server, including request trailers read back through `Request.GetTrailer` |
 
 These are test-only reference peers and do not count against the BCL-only rule for the stack itself.
+
+### Load: h2load (as of 2026-08-13)
+
+Every other peer here tests *features*: curl and `HttpClient` issue a handful of requests, the
+browsers four, `Grpc.Net.Client` a few streams. `h2load` offers thousands at once, which is the one
+axis none of the others reach. Run with [`tools/h2load.sh`](tools/h2load.sh); 20 000 requests per
+scenario:
+
+| Scenario | Completed | Rate |
+|---|---|---|
+| TLS `h2`, 10 connections × 32 streams | **20 000 / 20 000**, 0 failed, 0 errored, 0 timeout | 31 660 req/s |
+| cleartext `h2c`, 10 connections × 32 streams | **20 000 / 20 000**, 0 failed, 0 errored, 0 timeout | 50 214 req/s |
+| TLS `h2`, 100 connections × 100 streams | **20 000 / 20 000**, 0 failed, 0 errored, 0 timeout | 29 173 req/s |
+
+The verdict is the completion count, not the rate — a load generator reporting 50 k req/s while
+quietly dropping a tenth of them has measured nothing, and these figures come off WSL2 over a `/mnt`
+mount anyway. [`tests/h2bench`](tests/h2bench) is where performance is measured; this is where
+*completeness under pressure* is.
+
+Two things it corroborates that nothing else does. The third row offers **10 000 concurrent
+streams** against a server advertising `MAX_CONCURRENT_STREAMS = 100` per connection, so the
+gating and queueing are exercised as hard as the throughput — and nothing was refused or dropped.
+And h2load reports **90.6 % header-compression savings** on our responses, which is a foreign
+HPACK *decoder's* measurement of our *encoder*: the one number in this file that our own tests
+structurally cannot produce, since both ends would be ours.
+
+The TLS side is reported by h2load too: TLS 1.3, `TLS_AES_256_GCM_SHA384`, X25519, ALPN `h2`.
 
 ### Browser self-test (as of 2026-08-13)
 
@@ -160,9 +194,9 @@ under test is the same code either way — see
   needs real work: it ignores the Chromium flags, so the certificate has to go into its own NSS
   store (or `security.enterprise_roots.enabled` has to be set in a prepared profile). The same
   entry stands open in the HTTP/3 sibling for the same reason.
-- **`h2load`** (nghttp2's benchmark client) as a sixth foreign client, which would drive the server
-  at concurrency levels the current peers do not reach. Not installed here — it ships in Debian's
-  `nghttp2-client` package.
+- **A second h2load host.** The figures above were taken inside WSL2 against a `/mnt` build, which
+  is a fine place to prove completeness and a poor one to read rates from. The same script on a
+  native Linux box would say something about throughput as well.
 - **Further targets:** the list at the top of [`tests/h2interop/Program.cs`](tests/h2interop/Program.cs).
 - A server advertising **ORIGIN** or a frame-borne **ALTSVC** — both implemented here, neither
   corroborated by any of the eight. Worth revisiting if a deployed peer is ever found that sends

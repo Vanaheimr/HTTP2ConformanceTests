@@ -27,8 +27,8 @@ scope — lives next to the code in **`libs/Hermod/Hermod/HTTP2/README.md`**
 `Hermod/HTTP2/README.md`). This repo's [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md)
 holds the full chronological build history, and [`INTEROP.md`](INTEROP.md) the
 interop evidence in both directions — our client against eight foreign servers,
-five foreign clients against our server, including headless Chrome and Edge —
-plus how to repeat any of it.
+six foreign clients against our server, including headless Chrome, Edge and
+`h2load` — plus how to repeat any of it.
 
 > ⚠️ **Reference implementation** — built for learning the wire protocol, not
 > for production traffic (single-process demo host, no server push, etc.).
@@ -173,7 +173,9 @@ HTTP2ConformanceTests/               solution HTTP2.slnx (at the repo root)
 │   │                                H2Raw, MockH2Server, KestrelH2Server)
 │   └── Styx/                        ← git submodule (Vanaheimr Styx — Hermod's dependency)
 ├── Demo/                            runnable demo host (→ Hermod, Styx) + example handlers
-├── tests/                          demo-driven raw-frame harnesses + h2spec/Autobahn drivers + tools
+├── tests/                          demo-driven raw-frame harnesses + h2spec/Autobahn drivers + h2interop + h2bench
+├── tools/                          browser-interop.ps1 (headless Chrome/Edge), h2load.sh (concurrency)
+├── INTEROP.md                       interop evidence in both directions, and how to repeat it
 └── docs/BUILD_LOG.md                full chronological build history
 ```
 

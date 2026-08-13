@@ -2473,6 +2473,26 @@ from the one tried here, and it is now the standing hypothesis rather than a
 guess: three hypotheses have been wrong, and the only thing that has reliably
 distinguished them is the measurement.
 
+*Re-measured 2026-08-13, against a Hermod 106 commits newer, on a 16-core box
+under .NET 10.0.11 — the bisection still holds, and only the constant has moved.
+The send path goes 0.166 ms → **13.845 ms** p50 from 1 to 64 concurrent while the
+response wait stays flat (0.056 → 0.082 ms): the same shape as the table above,
+to within a few percent. What changed is the throughput it implies — ~6 100 /
+~9 700 / ~5 900 req/s at 1 / 8 / 64 concurrent, against the ~1 000 req/s the
+first run saw, so one serialized start is now some 4–5× cheaper without the
+serialization itself having gone anywhere. The peer figures moved with it (our
+server 0.25 ms vs the Kestrel control 0.29 ms, both far below the ~1.2 ms this
+machine saw before), which is why the ratio between our stack and the control is
+the durable part of these numbers and the absolute values are not.*
+
+*One caveat worth recording, because it cost an hour: a `-- probe` run on its own
+does **not** reproduce this. Without the `requests` scenario ahead of it the
+64-concurrent split reported 0.215 ms on the wire and a 188 ms p99 on the
+response wait — the collapse displaced rather than absent, and visibly
+inconsistent with the same run's own end-to-end latency. Read as a baseline it
+says the bottleneck is gone, which is wrong. The full default run is the
+measurement; a single scenario in isolation is a smoke test.*
+
 **Client-side HTTP semantics, part 3: redirect following** (done 2026-07-25) —
 `MaxRedirects` above zero follows `Location` (RFC 9110 §15.4), with
 `HTTPRedirect` in Core doing the resolution and the rewriting. Two things carried

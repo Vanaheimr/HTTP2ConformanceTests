@@ -232,16 +232,34 @@ against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
-**Performance** is measured by `tests/h2bench`: ~9.1 KiB allocated per trivial
-request (both roles), a large transfer allocating ~6.2× its payload, ~180/~205
-MiB/s down/up, ~145 k HPACK blocks/s. Per-request *latency* is not anomalous —
-against a Kestrel control on the same machine our server is the faster of the two
-(0.73–1.14 ms vs 1.15–1.69 ms per loopback round trip). What is ours is a
-**throughput cap of ~1 000 req/s per connection at any concurrency**: splitting
-each request shows server turnaround flat under load (0.34 → 0.36 ms) while the
-client's send path goes from 0.22 ms to 13.65 ms at 64 concurrent, because
-`requestStartLock` is held across the HEADERS write rather than just the
-stream-ID allocation it exists to order. The fix is open (see the task list).
+**Performance** is measured by `tests/h2bench` (figures below from a full default
+run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one
+process, so every number covers both roles plus TLS and loopback): ~9.3–9.9 KiB
+allocated per trivial request, a large transfer allocating ~6.0× its payload,
+~260 MiB/s both down and up, ~207 k HPACK blocks/s, ~12.8 M frames/s. Per-request
+*latency* is not anomalous — against a Kestrel control on the same machine our
+server is the faster of the two (0.25 ms vs 0.29 ms p50 per loopback round trip).
+
+What is ours is a **per-connection throughput ceiling** — ~6 100 req/s at 1
+concurrent, ~9 700 at 8, ~5 900 at 64 — and the cause is unchanged since it was
+first bisected: splitting each request at the point `StartRequestAsync` returns
+shows the client's send path going from 0.17 ms to **13.85 ms** p50 as
+concurrency rises 1 → 64, while server turnaround stays flat (0.056 → 0.082 ms).
+`requestStartLock` is held across the HEADERS write, so every request start waits
+for every other request's socket write, and one connection is capped at roughly
+1/(cost of one serialized start). Only the magnitude has moved: that ceiling was
+~1 000 req/s when first measured, so a serialized start has gotten some 4–5×
+cheaper, but the shape is identical and the arithmetic still matches
+(64 × 0.22 ms ≈ 14 ms).
+
+The fix is open — and narrower than this note used to claim. The lock cannot
+simply shrink to the stream-ID allocation it nominally exists to order: the HPACK
+encoder's dynamic table is stateful, so encoding and writing must stay atomic
+with respect to each other or the peer's decoder desynchronizes (see the comment
+above `CompleteRequestAsync` in `HTTP2ClientConnection`). Moving the write to a
+queued writer task was already tried and was 10× slower — see
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for both that dead end and the original
+bisection.
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**. Two things are genuinely open (see the task list): the per-request

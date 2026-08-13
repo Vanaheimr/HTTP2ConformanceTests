@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- Central settings for all projects (Demo + tests). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Quality: take warnings seriously. Every project in this repository built
+         warning-free when this was introduced, so it locks in a property that
+         already held rather than declaring a goal. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- No large dependencies — pure BCL (the reference peers under tests/ are
+         the documented exception). -->
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>

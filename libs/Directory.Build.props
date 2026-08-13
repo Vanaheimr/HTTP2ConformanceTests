@@ -1,0 +1,16 @@
+<Project>
+
+  <!-- Inherit everything from the repository root, then relax exactly one thing. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- The submodules under libs/ are foreign code with their own quality gate:
+         Hermod and Styx together build with several hundred warnings today.
+         Inheriting our TreatWarningsAsErrors would turn every one of them into a
+         build error and break every clean build here. Their warnings are theirs
+         to fix, in their repository. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

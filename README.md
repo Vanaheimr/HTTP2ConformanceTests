@@ -1,5 +1,7 @@
 # HTTP/2 Conformance & Interoperability Test Suite
 
+[![CI](https://github.com/Vanaheimr/HTTP2ConformanceTests/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanaheimr/HTTP2ConformanceTests/actions/workflows/ci.yml)
+
 The runnable **demo host** and the **conformance / interop test drivers** for the
 from-scratch HTTP/2 stack that lives in the Vanaheimr **Hermod** library (built
 directly on `SslStream` — no Kestrel, no `System.Net.Http` HTTP/2 stack,

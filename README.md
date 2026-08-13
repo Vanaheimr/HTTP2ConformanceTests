@@ -27,7 +27,8 @@ scope — lives next to the code in **`libs/Hermod/Hermod/HTTP2/README.md`**
 `Hermod/HTTP2/README.md`). This repo's [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md)
 holds the full chronological build history, and [`INTEROP.md`](INTEROP.md) the
 interop evidence in both directions — our client against eight foreign servers,
-four foreign clients against our server — plus how to repeat any of it.
+five foreign clients against our server, including headless Chrome and Edge —
+plus how to repeat any of it.
 
 > ⚠️ **Reference implementation** — built for learning the wire protocol, not
 > for production traffic (single-process demo host, no server push, etc.).

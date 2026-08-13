@@ -234,7 +234,10 @@ are flaky, and one is reproducible and not yet explained. **h2spec 146/146** and
 run": `.github/workflows/nightly.yml` re-measures both every night, and the run
 of 2026-08-13 put h2spec at 146/146 **four times over** — TLS `h2` and cleartext
 `h2c`, on Windows and Debian 13. Reference peers (test-only, don't count against
-the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`
+the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`,
+and **headless Chrome + Edge** via `tools/browser-interop.ps1` (4/4 each — the
+`nextHopProtocol` check is the browser's own verdict that it spoke h2, and 4×
+`/slow` finishing in 2 s rather than 8 is multiplexing witnessed from outside)
 — plus, since 2026-08-13, **eight foreign servers** the client is pointed at by
 `tests/h2interop` (nginx, GFE, Cloudflare, HAProxy, LiteSpeed, Caddy, Apache,
 GitHub). See [`INTEROP.md`](INTEROP.md) for the matrix in both directions and

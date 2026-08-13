@@ -26,6 +26,13 @@ dotnet run --project Demo/HTTP2.Demo.csproj
 curl --http2 -k https://localhost:8443/
 ```
 
+**Browsers** — one command starts the demo, drives headless Chrome and Edge through the whole
+battery, and exits non-zero if anything failed:
+
+```powershell
+pwsh tools/browser-interop.ps1
+```
+
 **Conformance suites** — h2spec and Autobahn, both wrapped so they need one command each:
 
 ```bash
@@ -98,17 +105,39 @@ nghttp2 gets HTTP/1.1 from both.
 
 ## Server interop
 
-Our demo host is driven by four independent foreign client stacks:
+Our demo host is driven by five independent foreign client stacks:
 
 | Client | Stack | Verified |
 |---|---|---|
 | .NET `HttpClient` | `System.Net.Http` HTTP/2 | The strict reference client — requests, responses, flow control, multiplexing, trailers |
 | `curl` | **nghttp2** | `GET /`, `POST /echo`, `GET /large` (128 KiB, flow control), `GET /slow` (multiplexing), `QUERY /search` (RFC 10008), and h2c prior-knowledge on `:8080` |
 | `Grpc.Net.Client` | gRPC over HTTP/2 | Real gRPC, **all four call types** — unary, server-streaming, client-streaming, bidirectional — over the streaming seam, with `grpc-status` in trailers |
+| Chrome 151 / Edge 151 | **Chromium** + BoringSSL | 4/4 checks below, both browsers, headless |
 | Kestrel | ASP.NET Core | The mirror direction: our **client** against a .NET server, including request trailers read back through `Request.GetTrailer` |
 
-These four are test-only reference peers and do not count against the BCL-only rule for the stack
-itself.
+These are test-only reference peers and do not count against the BCL-only rule for the stack itself.
+
+### Browser self-test (as of 2026-08-13)
+
+`GET /browser` serves a page whose JS runs the battery and POSTs its verdict to `/report`, which the
+demo prints — so the server log is the record and nothing has to scrape a DOM or guess when a
+headless run finished. Chrome 151 and Edge 151 both report **4/4**:
+
+| Check | What it exercises | Measured |
+|---|---|---|
+| Navigation used h2 | `performance.nextHopProtocol` — **the browser's own verdict, not ours** | `h2` |
+| `GET /large` | 128 KiB under the browser's receive window | 131 072 B |
+| `POST /echo` | a 64 KiB request body from the browser, mirrored back byte for byte | 65 536 B |
+| 4× `/slow` | real multiplexing: four handlers that each sleep 2 s, on one connection | **2 011 ms**, not 8 000 |
+
+The first check is the one nothing else here can make. Every other test in this repository is us
+asserting that we spoke HTTP/2; `nextHopProtocol` is Chrome saying it. The last is the one that
+would fail alone if the connection were quietly serializing — every other check would still pass.
+
+Only the self-signed certificate needs handling, via `--ignore-certificate-errors` on a throwaway
+profile. Unlike the sibling HTTP/3 project this needs no SPKI pin, no certificate-hash
+authentication and no draft feature flags: plain h2 in a browser is unremarkable, which is rather
+the point.
 
 ## Conformance suites
 
@@ -127,11 +156,13 @@ under test is the same code either way — see
 
 ## Open (optional)
 
-- **Browsers.** Chrome, Edge and Firefox all speak HTTP/2 natively, and unlike the HTTP/3 sibling
-  project this needs no draft flags or certificate-hash pinning — only the self-signed certificate
-  has to be dealt with. Not yet done.
-- **`h2load`** (nghttp2's benchmark client) as a fifth foreign client, which would drive the server
-  at concurrency levels the current peers do not reach.
+- **Firefox** — installed on the development machine but untested, and it is the one browser that
+  needs real work: it ignores the Chromium flags, so the certificate has to go into its own NSS
+  store (or `security.enterprise_roots.enabled` has to be set in a prepared profile). The same
+  entry stands open in the HTTP/3 sibling for the same reason.
+- **`h2load`** (nghttp2's benchmark client) as a sixth foreign client, which would drive the server
+  at concurrency levels the current peers do not reach. Not installed here — it ships in Debian's
+  `nghttp2-client` package.
 - **Further targets:** the list at the top of [`tests/h2interop/Program.cs`](tests/h2interop/Program.cs).
 - A server advertising **ORIGIN** or a frame-borne **ALTSVC** — both implemented here, neither
   corroborated by any of the eight. Worth revisiting if a deployed peer is ever found that sends

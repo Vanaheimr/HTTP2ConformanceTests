@@ -35,8 +35,22 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
         public static async Task Main(string[] args)
         {
 
+            // Defaults unchanged, because every harness and both conformance
+            // drivers hard-code them. The overrides exist because the sibling
+            // projects (HTTP1-/HTTP3ConformanceTests) each run a demo of their
+            // own, and :8443 is a popular choice — a collision otherwise reads
+            // as "our server cannot bind" rather than "something else has it".
+            //
+            //   dotnet run --project Demo -- --port 9443 --cleartext-port 9080
             var port  = 8443;   // HTTP/2 over TLS ("h2")
             var portC = 8080;   // cleartext HTTP/2 with prior knowledge ("h2c")
+
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "--port"           && Int32.TryParse(args[i + 1], out var p))  port  = p;
+                if (args[i] == "--cleartext-port" && Int32.TryParse(args[i + 1], out var pc)) portC = pc;
+            }
+
             var cert  = CreateSelfSignedCertificate("localhost");
 
             // The stack itself writes nothing to the console — it emits structured
@@ -430,6 +444,43 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
                     ];
                     break;
 
+                case "/browser":
+                    // A browser self-test. The page runs the battery itself and POSTs
+                    // its verdict to /report, so the SERVER LOG is the record — nothing
+                    // has to scrape a DOM or guess when a headless run finished.
+                    //
+                    // The first check is the one no test of ours could make: the
+                    // browser's own opinion of which protocol carried the navigation.
+                    // We can assert that we spoke HTTP/2 all day; `nextHopProtocol`
+                    // is Chrome saying it.
+                    body = Encoding.UTF8.GetBytes(BrowserSelfTestPage);
+
+                    headers =
+                    [
+                        (":status",        "200"),
+                        ("content-type",   "text/html; charset=utf-8"),
+                        ("content-length", body.Length.ToString()),
+                        ("server",         "HTTP2Server/1.0")
+                    ];
+                    break;
+
+                case "/report":
+                    // The verdict sink. Printed rather than parsed: a human reading the
+                    // demo output and a script grepping it want the same line.
+                    var verdict = RequestBody is not null
+                                      ? Encoding.UTF8.GetString(RequestBody)
+                                      : "(empty report)";
+
+                    Console.WriteLine($"[browser] {verdict}");
+
+                    body    = [];
+                    headers =
+                    [
+                        (":status",        "204"),
+                        ("server",         "HTTP2Server/1.0")
+                    ];
+                    break;
+
                 default:
                     body = Encoding.UTF8.GetBytes($"404 Not Found: {path}\n");
                     headers =
@@ -609,6 +660,74 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
             );
 
         }
+
+        #region BrowserSelfTestPage
+
+        /// <summary>
+        /// Served at "/browser". Runs its battery in the browser and POSTs the verdict
+        /// to "/report" — the design is borrowed from the sibling HTTP/3 project, for
+        /// the same reason: a headless run that reports through the server needs no
+        /// DOM scraping and no guess about when it finished.
+        /// </summary>
+        private const String BrowserSelfTestPage = """
+            <!doctype html>
+            <meta charset="utf-8">
+            <title>HTTP/2 browser self-test</title>
+            <h1>HTTP/2 browser self-test</h1>
+            <pre id="out">running…</pre>
+            <script>
+            (async () => {
+              const checks = [];
+              const add = (name, ok, detail) => checks.push({ name, ok, detail });
+
+              // 1. The browser's own verdict on which protocol carried the navigation.
+              //    Not our claim about ourselves — theirs about us.
+              const nav = performance.getEntriesByType('navigation')[0];
+              add('navigation used h2', nav && nav.nextHopProtocol === 'h2',
+                  nav ? nav.nextHopProtocol : 'no navigation entry');
+
+              // 2. A larger body under the browser's own receive window.
+              try {
+                const buf = await (await fetch('/large', { cache: 'no-store' })).arrayBuffer();
+                add('GET /large is 128 KiB', buf.byteLength === 131072, buf.byteLength + ' B');
+              } catch (e) { add('GET /large is 128 KiB', false, String(e)); }
+
+              // 3. A request body from the browser, mirrored back byte for byte.
+              try {
+                const sent = new Uint8Array(64 * 1024).map((_, i) => i & 0xff);
+                const got  = new Uint8Array(await (await fetch('/echo', { method: 'POST', body: sent })).arrayBuffer());
+                let same = got.length === sent.length;
+                for (let i = 0; same && i < sent.length; i++) same = got[i] === sent[i];
+                add('POST /echo mirrors 64 KiB', same, got.length + ' B back');
+              } catch (e) { add('POST /echo mirrors 64 KiB', false, String(e)); }
+
+              // 4. Real multiplexing: /slow sleeps 2 s per request. Four of them on one
+              //    connection must overlap, so the wall clock stays far below 8 s. This
+              //    is the check that would fail on a serialized connection while every
+              //    other one still passed.
+              try {
+                const t0 = performance.now();
+                await Promise.all([0,1,2,3].map(() => fetch('/slow', { cache: 'no-store' })));
+                const ms = Math.round(performance.now() - t0);
+                add('4x /slow multiplexed', ms < 5000, ms + ' ms for 4x2 s');
+              } catch (e) { add('4x /slow multiplexed', false, String(e)); }
+
+              const passed = checks.filter(c => c.ok).length;
+              const report = {
+                agent:   navigator.userAgent,
+                passed:  passed,
+                total:   checks.length,
+                verdict: passed === checks.length ? 'PASS' : 'FAIL',
+                checks:  checks
+              };
+
+              document.getElementById('out').textContent = JSON.stringify(report, null, 2);
+              await fetch('/report', { method: 'POST', body: JSON.stringify(report) });
+            })();
+            </script>
+            """;
+
+        #endregion
 
     }
 

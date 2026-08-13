@@ -61,6 +61,7 @@ Autobahn), and the diagnostic tools (h2raw, h2test, autobahn-server).
 | `h2connect`        | demo-driven    | plain + extended CONNECT, WebSocket framing, malformed CONNECT |
 | `h2priority`       | demo-driven    | server-side RFC 9218 scheduling: urgency ordering, PRIORITY_UPDATE |
 | `autobahn-server`  | server         | RFC 6455 WebSocket echo server (HTTP/1.1 Upgrade) for the Autobahn TestSuite — not a pass/fail harness, see below |
+| `h2interop`        | outbound       | our **client** against eight foreign HTTP/2 servers, full certificate validation — the only harness here that points our own stack outwards; see [`../INTEROP.md`](../INTEROP.md) |
 | `h2bench`          | benchmark      | throughput, latency distribution and allocation — not a pass/fail harness, see below |
 | `h2raw`, `h2test`  | diagnostic     | raw frame loggers / ad-hoc request drivers (not in the pass/fail gate) |
 

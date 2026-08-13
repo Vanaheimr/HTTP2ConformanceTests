@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Unlike the other harnesses here this one IS our client: the whole point is
+       to point our own stack at foreign servers. h2attack / h2connect /
+       h2priority drive the opposite direction and deliberately borrow nothing
+       from us. Framework settings come from ../../Directory.Build.props. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\Hermod\Hermod\Hermod.csproj" />
+    <ProjectReference Include="..\..\libs\Styx\Styx\Styx.csproj" />
+  </ItemGroup>
+
+</Project>

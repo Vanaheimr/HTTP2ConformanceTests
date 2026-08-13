@@ -223,3 +223,58 @@ jobs:
           path: |
             tests/autobahn/reports/
             artifacts/autobahn.txt
+
+  interop:
+    # Our client against eight foreign HTTP/2 servers over the public internet —
+    # see INTEROP.md for what the matrix covers and why it exists.
+    #
+    # This is the one job here that is genuinely informational, and for the
+    # reason the sibling repository's whole nightly is: the targets are other
+    # people's servers. Bot protection forms opinions about datacentre IPs, hosts
+    # go down, CDNs reroute. The harness itself only exits non-zero when EVERY
+    # target failed - which means the runner has no network, not that the stack
+    # broke - so the job effectively gates on that and reports the rest.
+    #
+    # One platform is enough: the client is the same code on both, and what is
+    # under test here is the foreign end.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build HTTP2.slnx
+
+      - name: Client interop matrix
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          dotnet run --project tests/h2interop --no-build 2>&1 | tee artifacts/interop.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Client interop matrix'
+            echo
+            echo '```'
+            cat artifacts/interop.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # Worth keeping across nights rather than reading once: the matrix is how
+      # a change in the deployed world becomes visible - a peer that starts
+      # advertising ORIGIN, or drops its MAX_CONCURRENT_STREAMS below ours. That
+      # is a comparison between nights, and a comparison needs the older file.
+      - name: Upload interop matrix
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: interop-matrix
+          path: artifacts/interop.txt

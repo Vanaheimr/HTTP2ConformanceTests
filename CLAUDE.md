@@ -229,12 +229,16 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
 harness runs, both current and both gated per push by `.github/workflows/ci.yml`
 on Windows and Debian 13. The bash runner reaches **45–46/48** on Linux — see
 *Harnesses that differ on Linux* below; none of the three is a regression, two
-are flaky, and one is reproducible and not yet explained. **h2spec 146/146** over both transports (Windows +
-Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
-— both need an external binary that is not vendored here, so they were *not*
-re-run for the §9.2 / 421 / ORIGIN work. Reference peers (test-only, don't count
-against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
-`Grpc.Net.Client`. The pure in-memory Core unit tests (Huffman, HPACK encoder,
+are flaky, and one is reproducible and not yet explained. **h2spec 146/146** and
+**Autobahn 517/517** (full RFC 6455 + permessage-deflate) are no longer "as last
+run": `.github/workflows/nightly.yml` re-measures both every night, and the run
+of 2026-08-13 put h2spec at 146/146 **four times over** — TLS `h2` and cleartext
+`h2c`, on Windows and Debian 13. Reference peers (test-only, don't count against
+the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2), `Grpc.Net.Client`
+— plus, since 2026-08-13, **eight foreign servers** the client is pointed at by
+`tests/h2interop` (nginx, GFE, Cloudflare, HAProxy, LiteSpeed, Caddy, Apache,
+GitHub). See [`INTEROP.md`](INTEROP.md) for the matrix in both directions and
+what it surfaced. The pure in-memory Core unit tests (Huffman, HPACK encoder,
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
@@ -348,8 +352,13 @@ caught, and the exact verification for each — is in
     - the **server** against .NET's `HttpClient` (strict client) *and* against
       **curl** (`--http2`; use an nghttp2-backed build — the stock
       Windows/Schannel curl has no HTTP/2 and silently falls back to 1.1);
-    - the **client**, once it exists, against a .NET HTTP/2 **server**
-      (Kestrel) — the mirror of how the server is tested against `HttpClient`.
+    - the **client** against a .NET HTTP/2 **server** (Kestrel) — the mirror of
+      how the server is tested against `HttpClient` — *and*, since 2026-08-13,
+      against eight foreign servers over the public internet
+      (`tests/h2interop`). The second half was added because Kestrel alone is a
+      weak witness for the client: it shares our BCL and our .NET lineage, so a
+      wire-visible assumption we got wrong is one it might well share. See
+      [`INTEROP.md`](INTEROP.md).
   These reference peers (`HttpClient`, Kestrel, curl) are **test-only** and do
   not count against the BCL-only rule for the core stack.
 

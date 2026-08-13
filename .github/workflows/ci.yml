@@ -98,21 +98,21 @@ jobs:
       # Observed, NOT gated — the one deliberate soft spot in this workflow, and
       # it should be removed rather than kept.
       #
-      # The bash runner reached 46/48 the first time the suite was ever run on
-      # Linux (WSL/Debian, 2026-08-13). Both differences are documented under
-      # "Two harnesses that differ on Linux" in CLAUDE.md: `h2priority
-      # urgency-header` is flaky under load, while `h2attack trailers
-      # no-endstream` failed deterministically and is not yet explained — its
-      # protocol check passes, but the follow-up request proving the connection
-      # survived the RST_STREAM times out.
+      # This step was added to answer a question WSL could not: the bash runner
+      # reached 46/48 the first time the suite ran on Linux, and it was unclear
+      # whether /mnt/d and Windows-hosted networking were to blame. The first CI
+      # run answered it - 45/48 here, sharing no kernel, filesystem or hardware
+      # with that box, and `h2attack trailers no-endstream` failing with a
+      # byte-identical stack trace. It is a real Linux/Windows difference, not an
+      # environment artifact.
       #
-      # Gating on that today would make this workflow red on its first run for a
-      # reason nobody has diagnosed, which trains people to click past it. So the
-      # step runs and reports, and the job stays green on its outcome. What it is
-      # here to answer is the question WSL could not: whether a clean Debian
-      # container behaves the same way, or whether /mnt/d and Windows-hosted
-      # networking were the cause. Once that is known, drop continue-on-error and
-      # this becomes a real gate like the Windows leg.
+      # So this stays soft for one remaining reason: nobody has diagnosed it yet.
+      # Of the three failures, the two h2priority ones are flaky (which of them
+      # fails varies per run) and no-endstream is reproducible - see "Harnesses
+      # that differ on Linux" in CLAUDE.md. Gating today would mean a permanently
+      # red badge, which is how people learn to click past one. Fixing
+      # no-endstream and settling the two ordering assertions is what lets this
+      # become a real gate like the Windows leg.
       - name: Harness suite (48 runs, Linux — observed, not gated)
         if: runner.os == 'Linux'
         continue-on-error: true

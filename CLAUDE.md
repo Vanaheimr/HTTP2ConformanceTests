@@ -226,9 +226,10 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   A cookie jar remains open — see the task list.
 
 **Verification:** **212/212** NUnit tests and `tests/run-tests.ps1` → **48/48**
-harness runs, both current. The bash runner reaches **46/48** on WSL/Debian —
-see *Two harnesses that differ on Linux* below; neither is a regression, but one
-of them is not yet explained. **h2spec 146/146** over both transports (Windows +
+harness runs, both current and both gated per push by `.github/workflows/ci.yml`
+on Windows and Debian 13. The bash runner reaches **45–46/48** on Linux — see
+*Harnesses that differ on Linux* below; none of the three is a regression, two
+are flaky, and one is reproducible and not yet explained. **h2spec 146/146** over both transports (Windows +
 Linux) and **Autobahn 517/517** (full RFC 6455 + permessage-deflate) as last run
 — both need an external binary that is not vendored here, so they were *not*
 re-run for the §9.2 / 421 / ORIGIN work. Reference peers (test-only, don't count
@@ -237,27 +238,37 @@ against the BCL-only rule): .NET `HttpClient`, Kestrel, curl (nghttp2),
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
-**Two harnesses that differ on Linux** (found 2026-08-13, when `run-tests.sh`
-first made the suite runnable there — WSL/Debian 13, .NET 10.0.302, repository
-on `/mnt/d`). Both pass on Windows, so neither is a regression, but they are not
-the same kind of thing:
+**Harnesses that differ on Linux** (found 2026-08-13, when `run-tests.sh` first
+made the suite runnable there; confirmed the same day by the first CI run).
+Windows is 48/48 on both a local run and the `windows-latest` leg. Linux is not,
+and the two environments tried so far disagree on the count but not on the kind:
+**46/48** on WSL/Debian 13 with the repository on `/mnt/d`, **45/48** in the
+`debian:13` container on GitHub's runners. Three distinct scenarios are involved,
+falling into two groups:
 
-- `h2priority urgency-header` — **flaky**, and only under load. It passes on its
-  own and failed once in the full 48-run sweep, reporting a `u=7` frame
-  interleaved after the `u=0` stream started. The assertion is about *observed
-  ordering*, so it needs the writer to have enough queued to make the ordering
-  visible; slower I/O shifts that window. Plausibly the harness being too strict
-  about timing rather than the scheduler being wrong.
-- `h2attack trailers no-endstream` — **deterministic** on Linux (2/2 in
-  isolation), and unexplained. The protocol check itself passes: trailers without
-  END_STREAM are answered with `RST_STREAM PROTOCOL_ERROR`. What times out is the
-  *next* step, `OpenAndWait(3, "/")`, which proves the connection survived the
-  reset — no response within 5 s, and since that call is not wrapped the harness
-  aborts (exit 134). Notably the neighbouring cases that make the same follow-up
-  after a reset (`trailers pseudo`, `rst-cancel`, the `idle` implicit-close
-  cases) all pass on the same run, so this is not "resets break the connection on
-  Linux" in general — it is specific to this path. Worth a look before it is
-  written off as environmental.
+- `h2priority urgency-header` and `h2priority priority-update` — **flaky**. Each
+  passes in isolation, and *which* of them fails varies per run: WSL failed only
+  `urgency-header`, CI failed both. Both assert *observed frame ordering*, which
+  needs the writer to have enough queued to make the ordering visible, so slower
+  or differently-scheduled I/O shifts the window. That the failing member changes
+  between runs is the signature of a timing assumption in the harness rather than
+  a scheduler defect — but it has not been proven, and a flaky check is worth
+  little either way.
+- `h2attack trailers no-endstream` — **deterministic on Linux, and unexplained.**
+  The protocol check itself passes: trailers without END_STREAM are answered with
+  `RST_STREAM PROTOCOL_ERROR`. What times out is the *next* step,
+  `OpenAndWait(3, "/")`, which proves the connection survived the reset — no
+  response within 5 s, and since that call is not wrapped the harness aborts
+  (exit 134). Two things narrow it. First, the neighbouring cases making the same
+  follow-up after a reset (`trailers pseudo`, `rst-cancel`, the `idle`
+  implicit-close cases) pass in the same run, so this is not "resets break the
+  connection on Linux" in general — it is this path. Second, the environmental
+  explanation is now **ruled out**: the CI container shares no kernel, filesystem
+  or hardware with the WSL box, and reproduces the failure with a byte-identical
+  stack trace. Five seconds on loopback is generous, which points at the stack
+  rather than the harness — though that is an inference, not a diagnosis. This is
+  the reason the Linux harness step in `ci.yml` is `continue-on-error`, and
+  fixing it is what would let that come off.
 
 **Performance** is measured by `tests/h2bench` (figures below from a full default
 run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one

@@ -87,7 +87,9 @@ pwsh tests/run-tests.ps1
 tests/run-tests.sh          # the same runner on Linux/macOS/WSL
 ```
 
-Current status: **48/48 harness runs pass**, and the stack scores **146/146 on
+Current status: **48/48 harness runs pass on Windows**, 45–46/48 on Linux (three
+scenarios differ — two flaky, one reproducible and undiagnosed; see
+[`CLAUDE.md`](./CLAUDE.md)), and the stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —
@@ -194,7 +196,11 @@ interop reference peers, and the RFC list — is documented next to the code in
 
 The stack is HTTP/2 feature-complete and verified end-to-end — **212 NUnit
 tests** + **48 live-host harness runs** + **h2spec 146/146** + **Autobahn
-517/517**. The stack's own reference lives in
+517/517**. The first two run per push on Windows and Debian 13
+([`ci.yml`](.github/workflows/ci.yml)), the latter two nightly
+([`nightly.yml`](.github/workflows/nightly.yml)), which is also where the h2spec
+and Autobahn numbers get re-measured rather than merely remembered. The stack's
+own reference lives in
 [`libs/Hermod/Hermod/HTTP2/README.md`](libs/Hermod/Hermod/HTTP2/README.md);
 [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) is the full chronological build log
 (every feature, why it was built that way, and how it was verified); and

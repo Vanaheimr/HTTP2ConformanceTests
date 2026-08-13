@@ -2935,6 +2935,67 @@ Verified: **212/212** NUnit (207 + 5) and **48/48** live harness runs — the
 harnesses matter here because `outbound-headerlimit` exercises the server half
 that the refactor moved.
 
+**A bash harness runner, CI, and the Linux difference both of them found**
+(done 2026-08-13). Three things in one afternoon, and the order matters, because
+each made the next one possible.
+
+*The runner.* `tests/run-tests.ps1` could never have worked on Linux: it frees
+and polls the demo's ports with `Get-NetTCPConnection`, which lives in the
+Windows-only `NetTCPIP` module, so `pwsh` on Linux does not help — the readiness
+loop simply never sees the listener. The conformance drivers had bash
+counterparts for exactly that reason; the harness runner did not, which left the
+48 raw-frame scenarios — the thing this repository is *for* — unrunnable off
+Windows. `tests/run-tests.sh` closes that, reusing what `h2spec.sh` already knew:
+run the built DLL rather than `dotnet run` (whose forked child a plain kill
+orphans, ports still bound), probe readiness with a bare TCP connect rather than
+an HTTP request (these listeners speak HTTP/2 only), and clean up from an `EXIT`
+trap.
+
+*The CI.* Windows + a `debian:13` container, the sibling repositories' shape,
+with three deviations each forced by something real: the Debian prerequisites are
+installed *before* the checkout (a bare image has no git, and `submodules:
+recursive` cannot fall back to a tarball); the test filter is fully qualified,
+because `FullyQualifiedName~HTTP2` matches 2085 tests — the whole of Hermod —
+and would have gated something other than it claimed; and the build is Debug,
+because `run-tests.ps1` drives harnesses through `dotnet run --no-build`, which
+resolves the default configuration.
+
+*The finding.* The very first run paid for the whole exercise. Windows: 48/48.
+Debian container: 45/48, and one of the three — `h2attack trailers no-endstream`
+— failed with a stack trace byte-identical to the one WSL had produced hours
+earlier. That matters because the WSL result had a ready explanation: the
+repository sat on `/mnt/d` behind 9p, with Windows-hosted loopback. The container
+shares none of that — different kernel, filesystem, hardware, datacentre — so the
+environmental reading is **ruled out**. It is a genuine Linux/Windows difference.
+
+What fails is not the protocol check. Trailers without END_STREAM *are* answered
+with `RST_STREAM PROTOCOL_ERROR`; the harness prints its tick. What times out is
+the next step, `OpenAndWait(3, "/")`, which exists to prove the connection
+survived the reset — no response in 5 s, and since that one call is not wrapped,
+the process aborts (exit 134). Two things narrow it: the neighbouring cases that
+make the *same* follow-up after a reset (`trailers pseudo`, `rst-cancel`, the
+`idle` implicit-close pair) pass in the same run, so it is this path rather than
+resets in general; and 5 s on loopback is generous, which points at the stack
+rather than at an impatient harness. That is an inference, not a diagnosis, and
+it is the reason the Linux harness step in `ci.yml` runs `continue-on-error` —
+a permanently red badge is how people learn to click past one.
+
+The other two, `h2priority urgency-header` and `priority-update`, are a different
+animal: each passes in isolation and *which* one fails varies per run. Both
+assert observed frame ordering, which needs the writer to have enough queued for
+the ordering to be visible. A check whose verdict moves between runs is worth
+little either way, so both want revisiting alongside the first.
+
+*The nightly.* h2spec and Autobahn are not in the push gate, and the reason is
+acquisition rather than behaviour — a release binary from another repository and
+a Docker Hub image, either of which can fail for reasons unrelated to a change.
+`nightly.yml` runs them at 03:11 UTC, h2spec on both legs and Autobahn in its own
+job on plain `ubuntu-latest` (the suite only ships usably as a Docker image, and
+the `debian:13` container has no daemon). Unlike the sibling repository's
+nightly, both jobs gate on their result: these drive our own server on loopback,
+so 146/146 and 517/517 are exact numbers, and reporting one without failing on it
+is a report nobody reads.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

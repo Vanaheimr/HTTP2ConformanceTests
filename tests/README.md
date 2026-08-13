@@ -31,17 +31,28 @@ pass/fail summary. Flags:
 - `-Filter <substr>` / `--filter <substr>` — only run harnesses whose
   label/project matches.
 
-Current status: **48/48 harness runs pass on Windows** (each self-reports its own
-check count — e.g. h2semantics 66/66, plus the h2attack / h2connect / h2priority
-raw-frame scenarios). On Linux it is **47/48**: two `h2priority` scenarios are
-flaky — which of them fails varies per run — so one of them is usually red.
+Current status: **48/48 harness runs pass on both platforms** (each self-reports
+its own check count — e.g. h2semantics 66/66, plus the h2attack / h2connect /
+h2priority raw-frame scenarios), and CI gates on both.
 
-The third Linux difference, `h2attack trailers no-endstream`, was a **real server
-bug** and is fixed: a rejected trailer block was not being HPACK-decoded, which
-desynced the connection's dynamic table and killed the *next* request. Windows
-had been passing it by luck of timing. See *Harnesses that differ on Linux* in
-[`../CLAUDE.md`](../CLAUDE.md). The two flaky assertions are the only reason CI
-still runs the Linux harness step without gating on it.
+Three scenarios used to differ between Windows and Linux, and the way they were
+settled is worth knowing before trusting any number here:
+
+- `h2attack trailers no-endstream` was a **real server bug** — a rejected
+  trailer block was not being HPACK-decoded, which desynced the connection's
+  dynamic table and killed the *next* request.
+- `h2priority urgency-header` and `priority-update` were **harness defects**:
+  both tried to observe which stream the writer prefers without first
+  establishing that both streams were sendable at all, so on a slower machine
+  they reported a scheduling failure that had not occurred. They now park both
+  streams window-blocked and release them with one SETTINGS frame.
+- `run-tests.ps1` was **passing no arguments to any harness**, so every
+  demo-driven scenario ran its default mode. That is why Windows had looked
+  greener — it had not been running most of what its 48/48 named. The bash
+  runner passes arguments positionally and never had the problem.
+
+See *Harnesses that differed on Linux* in [`../CLAUDE.md`](../CLAUDE.md) for the
+full account.
 
 The in-process unit + integration tests — HPACK/Huffman, the stream manager,
 1xx interim responses, content coding, the QUERY method, streaming bodies +

@@ -225,11 +225,13 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **213/213** NUnit tests and `tests/run-tests.ps1` → **48/48**
-harness runs, both current and both gated per push by `.github/workflows/ci.yml`
-on Windows and Debian 13. The bash runner reaches **45–46/48** on Linux — see
-*Harnesses that differ on Linux* below; none of the three is a regression, two
-are flaky, and one is reproducible and not yet explained. **h2spec 146/146** and
+**Verification:** **213/213** NUnit tests and **48/48** harness runs on *both*
+platforms — `tests/run-tests.ps1` on Windows, `tests/run-tests.sh` on Linux —
+all gated per push by `.github/workflows/ci.yml` on Windows and Debian 13. The
+Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
+differ there are settled, and *Harnesses that differed on Linux* below records
+what each turned out to be, because none of the three was what it first looked
+like. **h2spec 146/146** and
 **Autobahn 517/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
@@ -253,34 +255,57 @@ what it surfaced. The pure in-memory Core unit tests (Huffman, HPACK encoder,
 `HTTP2StreamManager`) live as NUnit fixtures in Hermod's `HermodTests/HTTP2/`,
 not as harnesses here.
 
-**Harnesses that differ on Linux** (found 2026-08-13, when `run-tests.sh` first
-made the suite runnable there). Windows is 48/48; Linux was 45–46/48 across WSL
-and the CI container. Three scenarios were involved, in two groups — and the
-groups turned out to be as different as they looked. **One was a real server bug
-and is fixed**; the other two are flaky assertions in the harness. Linux is
-**47/48** since the fix, the remainder being whichever of the two flaky ones
-loses the race on the day:
+**Harnesses that differed on Linux** (found 2026-08-13, when `run-tests.sh`
+first made the suite runnable there; **all settled 2026-08-13**). Windows
+reported 48/48, Linux 45–46/48 across WSL and the CI container. Three scenarios
+were involved and all three are now green on both platforms — but the value of
+the episode is that **not one of them was a platform difference.** Two were
+defects, in opposite halves of the project, and the third was the reason nobody
+had noticed either:
 
-- `h2priority urgency-header` and `h2priority priority-update` — **flaky**. Each
-  passes in isolation, and *which* of them fails varies per run: WSL failed only
-  `urgency-header`, CI failed both. Both assert *observed frame ordering*, which
-  needs the writer to have enough queued to make the ordering visible, so slower
-  or differently-scheduled I/O shifts the window. That the failing member changes
-  between runs is the signature of a timing assumption in the harness rather than
-  a scheduler defect — but it has not been proven, and a flaky check is worth
-  little either way.
-- `h2attack trailers no-endstream` — **found, fixed 2026-08-13.** It was a real
-  server bug, not a harness assumption. Trailers without END_STREAM were rejected
-  in `HandleHeaders`, which throws *before* the field block reaches the HPACK
-  decoder — but the peer had already folded that block into its encoder's dynamic
-  table. From then on the two tables differed by one entry, and the stream that
-  misbehaved was not the one that paid: the *next* request indexed an entry we did
-  not have and died with `COMPRESSION_ERROR: HPACK dynamic table index 63 out of
-  range`. The check now lives in `CompleteHeaders`, after the decode. The
-  neighbouring `trailers pseudo` case passed throughout precisely because a
-  pseudo-header *has* to be decoded to be recognised, so that path always decoded
-  first. Pinned by `RejectedTrailers_DoNotDesyncHPACK` in Hermod's
-  `RfcPolishTests` — the 212 in-process tests had missed it, and it is 213 now.
+- `h2attack trailers no-endstream` — **a real server bug.** Trailers without
+  END_STREAM were rejected in `HandleHeaders`, which throws *before* the field
+  block reaches the HPACK decoder — but the peer had already folded that block
+  into its encoder's dynamic table. From then on the two tables differed by one
+  entry, and the stream that misbehaved was not the one that paid: the *next*
+  request indexed an entry we did not have and died with `COMPRESSION_ERROR:
+  HPACK dynamic table index 63 out of range`. The check now lives in
+  `CompleteHeaders`, after the decode. The neighbouring `trailers pseudo` case
+  passed throughout precisely because a pseudo-header *has* to be decoded to be
+  recognised, so that path always decoded first. Pinned by
+  `RejectedTrailers_DoNotDesyncHPACK` in Hermod's `RfcPolishTests` — the 212
+  in-process tests had missed it, and it is 213 now.
+- `h2priority urgency-header` and `priority-update` — **harness defects, not
+  flakiness to be tuned away.** Both wanted to observe which stream the writer
+  prefers when several are sendable, and neither ever established that state:
+  they opened two streams and inspected the burst after a fixed delay. A
+  scheduler can only choose among streams that are *candidates*, and a response
+  that has not been queued yet is not one. Measured, `urgency-header` failed
+  **19 runs in 20** on Linux, always the same way — the u=7 stream drained the
+  entire 65535-byte connection window before the u=0 stream's handler had
+  enqueued anything, so the harness reported "a u=7 frame was interleaved after
+  the u=0 stream started" about a u=0 stream that had never started.
+  `priority-update` failed 1 in 20 for a sharper reason of its own: it topped
+  the *connection* window up before the promoted stream's own window, leaving
+  one moment in which the promoted stream was the only one that could not send
+  — and the server, correctly, served the other one. Both now park the two
+  streams window-blocked (advertising `INITIAL_WINDOW_SIZE = 1`, so each spends
+  exactly one observable byte and stops) and release them with a single SETTINGS
+  frame, which RFC 9113 §6.9.2 applies to every open stream at once. The
+  contention is a fact rather than a hope, no `Task.Delay` is left in either
+  assertion path, and both still fail 6/6 against a deliberately broken
+  `ComparePriority` — a test that cannot fail would have been the worse outcome.
+- **Why Windows looked greener the whole time:** it wasn't. `run-tests.ps1`
+  named its harness-argument parameter `$Args`, which is a PowerShell automatic
+  variable, so it was **never bound** and every demo-driven harness ran with no
+  arguments — i.e. its default mode. Twelve `h2attack` labels, one scenario
+  actually executed twelve times, and 48/48 reported. Pass/fail detection was
+  never wrong; *what had run* was. That is why Windows "passed" the trailers
+  scenario the server bug was hiding behind, and the earlier note here claiming
+  it passed by luck of timing was wrong — it never ran. The bash runner passes
+  its arguments positionally and could not trip over this, which is why the
+  disagreement between the two platforms was worth taking seriously rather than
+  explaining away.
 
 **Performance** is measured by `tests/h2bench` (figures below from a full default
 run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one

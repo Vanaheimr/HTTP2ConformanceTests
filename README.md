@@ -90,10 +90,14 @@ pwsh tests/run-tests.ps1
 tests/run-tests.sh          # the same runner on Linux/macOS/WSL
 ```
 
-Current status: **48/48 harness runs pass on Windows** and **47/48 on Linux** —
-the remaining one being either of two flaky priority assertions, which of them
-varies per run (the third Linux difference turned out to be a real server bug and
-is fixed; see [`CLAUDE.md`](./CLAUDE.md)). The stack scores **146/146 on
+Current status: **48/48 harness runs pass on Windows and on Linux**, and both
+are gated per push. Getting there took closing three scenarios that used to
+differ between the platforms — a real server bug (a rejected trailer block
+desynced the connection's HPACK table), two priority scenarios that asserted
+frame ordering without first establishing that both streams were contending,
+and the PowerShell runner passing no arguments to any harness at all, which is
+why Windows had looked greener throughout. See [`CLAUDE.md`](./CLAUDE.md). The
+stack scores **146/146 on
 [h2spec](https://github.com/summerwind/h2spec)** (the canonical HTTP/2
 conformance suite) over *both* the TLS and cleartext-h2c listeners. Reproduce
 the h2spec run with a single command —

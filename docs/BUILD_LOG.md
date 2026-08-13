@@ -2978,13 +2978,16 @@ make the *same* follow-up after a reset (`trailers pseudo`, `rst-cancel`, the
 resets in general; and 5 s on loopback is generous, which points at the stack
 rather than at an impatient harness. That is an inference, not a diagnosis, and
 it is the reason the Linux harness step in `ci.yml` runs `continue-on-error` —
-a permanently red badge is how people learn to click past one.
+a permanently red badge is how people learn to click past one. (It was the wrong
+inference, and the `continue-on-error` is gone; see the next entry.)
 
 The other two, `h2priority urgency-header` and `priority-update`, are a different
 animal: each passes in isolation and *which* one fails varies per run. Both
 assert observed frame ordering, which needs the writer to have enough queued for
 the ordering to be visible. A check whose verdict moves between runs is worth
-little either way, so both want revisiting alongside the first.
+little either way, so both want revisiting alongside the first. (They were not
+in fact a different animal, and "passes in isolation" was an artifact of
+measuring on Windows — see the next entry.)
 
 *The nightly.* h2spec and Autobahn are not in the push gate, and the reason is
 acquisition rather than behaviour — a release binary from another repository and
@@ -2995,6 +2998,99 @@ the `debian:13` container has no daemon). Unlike the sibling repository's
 nightly, both jobs gate on their result: these drive our own server on loopback,
 so 146/146 and 517/517 are exact numbers, and reporting one without failing on it
 is a report nobody reads.
+
+### Closing the Linux/Windows gap — three scenarios, three different lessons (2026-08-13)
+
+The entry above ends with three open questions and one inference. All three are
+settled now, and the inference was wrong. Worth writing down in full, because
+the shape of the mistake repeated itself twice and the second instance was much
+larger than the first.
+
+*One: `h2attack trailers no-endstream` — a real server bug.* The suspicion in
+the entry above ("this path rather than resets in general") pointed the right
+way but at the wrong layer. Trailers without END_STREAM were rejected in
+`HandleHeaders`, which throws *before* the field block reaches the HPACK
+decoder. The peer, though, had already folded that block into its encoder's
+dynamic table — and that table is connection-wide state, not per-stream. From
+then on the two tables differed by one entry, so the stream that misbehaved was
+not the one that paid: the *next* request indexed an entry we did not have and
+died with `COMPRESSION_ERROR: HPACK dynamic table index 63 out of range`. The
+follow-up request the harness makes to prove the connection survived was the
+victim, which is why the timeout looked like a liveness problem. The check moved
+into `CompleteHeaders`, after the decode. The neighbouring `trailers pseudo`
+case had passed throughout for a reason that is obvious in hindsight: a
+pseudo-header *has* to be decoded to be recognised, so that path always decoded
+first. Pinned by `RejectedTrailers_DoNotDesyncHPACK`; the suite went 212 → 213.
+
+*Two: the two `h2priority` scenarios — harness defects, not flakiness.* The
+entry above filed them as "a check whose verdict moves between runs is worth
+little", which is true and also not the finding. Measured rather than assumed,
+`urgency-header` failed **19 runs in 20** on Linux — not a coin flip, a
+near-certainty — and always identically: `stream 1 (u=7) = 65535 bytes, stream 3
+(u=0) = 0 bytes`. The u=7 stream had drained the entire connection window before
+the u=0 stream's handler had enqueued anything, so the harness announced that "a
+u=7 frame was interleaved after the u=0 stream started" about a stream that had
+never started.
+
+The root cause is a category error the scenario shares with its sibling: a
+scheduler can only choose among streams that are *candidates*, and a response
+that has not been queued yet is not one. Both scenarios opened two streams and
+inspected the resulting burst after `Task.Delay(700)`, which asserts nothing
+about contention — it hopes for it. `priority-update` failed only 1 in 20, but
+for a sharper reason of its own: it topped the *connection* window up before the
+promoted stream's own window, in two separate frames, leaving exactly one moment
+in which the just-promoted stream was the only one that could not send. The
+server served the other stream, correctly, and the harness called it a
+prioritization failure.
+
+The fix removes the assumption instead of re-tuning it. Both scenarios now
+advertise `SETTINGS_INITIAL_WINDOW_SIZE = 1` in the connection preface, so the
+server may send exactly one byte per stream and then blocks; receiving that byte
+on both streams is *positive evidence* that both handlers ran, both bodies are
+queued, and both are window-blocked. Release is a single SETTINGS frame, not a
+WINDOW_UPDATE per stream — RFC 9113 §6.9.2 makes a changed INITIAL_WINDOW_SIZE
+adjust every open stream's window by the same delta, which the server applies
+under one lock before waking the writer once, so both become sendable in the
+same instant and the writer's next pick is a real choice. Per-stream
+WINDOW_UPDATEs cannot express that, and the head start they leak is precisely
+what broke `priority-update`. The assertions then wait for END_STREAM rather
+than for a duration, and each also checks that the deferred stream still
+finishes — deferring is the feature, starving is a different bug that the old
+version would have passed silently.
+
+Verified 120/120 (30 runs per scenario per platform), plus 8 concurrent
+instances per scenario for three rounds, plus the full suite 3× on Windows and
+4× on Linux. And verified in the other direction, which matters more: commenting
+the urgency comparison out of `ComparePriority` makes both scenarios fail 6/6,
+deterministically, with the perfect round-robin signature (114688 bytes = 7 ×
+16384, exactly alternating). A test that cannot fail would have been the worse
+outcome of the two.
+
+*Three: why Windows had looked greener all along.* It hadn't been passing these
+scenarios by luck of timing, as the note in `CLAUDE.md` claimed. It had not been
+running them. `run-tests.ps1` declared its harness-argument parameter as
+`$Args` — an automatic PowerShell variable — so it was **never bound**, and
+every demo-driven harness was invoked with no arguments at all, i.e. its default
+mode. Twelve `h2attack` labels, one scenario executed twelve times; five
+`h2priority` labels, five runs of `settings`. The runner's pass/fail logic was
+never wrong (it scans the whole output for ✗); *what had run* was. The tell was
+visible in its own output for weeks — every line under a section printed the
+same verdict text — and was read as a formatting quirk.
+
+That is the same failure as the `FullyQualifiedName~HTTP2` filter matching 2085
+tests, and it is the more expensive one: an over-broad filter runs too much and
+still gates, while this ran too little and reported the number anyway. Renamed
+to `$HarnessArgs`. With arguments actually passed, Windows is **48/48 for the
+first time in the literal sense**, and so is Linux — including the trailers
+scenario, which now passes because the server bug is fixed rather than because
+it was skipped.
+
+The Linux harness step in `ci.yml` is a real gate as of this entry;
+`continue-on-error` is gone. The bash runner passes its arguments positionally
+and never had the problem, which is the argument for keeping two runners rather
+than one: the disagreement between them is what surfaced all three of these, and
+each time the platform difference turned out to be a defect wearing a platform
+difference's clothes.
 
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —

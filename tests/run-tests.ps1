@@ -43,7 +43,17 @@ function Invoke-Harness {
     param(
         [string]   $Label,
         [string]   $Project,
-        [string[]] $Args = @(),
+        # NOT $Args, however natural that reads: $Args is an automatic PowerShell
+        # variable, and a parameter of that name is silently never bound — it
+        # stays empty no matter what the caller passes. That is not a style
+        # nit. It meant every demo-driven harness below ran with no arguments
+        # at all, i.e. its default mode, so the suite executed `h2attack ping`
+        # twelve times under twelve different labels and reported 48/48. The
+        # count was honest about pass/fail and wrong about what had run; it is
+        # also why Windows "passed" the trailers scenario that a real server
+        # bug was hiding behind, while the bash runner — which passes its
+        # arguments positionally and cannot trip over this — found it.
+        [string[]] $HarnessArgs = @(),
         [ValidateSet("ExitCode", "NoCross")] [string] $Mode = "ExitCode"
     )
 
@@ -51,7 +61,7 @@ function Invoke-Harness {
 
     $script:total++
     $csproj = Join-Path $PSScriptRoot "$Project/$Project.csproj"
-    $out = & dotnet run --project $csproj --no-build -- @Args 2>&1 | Out-String
+    $out = & dotnet run --project $csproj --no-build -- @HarnessArgs 2>&1 | Out-String
 
     $ok = if ($Mode -eq "ExitCode") { $LASTEXITCODE -eq 0 }
           else { ($LASTEXITCODE -eq 0) -and ($out -notmatch [char]0x2717) }   # ✗
@@ -115,30 +125,30 @@ try {
 
     Section "Attack / hardening scenarios (h2attack)"
     foreach ($m in "contcount","contbytes","ping","settings","rapidreset","streamid-exhaustion","outbound-headerlimit") {
-        Invoke-Harness -Label "h2attack $m" -Project "h2attack" -Args @($m) -Mode NoCross
+        Invoke-Harness -Label "h2attack $m" -Project "h2attack" -HarnessArgs @($m) -Mode NoCross
     }
     foreach ($c in "missingpath","missingmethod","missingscheme","empty-path","uppercase","connection","te-bad","te-ok","pseudo-after-regular","unknown-pseudo","duplicate-pseudo") {
-        Invoke-Harness -Label "h2attack malformed $c" -Project "h2attack" -Args @("malformed", $c) -Mode NoCross
+        Invoke-Harness -Label "h2attack malformed $c" -Project "h2attack" -HarnessArgs @("malformed", $c) -Mode NoCross
     }
     foreach ($c in "ok","pseudo","no-endstream") {
-        Invoke-Harness -Label "h2attack trailers $c" -Project "h2attack" -Args @("trailers", $c) -Mode NoCross
+        Invoke-Harness -Label "h2attack trailers $c" -Project "h2attack" -HarnessArgs @("trailers", $c) -Mode NoCross
     }
     foreach ($c in "even-stream","idle-data","idle-windowupdate","implicit-close-data","implicit-close-windowupdate") {
-        Invoke-Harness -Label "h2attack idle $c" -Project "h2attack" -Args @("idle", $c) -Mode NoCross
+        Invoke-Harness -Label "h2attack idle $c" -Project "h2attack" -HarnessArgs @("idle", $c) -Mode NoCross
     }
-    Invoke-Harness -Label "h2attack rst-cancel" -Project "h2attack" -Args @("rst-cancel") -Mode NoCross
+    Invoke-Harness -Label "h2attack rst-cancel" -Project "h2attack" -HarnessArgs @("rst-cancel") -Mode NoCross
 
     Section "CONNECT / WebSocket scenarios (h2connect)"
     foreach ($m in "settings","loopback","ws-echo","ws-fragmented","ws-ping","ws-close","reject","cancel","multiplex") {
-        Invoke-Harness -Label "h2connect $m" -Project "h2connect" -Args @($m) -Mode NoCross
+        Invoke-Harness -Label "h2connect $m" -Project "h2connect" -HarnessArgs @($m) -Mode NoCross
     }
     foreach ($c in "scheme-on-connect","path-on-connect","missing-authority","missing-scheme-extended","missing-path-extended","protocol-on-get") {
-        Invoke-Harness -Label "h2connect malformed $c" -Project "h2connect" -Args @("malformed", $c) -Mode NoCross
+        Invoke-Harness -Label "h2connect malformed $c" -Project "h2connect" -HarnessArgs @("malformed", $c) -Mode NoCross
     }
 
     Section "RFC 9218 priority scenarios (h2priority)"
     foreach ($m in "settings","urgency-header","priority-update","priority-update-unknown-stream","malformed-priority") {
-        Invoke-Harness -Label "h2priority $m" -Project "h2priority" -Args @($m) -Mode NoCross
+        Invoke-Harness -Label "h2priority $m" -Project "h2priority" -HarnessArgs @($m) -Mode NoCross
     }
 }
 finally {

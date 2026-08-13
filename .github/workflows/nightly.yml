@@ -1,0 +1,225 @@
+name: Nightly
+
+# ci.yml gates every push with everything this repository carries itself: the 212
+# in-process HTTP/2 tests and the 48 raw-frame harness scenarios. This workflow
+# adds the two external conformance suites it does not carry — h2spec (RFC 9113 +
+# RFC 7541, 146 cases over both transports) and the Autobahn TestSuite (RFC 6455 +
+# permessage-deflate, 517 cases).
+#
+# They are here rather than in the gate because of how they are ACQUIRED, not how
+# they behave: h2spec is a release binary from another repository and Autobahn is
+# a Docker Hub image. A moved release asset or a registry rate limit would turn a
+# push red for a reason that has nothing to do with this code, and a gate that
+# fails for reasons outside the change is a gate people learn to ignore.
+#
+# What they are NOT is flaky, and this is where this workflow differs from the
+# sibling repository's nightly: that one reaches eight foreign servers over the
+# public internet and is deliberately informational. These two drive OUR server
+# over loopback, with the suite the only foreign part. 146/146 and 517/517 are
+# exact numbers, so both jobs gate on their result — a nightly that reports a
+# number without failing on it is a report nobody reads.
+#
+# Two things worth knowing about scheduled workflows: they only ever run on the
+# default branch, and GitHub disables them after 60 days without any repository
+# activity. If this stops reporting, that is the first thing to check.
+on:
+  schedule:
+    # 03:11 UTC — after Hermod (02:17) and HTTP/3 (02:43) so the three do not
+    # contend, and off the hour, where GitHub's scheduler is busiest and delays
+    # runs by tens of minutes.
+    - cron: '11 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Pinned rather than "latest": a conformance number is only comparable between
+  # nights if the suite producing it does not move underneath them. v2.6.0 is
+  # what tests/TestingAgainst_h2spec.md documents and what 146/146 was measured
+  # against.
+  H2SPEC_VERSION: '2.6.0'
+
+jobs:
+
+  h2spec:
+    # The same two legs as ci.yml. h2spec is a self-contained Go binary with a
+    # per-platform asset, so both are cheap to cover — and worth covering: the
+    # harness suite already differs between Windows and Linux (see "Two harnesses
+    # that differ on Linux" in CLAUDE.md), which is exactly the kind of thing a
+    # single-platform conformance run would have hidden.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            leg: windows-latest
+          - os: ubuntu-latest
+            container: debian:13
+            leg: debian-13-container
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    steps:
+      # Before the checkout: a bare debian:13 has no git, and submodules:
+      # recursive needs it. Same ordering and reasoning as ci.yml — tar is needed
+      # here too, for the h2spec tarball.
+      - name: Install prerequisites (Debian container)
+        if: runner.os == 'Linux'
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git libicu76 libssl3t64 libstdc++6 tar tzdata
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install h2spec (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/summerwind/h2spec/releases/download/v${H2SPEC_VERSION}/h2spec_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin
+          h2spec --version
+
+      - name: Install h2spec (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'h2spec'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'h2spec.zip'
+          Invoke-WebRequest -Uri "https://github.com/summerwind/h2spec/releases/download/v$env:H2SPEC_VERSION/h2spec_windows_amd64.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          & (Join-Path $dir 'h2spec.exe') --version
+
+      # Debug, for the same reason as ci.yml: the runner scripts resolve the
+      # default configuration.
+      - name: Build
+        run: dotnet build HTTP2.slnx
+
+      # Both transports in one invocation — the TLS listener on :8443 and the
+      # cleartext h2c listener on :8080. 146/146 was measured over both, and h2c
+      # is where a framing assumption that TLS happens to mask would show up.
+      #
+      # The runner starts and stops the demo host itself, redirecting its output
+      # to a file: under h2spec's flood of malformed cases the demo logs heavily,
+      # and an undrained console pipe can block it mid-run.
+      # The exit code is captured BEFORE the summary is written, and the step ends
+      # on it. Both halves of that matter: the summary commands would otherwise
+      # overwrite $? / $LASTEXITCODE and the step could never fail, and running
+      # the pipeline under `set -e` would abort before the summary on exactly the
+      # night the summary is worth having.
+      - name: h2spec over h2 and h2c (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          log="artifacts/h2spec-${{ matrix.leg }}.txt"
+          set +e
+          tests/h2spec.sh --no-build 2>&1 | tee "$log"
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## h2spec — ${{ matrix.leg }}'
+            echo
+            echo '```'
+            tail -40 "$log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # pwsh rather than bash here: $RUNNER_TEMP is a backslash path on Windows,
+      # and handing it through bash to a PowerShell parameter is a good way to
+      # lose the separators. Invoked with -File so the runner is a child process
+      # with a real exit code, rather than an `exit` that unwinds this shell.
+      - name: h2spec over h2 and h2c (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $h2spec = Join-Path $env:RUNNER_TEMP 'h2spec\h2spec.exe'
+          $log    = "artifacts/h2spec-${{ matrix.leg }}.txt"
+          pwsh -File tests/h2spec.ps1 -NoBuild -H2spec $h2spec 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          "## h2spec — ${{ matrix.leg }}", "", '```' | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Get-Content $log -Tail 40                 | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          '```'                                     | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          exit $code
+
+      # !cancelled() rather than success(): the night h2spec reports a failure is
+      # precisely the night whose output is worth keeping, and the step summary
+      # above is only comfortable to read while the run is the newest one.
+      - name: Upload h2spec output
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: h2spec-${{ matrix.leg }}
+          path: artifacts/*.txt
+
+  autobahn:
+    # Plain ubuntu-latest, deliberately NOT the debian:13 container the other
+    # jobs run in. The Autobahn suite only ships usably as a Docker image (the
+    # native wstest is legacy Python 2), and there is no Docker daemon inside
+    # that container — docker-in-docker is not set up and does not need to be,
+    # because GitHub's Ubuntu runner has a daemon already. That is the whole
+    # reason this is a separate job rather than a third matrix leg.
+    #
+    # Windows is absent for the same class of reason: the runner's Docker is in
+    # Windows-container mode, and `--network host` (which is how the suite
+    # reaches our echo server on loopback) is a Linux-container feature. The
+    # framing under test is transport-agnostic, so one platform answers it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build HTTP2.slnx
+
+      # The suite drives ~500 cases against tests/autobahn-server, which exposes
+      # the same WebSocketConnection framing production uses, over a plain-TCP
+      # tunnel behind a minimal HTTP/1.1 Upgrade. Autobahn speaks WebSocket over
+      # HTTP/1.1 rather than RFC 8441 over HTTP/2, but the framing under test is
+      # the same code either way — see tests/TestingAgainst_Autobahn.md.
+      #
+      # The script parses index.json itself and exits non-zero unless every case
+      # is OK, NON-STRICT or INFORMATIONAL. jq is preinstalled on this runner, so
+      # it takes that path rather than the python3 fallback.
+      - name: Autobahn fuzzingclient (517 cases)
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          tests/autobahn.sh --no-build 2>&1 | tee artifacts/autobahn.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Autobahn TestSuite'
+            echo
+            echo '```'
+            tail -30 artifacts/autobahn.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
+
+      # The HTML report is the part worth keeping: it names the failing case and
+      # shows the frames exchanged, which the console summary does not. Both it
+      # and the raw JSON land in tests/autobahn/reports.
+      - name: Upload Autobahn report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: autobahn-report
+          path: |
+            tests/autobahn/reports/
+            artifacts/autobahn.txt

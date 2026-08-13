@@ -232,7 +232,9 @@ on Windows and Debian 13. The bash runner reaches **45–46/48** on Linux — se
 are flaky, and one is reproducible and not yet explained. **h2spec 146/146** and
 **Autobahn 517/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night (alongside a
-**drift** job that runs the gate's own build and tests against Hermod/Styx
+**`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
+which grew the same thing independently — that runs the gate's own build and
+tests against Hermod/Styx
 *master* rather than the pin — the gate stays deterministic on the pin, the
 nightly says whether the pin is safe to advance), and the run
 of 2026-08-13 put h2spec at 146/146 **four times over** — TLS `h2` and cleartext

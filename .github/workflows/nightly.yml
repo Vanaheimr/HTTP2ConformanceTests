@@ -224,7 +224,11 @@ jobs:
             tests/autobahn/reports/
             artifacts/autobahn.txt
 
-  drift:
+  # Named to match the sibling conformance repositories, which grew the same job
+  # independently: DNSConformanceTests and NTSConformanceTests both carry an
+  # `against-<library>-master`. Same concept, same place in the workflow, so it
+  # should read the same across the three. Styx is advanced along with Hermod.
+  against-hermod-master:
     # "Is the pin still safe to advance?" — the one question ci.yml structurally
     # cannot answer, because it tests the pinned submodule commit by design.
     #
@@ -284,7 +288,7 @@ jobs:
           echo "Hermod -> $hermod"
           echo "Styx   -> $styx"
           {
-            echo '## Drift check — ${{ matrix.leg }}'
+            echo '## Against Hermod master — ${{ matrix.leg }}'
             echo
             echo "Hermod \`${hermod:0:12}\` · Styx \`${styx:0:12}\`"
           } >> "$GITHUB_STEP_SUMMARY"

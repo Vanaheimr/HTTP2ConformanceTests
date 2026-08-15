@@ -29,6 +29,7 @@
 #   tests/autobahn.sh                 # build + run everything
 #   tests/autobahn.sh --no-build
 #   tests/autobahn.sh --port 9010 --image crossbario/autobahn-testsuite
+#   tests/autobahn.sh --run-timeout 1200   # cap the fuzzingclient (seconds, 0 = off)
 #
 set -euo pipefail
 
@@ -36,12 +37,27 @@ port=9010
 image="crossbario/autobahn-testsuite"
 nobuild=0
 
+# A ceiling on the fuzzingclient itself. The whole run takes about eight
+# minutes in CI (7:50, 8:08, 8:09 on three consecutive nights), so twenty is
+# far above normal and still well inside the workflow's own 45-minute step
+# budget -- which is the point. On 2026-08-15 the container hung instead of
+# finishing; without a cap of its own it ate the entire step budget, and a step
+# that overruns timeout-minutes is treated as a *cancellation*, so the summary
+# was never written, the report artifact was never uploaded, and GitHub never
+# even flushed the job's log. The hang left literally nothing to look at.
+#
+# With this, a hang becomes an ordinary non-zero exit inside the script: the
+# missing index.json below is reported, the caller's log is intact, and the
+# artifact upload still runs.
+run_timeout=1200
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --port)     port="$2";  shift 2 ;;
-        --image)    image="$2"; shift 2 ;;
-        --no-build) nobuild=1;  shift ;;
-        -h|--help)  grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --port)        port="$2";        shift 2 ;;
+        --image)       image="$2";       shift 2 ;;
+        --run-timeout) run_timeout="$2"; shift 2 ;;
+        --no-build)    nobuild=1;        shift ;;
+        -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -144,13 +160,35 @@ cat >"$cfg" <<JSON
 }
 JSON
 
+# --name, so the timeout below has something to stop: killing the `docker run`
+# client detaches from the container, it does not end it, and a container left
+# running would hold the report directory and the port.
+container="autobahn-wstest-$port"
+docker rm -f "$container" >/dev/null 2>&1 || true
+
+# `timeout` is GNU coreutils and is present on Linux, macOS (as gtimeout under
+# a different name) and Git Bash alike; if it is missing, or the cap is 0, run
+# uncapped rather than refusing to run at all.
+runner=""
+if [ "$run_timeout" -gt 0 ] && command -v timeout >/dev/null 2>&1; then
+    runner="timeout --signal=TERM --kill-after=30s ${run_timeout}s"
+fi
+
 echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port)..."
-# shellcheck disable=SC2086  # $docker_net is a fixed literal or empty, on purpose
-MSYS_NO_PATHCONV=1 docker run --rm $docker_net \
+# shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
+MSYS_NO_PATHCONV=1 $runner docker run --rm --name "$container" $docker_net \
     -v "$mount_src:/config" \
     -v "$mount_src:/reports" \
     "$image" \
-    wstest -m fuzzingclient -s /config/fuzzingclient.json || echo "docker run returned $?"
+    wstest -m fuzzingclient -s /config/fuzzingclient.json || {
+        rc=$?
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "fuzzingclient did not finish within ${run_timeout}s -- stopping the container." >&2
+            docker rm -f "$container" >/dev/null 2>&1 || true
+        else
+            echo "docker run returned $rc"
+        fi
+    }
 
 # --- parse the report ------------------------------------------------------
 index="$repdir/index.json"

@@ -140,11 +140,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit $code
 
-      # !cancelled() rather than success(): the night h2spec reports a failure is
+      # always() rather than success(): the night h2spec reports a failure is
       # precisely the night whose output is worth keeping, and the step summary
       # above is only comfortable to read while the run is the newest one.
+      # always() rather than !cancelled() for the reason spelled out on the
+      # Autobahn upload below — a step timeout counts as a cancellation, which
+      # is the one case where losing the output hurts most.
       - name: Upload h2spec output
-        if: ${{ !cancelled() }}
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: h2spec-${{ matrix.leg }}
@@ -205,8 +208,17 @@ jobs:
       # The HTML report is the part worth keeping: it names the failing case and
       # shows the frames exchanged, which the console summary does not. Both it
       # and the raw JSON land in tests/autobahn/reports.
+      #
+      # always(), not !cancelled(), and the difference is not academic: a step
+      # that overruns its timeout-minutes is treated as a cancellation, so
+      # !cancelled() is false exactly when a hang has just made this upload the
+      # only evidence there is. That is what happened on 2026-08-15 — the step
+      # burned all 45 minutes, and nothing survived it, not this artifact and
+      # not even the job log. The script now caps the fuzzingclient itself so a
+      # hang fails inside the step instead; this guard is the backstop for when
+      # something else overruns.
       - name: Upload Autobahn report
-        if: ${{ !cancelled() }}
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: autobahn-report

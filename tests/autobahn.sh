@@ -100,10 +100,18 @@ srv_log="$(mktemp -t autobahn-server.XXXXXX.log)"
 dotnet "$srv_dll" "$port" >"$srv_log" 2>&1 &
 srv_pid=$!
 
+# The echo server's own log is the one view of a failure from OUR side of the
+# wire, and it used to be deleted here unconditionally -- which is why three
+# nights of case 12.3.3 hanging (see below) produced nothing but the
+# container's console output. It is now kept next to the report, where the
+# workflow's artifact upload picks it up.
 cleanup() {
     kill "$srv_pid" 2>/dev/null || true
     wait "$srv_pid" 2>/dev/null || true
     free_ports "$port"
+    if [ -s "$srv_log" ] && [ -d "$repdir" ]; then
+        cp "$srv_log" "$repdir/echo-server.log" 2>/dev/null || true
+    fi
     rm -f "$srv_log"
 }
 trap cleanup EXIT
@@ -182,12 +190,40 @@ MSYS_NO_PATHCONV=1 $runner docker run --rm --name "$container" $docker_net \
     "$image" \
     wstest -m fuzzingclient -s /config/fuzzingclient.json || {
         rc=$?
-        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-            echo "fuzzingclient did not finish within ${run_timeout}s -- stopping the container." >&2
-            docker rm -f "$container" >/dev/null 2>&1 || true
+
+        # 124 is `timeout` firing; 137 is the container's own process dying on
+        # SIGKILL, which is NOT the same thing and must not be reported as if
+        # it were. On 2026-09-18 this branch claimed "did not finish within
+        # 1200s" after eight and a half minutes, because it lumped the two
+        # together -- the cap had not fired at all.
+        case "$rc" in
+            124) echo "fuzzingclient exceeded the ${run_timeout}s cap -- stopping the container." >&2 ;;
+            137) echo "fuzzingclient was killed (SIGKILL, exit 137) before the ${run_timeout}s cap." >&2 ;;
+            *)   echo "docker run returned $rc" >&2 ;;
+        esac
+
+        # Whatever ended it, the interesting question is what the two ends were
+        # doing. These only run on failure, so they cost nothing normally.
+        #
+        # First: is our side even still there? A dead echo server would leave
+        # the fuzzingclient waiting forever on a case that never answers, which
+        # looks exactly like the hang seen on 12.3.3 -- and the server prints
+        # only a startup banner, so a crash stack in echo-server.log (kept by
+        # the cleanup above) would be the whole answer.
+        if kill -0 "$srv_pid" 2>/dev/null; then
+            echo "echo server (pid $srv_pid) was still alive at this point." >&2
         else
-            echo "docker run returned $rc"
+            echo "echo server (pid $srv_pid) had ALREADY EXITED -- see echo-server.log." >&2
         fi
+
+        # Second: what was on the wire. Bytes stuck in both send queues is a
+        # flow-control deadlock; empty queues on a live connection is not.
+        if command -v ss >/dev/null 2>&1; then
+            echo "--- sockets on :$port at the time of failure ---" >&2
+            ss -tnpi "sport = :$port or dport = :$port" 2>/dev/null >&2 || true
+        fi
+
+        docker rm -f "$container" >/dev/null 2>&1 || true
     }
 
 # --- parse the report ------------------------------------------------------

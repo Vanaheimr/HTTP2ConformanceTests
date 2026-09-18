@@ -113,6 +113,12 @@ cleanup() {
         cp "$srv_log" "$repdir/echo-server.log" 2>/dev/null || true
     fi
     rm -f "$srv_log"
+    # The container is no longer --rm (see the run below), so it is this
+    # trap's job to make sure none is left behind, however the script ends.
+    if [ -n "${container:-}" ]; then
+        docker rm -f "$container" >/dev/null 2>&1 || true
+    fi
+    return 0
 }
 trap cleanup EXIT
 
@@ -184,7 +190,12 @@ fi
 
 echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port)..."
 # shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
-MSYS_NO_PATHCONV=1 $runner docker run --rm --name "$container" $docker_net \
+# Deliberately NOT --rm: an auto-removed container takes its exit status with
+# it, and "why did this die" is exactly the question. `docker inspect` below
+# distinguishes a kernel OOM kill from every other cause of the 137 seen on
+# 2026-09-18 -- which the exit code alone cannot. It is removed by hand
+# instead, on the failure path and in the EXIT trap.
+MSYS_NO_PATHCONV=1 $runner docker run --name "$container" $docker_net \
     -v "$mount_src:/config" \
     -v "$mount_src:/reports" \
     "$image" \
@@ -220,7 +231,23 @@ MSYS_NO_PATHCONV=1 $runner docker run --rm --name "$container" $docker_net \
         # flow-control deadlock; empty queues on a live connection is not.
         if command -v ss >/dev/null 2>&1; then
             echo "--- sockets on :$port at the time of failure ---" >&2
-            ss -tnpi "sport = :$port or dport = :$port" 2>/dev/null >&2 || true
+            # Captured, not redirected in place: `2>/dev/null >&2` applies left
+            # to right, so it would point stdout at /dev/null and silently throw
+            # away the very output being collected.
+            sockets="$(ss -tnpi "sport = :$port or dport = :$port" 2>/dev/null || true)"
+            echo "${sockets:-  (no sockets on this port)}" >&2
+        fi
+
+        # The corpse still knows how it died. OOMKilled separates "the kernel
+        # took it" from "something else sent the signal", and the two call for
+        # completely different fixes.
+        state="$(docker inspect \
+                   --format 'exit={{.State.ExitCode}} oom-killed={{.State.OOMKilled}} error="{{.State.Error}}"' \
+                   "$container" 2>/dev/null || true)"
+        if [ -n "$state" ]; then
+            echo "container state: $state" >&2
+        else
+            echo "container already gone; no state to inspect." >&2
         fi
 
         docker rm -f "$container" >/dev/null 2>&1 || true

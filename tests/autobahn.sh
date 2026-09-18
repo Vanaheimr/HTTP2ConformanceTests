@@ -102,9 +102,8 @@ srv_pid=$!
 
 # The echo server's own log is the one view of a failure from OUR side of the
 # wire, and it used to be deleted here unconditionally -- which is why three
-# nights of case 12.3.3 hanging (see below) produced nothing but the
-# container's console output. It is now kept next to the report, where the
-# workflow's artifact upload picks it up.
+# hung nights produced nothing but the container's console output. It is now
+# kept next to the report, where the workflow's artifact upload picks it up.
 cleanup() {
     kill "$srv_pid" 2>/dev/null || true
     wait "$srv_pid" 2>/dev/null || true
@@ -195,7 +194,14 @@ echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port).
 # distinguishes a kernel OOM kill from every other cause of the 137 seen on
 # 2026-09-18 -- which the exit code alone cannot. It is removed by hand
 # instead, on the failure path and in the EXIT trap.
-MSYS_NO_PATHCONV=1 $runner docker run --name "$container" $docker_net \
+# PYTHONUNBUFFERED, because without it wstest's "Running test case ID X"
+# lines arrive in blocks and the last one printed is NOT the case it is
+# working on. That cost a wrong diagnosis once: three CI logs ended at
+# 12.3.3 and it looked like a case that reliably hangs, when a *passing*
+# local run showed 12.3.3 sitting as the last flushed line for four
+# minutes while the suite ran on through 13.3. Unbuffered, the last line
+# is the truth, and a hang names itself.
+MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 $docker_net \
     -v "$mount_src:/config" \
     -v "$mount_src:/reports" \
     "$image" \
@@ -218,9 +224,9 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" $docker_net \
         #
         # First: is our side even still there? A dead echo server would leave
         # the fuzzingclient waiting forever on a case that never answers, which
-        # looks exactly like the hang seen on 12.3.3 -- and the server prints
-        # only a startup banner, so a crash stack in echo-server.log (kept by
-        # the cleanup above) would be the whole answer.
+        # is exactly what the hung nights look like from outside -- and the
+        # server prints only a startup banner, so a crash stack in
+        # echo-server.log (kept by the cleanup above) would be the whole answer.
         if kill -0 "$srv_pid" 2>/dev/null; then
             echo "echo server (pid $srv_pid) was still alive at this point." >&2
         else

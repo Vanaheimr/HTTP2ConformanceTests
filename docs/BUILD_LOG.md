@@ -3156,6 +3156,95 @@ PowerShell version it replaces and marked as untested in both the script header
 and `TestingAgainst_Autobahn.md` — which is strictly better than the file it
 replaced, whose Windows path was equally unverified and did not say so.
 
+### The Autobahn nightly hangs, about one night in eight (2026-08-15 → 2026-09-18, open)
+
+Still unexplained at the time of writing, which is why it is written down. What
+follows is mostly a record of hypotheses that died, several of them mine, and
+of the instrumentation each death paid for.
+
+*The symptom.* Four of thirty-four nightlies went red on Autobahn — 2026-08-15,
+08-21, 09-16, 09-18 — every one of them on an unchanged commit, with the other
+thirty green. Nothing else in the workflow failed except one `against-hermod-master`
+leg on 09-03, which is a job that deliberately builds against upstream *master*
+and is therefore expected to wobble; its log has since been purged and it is not
+investigable.
+
+*The first hang left nothing at all,* and that turned out to be a workflow
+defect rather than an Autobahn one. The step ran out its `timeout-minutes: 45`
+and was cut off — and a step that overruns `timeout-minutes` is treated as a
+**cancellation**, not a failure. So `if: ${{ !cancelled() }}` on the artifact
+upload was false in exactly the situation where that artifact was the only
+evidence there would ever be; the post-steps never ran either, and GitHub never
+flushed the job log. Both upload steps are `always()` now.
+
+The better fix was not to reach the step timeout. `tests/autobahn.sh` caps the
+fuzzingclient itself at 20 minutes — the run takes about eight in CI — so a hang
+becomes an ordinary non-zero exit *inside* the script, with the summary written
+and the artifact uploaded. The container also gained a `--name` and explicit
+teardown, because killing the `docker run` client detaches from the container
+rather than stopping it.
+
+That worked: 09-16 and 09-18 failed inside the step, and for the first time
+there was a log.
+
+*Then the log produced a wrong diagnosis — this one was mine.* Both logs ended
+on `Running test case ID 12.3.3`, so the conclusion drew itself: one specific
+case, reproducibly. It was written up that way. It is false. `wstest` buffers
+stdout, and a **passing** full-suite run measured locally shows that exact line
+sitting as the last flushed one for about four minutes while the suite runs on
+through 13.3. An end at 12.3.3 means only that the process died with its buffer
+filled that far. The real hang is somewhere after it — 12.4, 12.5, 13.1–13.3 —
+which is precisely the region the reproduction loops had been *excluding*,
+because they were built on the wrong conclusion.
+
+`PYTHONUNBUFFERED=1` on the container fixes the reporting at the source. The
+next red night names the case instead of a flush boundary.
+
+*Hypotheses that died, with the measurements that killed them.*
+
+- **Memory / a kernel OOM kill.** `docker run` returning 137 means the
+  container's process took a SIGKILL, and the cap had demonstrably not fired
+  (eight and a half minutes against a twenty-minute ceiling), so OOM was the
+  obvious suspect. It is not: a full 517-case run peaks at **3.7 GiB** in the
+  container against the runner's 16 GB, and our echo server contributes 68 MB
+  at the end, ~200 MB at peak. Squeezing the container to a 2 GiB cgroup
+  ceiling makes the run *slower* (274 s against 233 s) and it still completes,
+  because Docker grants matching swap by default. Exit 137 remains unexplained;
+  `docker inspect` is now run before the container is removed (hence no `--rm`
+  any more) so `State.OOMKilled` will answer it outright rather than by
+  inference.
+- **CPU pressure.** Also no. Pinning both ends to 4 CPUs, matching the runner,
+  left the runtime unchanged; halving again to 2 CPUs left it unchanged a second
+  time (433–524 s). The suite is latency-bound, not compute-bound, so the
+  intended perturbation was not a perturbation at all.
+- **"The CI box is about twice as slow."** Mine, and wrong. It compared 203–263 s
+  locally against ~480 s in CI without noticing the local runs were driving 355
+  cases to CI's 517. The same 517 take 497 s here. The environments match, which
+  is what makes the failure to reproduce interesting rather than explicable.
+
+*Reproduction failed.* 18 faithful full-suite runs — fresh echo server per run,
+one `wstest` process driving all 517 cases in order, so both kinds of
+accumulated state the real run has are present — all green. Plus 60 iterations
+of case 12.3.3 alone against a single long-lived server, and 26 runs of the
+355-case subset. At one night in eight, 18 clean full runs is a ~10 % outcome:
+not impossible, but far enough out that the remaining difference is more likely
+something about GitHub's environment that a 16-core box with 64 GB cannot
+recreate — shared virtualisation, network-backed storage, noisy neighbours.
+
+*What is in place for the next occurrence.* The cap keeps the failure inside the
+step; `always()` keeps the artifact; `PYTHONUNBUFFERED` names the case;
+`docker inspect` settles OOM; `ss -tnpi` shows whether bytes are stuck in both
+send queues, which would make it a flow-control deadlock rather than a stall;
+and the echo server's log is copied next to the report instead of being deleted
+on cleanup. That last one matters more than its size suggests — the server
+prints exactly one line normally, so anything else in it is a crash stack, and a
+dead echo server would leave the fuzzingclient waiting forever on a case that
+never answers, which is what this looks like from outside.
+
+One thing deliberately *not* done: retrying the Autobahn job on failure. It
+would make the nightly green and cost the roughly eight data points a month this
+investigation now depends on.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

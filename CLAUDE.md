@@ -237,7 +237,9 @@ differ there are settled, and *Harnesses that differed on Linux* below records
 what each turned out to be, because none of the three was what it first looked
 like. **h2spec 146/146** and
 **Autobahn 517/517** (full RFC 6455 + permessage-deflate) are no longer "as last
-run": `.github/workflows/nightly.yml` re-measures both every night (alongside a
+run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
+with a caveat, since about one night in eight it hangs rather than reporting a
+result, which is open and written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and
 tests against Hermod/Styx

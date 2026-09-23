@@ -86,7 +86,7 @@ their own server(s) on private ports — are now NUnit fixtures in Hermod's
 ## Benchmarks (h2bench)
 
 Everything else in this repository has a number behind it — 166 unit tests, 48
-harness runs, h2spec 146/146, Autobahn 517/517. Performance had none, which made
+harness runs, h2spec 146/146, Autobahn 481/517. Performance had none, which made
 "readable rather than fast" an assumption rather than a finding. `h2bench` exists
 to turn it into a finding, and to give any future optimisation a baseline to beat.
 
@@ -159,9 +159,24 @@ the 10 failures) is in [`../CLAUDE.md`](../CLAUDE.md) under the h2spec entry.
 ## Autobahn WebSocket conformance
 
 [Autobahn|TestSuite](https://github.com/crossbario/autobahn-testsuite) is the
-canonical RFC 6455 WebSocket conformance suite. This stack passes **517 / 517**
-cases — the full suite, including sections 12/13 (`permessage-deflate`, RFC 7692,
-negotiated in no-context-takeover mode). It drives the
+canonical RFC 6455 WebSocket conformance suite. This stack passes **481 / 517**
+cases and **declines** the other 36 — sections 13.3 and 13.5, 18 cases each,
+where the client offers `server_max_window_bits=9`. `DeflateStream` exposes no
+control over the window size, so this server cannot compress with a 9-bit window,
+and RFC 7692 §7.1.2.1 requires it to refuse such an offer rather than accept it
+and do something else. `UNIMPLEMENTED` is Autobahn's word for that refusal, and
+it is not a failure: the run has **zero** FAILED / WRONG CODE / UNCLEAN.
+
+It read 517/517 until 2026-09-23, and that number was bought rather than earned.
+`WebSocketDeflate.ShouldAccept` accepted any offer whose text merely contained
+"permessage-deflate", parameters unread, and then compressed with 15 bits anyway
+— which a peer that had sized its inflate window to 9 could not have decoded.
+Python's zlib inflates with a large window regardless, so Autobahn never noticed.
+The HTTP/1.1 sibling, written independently, reports the same 481 with an
+identical breakdown: 476 OK, 3 INFORMATIONAL, 2 NON-STRICT, 36 UNIMPLEMENTED.
+
+Sections 12 and 13 are otherwise fully exercised (`permessage-deflate`, RFC 7692,
+negotiated in no-context-takeover mode). The run drives the
 `autobahn-server` echo host, which runs the same `WebSocketConnection` framing
 used in production over a plain-TCP tunnel behind an HTTP/1.1 Upgrade handshake
 (Autobahn speaks WebSocket over HTTP/1.1, not RFC 8441 over HTTP/2 — but the

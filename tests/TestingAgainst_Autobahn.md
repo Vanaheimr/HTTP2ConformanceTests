@@ -13,10 +13,17 @@ vendored, driven by a wrapper script per platform, with a committed
 self-contained harness (`h2wsconformance`) covering the critical cases in the
 normal pass/fail gate so the conformance behavior is verified even without Docker.
 
-**Result: 517 / 517 cases pass** (verified with Autobahn under WSL/Debian) —
-every case, including sections **12 & 13 (permessage-deflate, RFC 7692)**, the
-optional per-message compression extension, which the echo server negotiates in
-no-context-takeover mode (see [§ permessage-deflate](#permessage-deflate) below).
+**Result: 481 / 517 pass, 36 declined, 0 failures** (measured 2026-09-23 under
+WSL/Debian, and re-measured nightly in CI). The 36 are sections 13.3 and 13.5,
+where the client offers `server_max_window_bits=9`; this server cannot honor that
+and therefore must refuse it — see
+[§ the 36 declines](#the-36-declines-server_max_window_bits9) below. Everything
+else passes, including the rest of sections **12 & 13 (permessage-deflate, RFC
+7692)**, the optional per-message compression extension, which the echo server
+negotiates in no-context-takeover mode.
+
+This read **517 / 517** until 2026-09-23. That number was not earned, and how it
+was lost is worth more than the number itself — the section below has it.
 
 ---
 
@@ -170,8 +177,9 @@ important cases in CI.
 Sections **12 and 13** test **`permessage-deflate` (RFC 7692)** — the optional
 WebSocket per-message compression extension, negotiated via
 `Sec-WebSocket-Extensions` at the opening handshake. This stack **implements it**
-(all 216 of these cases pass), so [`fuzzingclient.json`](autobahn/fuzzingclient.json)
-runs the full `["*"]` set with nothing excluded.
+(180 of these 216 cases pass and 36 are declined, see below), so
+[`fuzzingclient.json`](autobahn/fuzzingclient.json) runs the full `["*"]` set with
+nothing excluded.
 
 The framing lives in [`WebSocketConnection.cs`](../libs/Hermod/Hermod/HTTP2/WebSocket/WebSocketConnection.cs): a message's
 first frame carries the RSV1 bit when its payload is DEFLATE-compressed; the
@@ -185,6 +193,66 @@ handshake layer advertises this: the echo server, when the client offers
 `permessage-deflate; server_no_context_takeover; client_no_context_takeover`.
 (An earlier revision, before the extension existed, excluded 12/13 and scored
 301/301 on the RFC 6455 core alone.)
+
+### The 36 declines: `server_max_window_bits=9`
+
+Read off the wire, from the `httpRequest` recorded in each case report:
+
+| Case | What the client offers | Result |
+|---|---|---|
+| 13.1, 13.2 | no `server_max_window_bits` | OK |
+| 13.4, 13.6 | `server_max_window_bits=15` | OK |
+| **13.3, 13.5** | **`server_max_window_bits=9`** | **UNIMPLEMENTED** (18 + 18) |
+| 13.7 | a list containing 9 *and* an offer without it | OK — the server takes the other one |
+
+`server_max_window_bits=N` is the client telling the **server** to cap its own
+compression window. `DeflateStream` exposes no control over `windowBits`, so 15
+is the only value this stack can promise, and RFC 7692 §7.1.2.1 says a server
+that cannot satisfy an offer must **decline** it and fall back to no compression.
+`UNIMPLEMENTED` is Autobahn's accurate word for "the server declined the
+extension for this offer" — it is not `FAILED`, and the run carries zero
+`FAILED` / `WRONG CODE` / `UNCLEAN`.
+
+**Why this used to read 517/517, and why that was worse.** Until Hermod
+`eb7bf410`, `WebSocketDeflate.ShouldAccept` returned true for any
+`Sec-WebSocket-Extensions` value whose text merely contained
+`permessage-deflate`. It never parsed the parameters. Offered
+`server_max_window_bits=9` it answered "accepted" and then compressed with the
+full 15-bit window — which a client that had sized its inflate window to 9 bits
+could not have decoded. Autobahn scored it OK because Python's zlib inflates with
+a large window regardless and so never notices. The 36 were bought by claiming a
+capability this server did not have.
+
+The pin bump of 2026-09-23 brought the fix here, the score fell to 481, and the
+floor in [`autobahn.sh`](autobahn.sh) was lowered to match — deliberately, with
+the reason recorded in the script, rather than quietly. The HTTP/1.1 sibling,
+whose `WebSocketPerMessageDeflate.TryNegotiateAsServer` was written independently
+and always parsed the offer, reports the same 481/517 with an identical verdict
+breakdown: 476 OK, 3 INFORMATIONAL, 2 NON-STRICT, 36 UNIMPLEMENTED. Two correct
+readings of one RFC converging on the same number is a better result than either
+of them scoring 517.
+
+The negotiation itself is now pinned by
+`HermodTests/HTTP2/WebSocketDeflateNegotiationTests` — 21 offers asserted against
+both the HTTP/2 and the HTTP/3 copy of `WebSocketDeflate`, so this no longer
+depends on a nightly Docker run to stay true.
+
+### The floor, not a target
+
+[`autobahn.sh`](autobahn.sh) gates on `min_pass=481` and sorts the verdicts into
+three buckets rather than two:
+
+| Bucket | Verdicts | Effect |
+|---|---|---|
+| passing | `OK`, `NON-STRICT`, `INFORMATIONAL` | must stay at or above `min_pass` |
+| declined | `UNIMPLEMENTED` | tolerated and counted — the RFC-required refusal |
+| hard | `FAILED`, `WRONG CODE`, `UNCLEAN` | **always fatal**, whatever the count |
+
+So the floor can only ever absorb a change in how many extension offers we
+decline. It cannot launder a real failure into a pass, which is what made 481
+gateable at all. The alternative — excluding 13.3 and 13.5 to buy a green badge —
+hides the cases; a floor keeps counting them, and says so out loud when the
+number goes up so the floor can be raised.
 
 ## 5. Conformance history
 

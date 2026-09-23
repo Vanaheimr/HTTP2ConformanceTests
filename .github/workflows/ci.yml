@@ -88,7 +88,7 @@ jobs:
 
       # The stack itself lives in the submodule and Hermod's own CI runs its full
       # suite. What this gate adds is the pinned commit: the demo host and the
-      # harnesses here must still compile against it, and its 213 HTTP/2 tests
+      # harnesses here must still compile against it, and its HTTP/2 tests
       # must still pass. None of them touch the network — everything runs
       # in-process against our own server — so this is a real gate.
       #
@@ -96,7 +96,7 @@ jobs:
       # shorthand "FullyQualifiedName~HTTP2" is far too loose: it matches every
       # test in the assembly (2085 of them, the whole of Hermod), which passes
       # but gates something else entirely than it claims to.
-      - name: Test (213 HTTP/2 tests, from the pinned Hermod)
+      - name: Test (HTTP/2 tests, from the pinned Hermod)
         timeout-minutes: 30
         run: dotnet test libs/Hermod/HermodTests/HermodTests.csproj --no-build --filter "FullyQualifiedName~Hermod.Tests.HTTP2" --logger "console;verbosity=normal" --logger "trx;LogFileName=${{ matrix.leg }}.trx" --results-directory artifacts
 

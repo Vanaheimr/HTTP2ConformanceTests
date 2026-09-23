@@ -3245,6 +3245,85 @@ One thing deliberately *not* done: retrying the Autobahn job on failure. It
 would make the nightly green and cost the roughly eight data points a month this
 investigation now depends on.
 
+### The pin advances, and Autobahn goes DOWN to 481/517 (2026-09-23)
+
+The submodule pins moved to Hermod `8405935e` and Styx `67cc7495` — 163 and 67
+commits. The pair matters: Hermod master needs the newer Styx or `CBORValue` is
+missing and nothing builds, which a Hermod-only bump would have discovered as a
+compile error rather than as a decision.
+
+`against-hermod-master` had been green four nights running, which is the job that
+exists to answer "is the pin safe to advance". It answered honestly for what it
+measures — the in-process tests and the 48 harnesses, on both platforms — but it
+does **not** run Autobahn or h2spec against master. The one number anybody had
+reason to expect would move was the one number that watchman does not watch.
+
+**Autobahn fell from 517/517 to 481/517, and that is the point of the bump.**
+
+Hermod `eb7bf410` taught `WebSocketDeflate.ShouldAccept` to parse the
+`Sec-WebSocket-Extensions` offer. Before it, the method returned true for any
+value whose text merely contained `permessage-deflate`; the parameters were never
+read. Offered
+
+    permessage-deflate; client_no_context_takeover; server_max_window_bits=9
+
+— the client capping the window this *server* may compress with — it answered
+"accepted" and then compressed with the full 15-bit window. A peer that had sized
+its inflate window to 9 bits could not have decoded those messages. RFC 7692
+§7.1.2.1 requires a server that cannot satisfy an offer to decline it, and
+`DeflateStream` exposes no control over `windowBits`, so 9 is not ours to
+promise.
+
+Autobahn scored that OK for years because Python's zlib inflates with a large
+window regardless and never notices the difference. The 36 cases of sections 13.3
+and 13.5 (18 each, counted from `index.json` rather than assumed) now report
+`UNIMPLEMENTED` — Autobahn's word for "the server declined the extension" — and
+the run carries zero FAILED / WRONG CODE / UNCLEAN.
+
+So the floor in `tests/autobahn.sh` went from 517 to **481**. Lowering a floor is
+the move that should always be suspicious, which is why the previous revision of
+that comment block had already written the prediction down:
+
+> The fix is on Hermod master. When the pin advances past it this run will drop
+> to 481 and FAIL against this floor -- on purpose. That failure is the prompt to
+> lower it to 481 deliberately, with the reason recorded, rather than having the
+> number quietly slip.
+
+It dropped to exactly 481. A floor that predicts its own next value and then
+meets it is doing the job a floor is for.
+
+**The corroboration is the part worth keeping.** The HTTP/1.1 sibling — a
+separate implementation, 24 files against 6, whose
+`WebSocketPerMessageDeflate.TryNegotiateAsServer` always parsed the offer and was
+never wrong about this — reports 481/517 with a verdict breakdown identical to
+the digit: 476 OK, 3 INFORMATIONAL, 2 NON-STRICT, 36 UNIMPLEMENTED. Two
+independently written stacks converging on the same number is a stronger result
+than either of them scoring 517, and it is the first time these two have been
+measured against the same foreign suite at all.
+
+That makes six for the running tally of numbers in this project that looked like
+corroboration and were not: "Windows 48/48" (default modes only), "case 12.3.3"
+(a stdout buffer boundary), "641 tests" (a list-count off by two), "257 checks"
+(58 vs 59 by platform), and now "Autobahn 517/517" — bought by accepting an offer
+we could not honor. A seventh turned up while fixing this one, in the space of a
+single afternoon: the new negotiation test reported green against the *unfixed*
+HTTP/3 copy, because `dotnet build` on the test project alone had not rebuilt
+`Hermod.dll`. A full `dotnet build Hermod.slnx` turned it red with 16 failed
+assertions, which is what a test proving something is supposed to look like.
+
+**What the fix brought with it.** `eb7bf410` shipped with no test: its only
+witness was this Autobahn score — nightly, in Docker, HTTP/2 only. The HTTP/3
+copy of `WebSocketDeflate.cs` (byte-identical but for its namespace line, and
+covered by no foreign suite whatsoever) carried the same bug and could not be
+fixed responsibly on that basis. Hermod `8405935e` closes both halves:
+`WebSocketDeflateNegotiationTests` asserts 21 offers against **both** copies plus
+a direct copy-versus-copy comparison, and a derived fixture under
+`Hermod.Tests.HTTP3` makes it run in the HTTP/3 repository's gate too, since both
+repositories select their tests by fully-qualified name.
+
+Verified here: 215/215 in-process tests (213 + the two new ones), 48/48 harness
+runs, Autobahn 481/517 with 0 hard failures under WSL/Debian, floor met exactly.
+
 The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**

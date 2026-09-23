@@ -180,7 +180,7 @@ Both re-measured by the nightly on **2026-08-13**, not merely remembered:
 | Suite | Scope | Result |
 |---|---|---|
 | [h2spec](https://github.com/summerwind/h2spec) 2.6.0 | RFC 9113 + RFC 7541 | **146/146**, four times over — TLS `h2` *and* cleartext `h2c`, on Windows *and* Debian 13 |
-| [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) | RFC 6455 + RFC 7692 | **517/517**, the full suite including `permessage-deflate` |
+| [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) | RFC 6455 + RFC 7692 | **481/517** + 36 declined, the full suite including `permessage-deflate` — the declines are `server_max_window_bits=9` offers this server cannot honor and therefore must refuse (RFC 7692 §7.1.2.1) |
 
 Autobahn drives [`tests/autobahn-server`](tests/autobahn-server), which exposes the same
 `WebSocketConnection` framing production uses over a plain-TCP tunnel behind a minimal HTTP/1.1

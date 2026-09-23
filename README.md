@@ -15,9 +15,10 @@ everything hand-rolled). Hermod is pulled in here as a git submodule under
   the live demo host;
 - **external-conformance drivers** — [h2spec](https://github.com/summerwind/h2spec)
   (**146/146** over `h2` + `h2c`) and the
-  [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) (**517/517**).
+  [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite) (**481/517**,
+  the other 36 declined rather than failed — see [Test](#test)).
 
-The bulk of the coverage — **213 NUnit unit + integration tests** — lives with
+The bulk of the coverage — **215 NUnit unit + integration tests** — lives with
 the stack in Hermod (`HermodTests/HTTP2/`); see the [Test](#test) section.
 
 📖 **The stack's own reference** — the API, the RFC-compliance matrix, the
@@ -65,7 +66,7 @@ HTTP/2 — "h2c" — with prior knowledge, no TLS).
 
 ## Test
 
-Most of the coverage is **213 NUnit tests** under
+Most of the coverage is **215 NUnit tests** under
 [`libs/Hermod/HermodTests/HTTP2/`](libs/Hermod/HermodTests/HTTP2) — the
 HPACK/Huffman codec and stream state machine, plus the full in-process
 integration matrix (streaming bodies + trailers, RFC 9111 caching, auth/mTLS,
@@ -107,7 +108,7 @@ tests/h2spec.sh   # builds, starts the demo, runs h2spec on both transports
 full h2spec walkthrough, [`tests/README.md`](tests/README.md) for the harness
 layout, and [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the conformance breakdown.
 
-The WebSocket framing (RFC 6455) likewise passes **517/517** cases of the
+The WebSocket framing (RFC 6455) likewise passes **481/517** cases of the
 canonical [Autobahn TestSuite](https://github.com/crossbario/autobahn-testsuite)
 — the full suite, including `permessage-deflate` (RFC 7692) compression —
 via `tests/autobahn.sh` (Docker), with the critical
@@ -171,7 +172,7 @@ HTTP2ConformanceTests/               solution HTTP2.slnx (at the repo root)
 │   │   │   ├── Client/              HTTP2ClientConnection + HTTP2Client + caching client + pool
 │   │   │   ├── WebSocket/           RFC 6455 + RFC 7692 framing over IHTTP2Tunnel
 │   │   │   └── Auth/                RFC 9110 §11 framework + Basic/Bearer/Digest/Token schemes
-│   │   └── HermodTests/HTTP2/       the 213 NUnit tests + shared fixtures (H2, TestH2Server,
+│   │   └── HermodTests/HTTP2/       the 215 NUnit tests + shared fixtures (H2, TestH2Server,
 │   │                                H2Raw, MockH2Server, KestrelH2Server)
 │   └── Styx/                        ← git submodule (Vanaheimr Styx — Hermod's dependency)
 ├── Demo/                            runnable demo host (→ Hermod, Styx) + example handlers
@@ -201,9 +202,9 @@ interop reference peers, and the RFC list — is documented next to the code in
 
 ## Status & roadmap
 
-The stack is HTTP/2 feature-complete and verified end-to-end — **213 NUnit
+The stack is HTTP/2 feature-complete and verified end-to-end — **215 NUnit
 tests** + **48 live-host harness runs** + **h2spec 146/146** + **Autobahn
-517/517**. The first two run per push on Windows and Debian 13
+481/517**. The first two run per push on Windows and Debian 13
 ([`ci.yml`](.github/workflows/ci.yml)), the latter two nightly
 ([`nightly.yml`](.github/workflows/nightly.yml)), which is also where the h2spec
 and Autobahn numbers get re-measured rather than merely remembered.

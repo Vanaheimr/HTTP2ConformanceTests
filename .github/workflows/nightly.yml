@@ -1,6 +1,6 @@
 name: Nightly
 
-# ci.yml gates every push with everything this repository carries itself: the 212
+# ci.yml gates every push with everything this repository carries itself: the
 # in-process HTTP/2 tests and the 48 raw-frame harness scenarios. This workflow
 # adds the two external conformance suites it does not carry — h2spec (RFC 9113 +
 # RFC 7541, 146 cases over both transports) and the Autobahn TestSuite (RFC 6455 +
@@ -15,7 +15,7 @@ name: Nightly
 # What they are NOT is flaky, and this is where this workflow differs from the
 # sibling repository's nightly: that one reaches eight foreign servers over the
 # public internet and is deliberately informational. These two drive OUR server
-# over loopback, with the suite the only foreign part. 146/146 and 517/517 are
+# over loopback, with the suite the only foreign part. 146/146 and 481/517 are
 # exact numbers, so both jobs gate on their result — a nightly that reports a
 # number without failing on it is a report nobody reads.
 #
@@ -302,7 +302,7 @@ jobs:
       - name: Build
         run: dotnet build HTTP2.slnx
 
-      - name: Test (213 HTTP/2 tests, against upstream master)
+      - name: Test (HTTP/2 tests, against upstream master)
         timeout-minutes: 30
         run: dotnet test libs/Hermod/HermodTests/HermodTests.csproj --no-build --filter "FullyQualifiedName~Hermod.Tests.HTTP2" --logger "console;verbosity=normal"
 

@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-213 NUnit unit + integration tests live with the stack in Hermod
+215 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,11 +54,12 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **213 NUnit tests** in
+**Tests:** most coverage is the **215 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
-`tests/h2spec.sh` (146/146 over h2 + h2c) and `tests/autobahn.sh` (517/517).
+`tests/h2spec.sh` (146/146 over h2 + h2c) and `tests/autobahn.sh` (481/517 —
+the 36 are RFC-required declines, see the floor in that script).
 **One runner each, in bash** — including on Windows, under the Git Bash that
 ships with Git for Windows. Each used to have a PowerShell twin, and that pair
 is the subject of the `$Args` entry under *Harnesses that differed on Linux*
@@ -229,14 +230,14 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **213/213** NUnit tests and **48/48** harness runs on *both*
+**Verification:** **215/215** NUnit tests and **48/48** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
 differ there are settled, and *Harnesses that differed on Linux* below records
 what each turned out to be, because none of the three was what it first looked
 like. **h2spec 146/146** and
-**Autobahn 517/517** (full RFC 6455 + permessage-deflate) are no longer "as last
+**Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since about one night in eight it hangs rather than reporting a
 result, which is open and written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
@@ -280,7 +281,7 @@ had noticed either:
   passed throughout precisely because a pseudo-header *has* to be decoded to be
   recognised, so that path always decoded first. Pinned by
   `RejectedTrailers_DoNotDesyncHPACK` in Hermod's `RfcPolishTests` — the 212
-  in-process tests had missed it, and it is 213 now.
+  in-process tests had missed it, and that run took them to 213.
 - `h2priority urgency-header` and `priority-update` — **harness defects, not
   flakiness to be tuned away.** Both wanted to observe which stream the writer
   prefers when several are sendable, and neither ever established that state:

@@ -54,30 +54,38 @@ run_timeout=1200
 # The floor this run must not fall below, and the reason it is a floor rather
 # than an expected total.
 #
-# 517 today, and that is deliberately NOT 481.
+# 481 since 2026-09-23, lowered from 517 -- and lowered because the server got
+# STRICTER. That is the one direction in which a falling number is the right
+# answer, so the reason belongs here rather than in a changelog nobody opens.
 #
-# The pin still carries the old WebSocketDeflate.ShouldAccept, which accepted
-# any offer without parsing its parameters -- including server_max_window_bits=9,
-# which it then ignored and compressed with 15 bits anyway. Against that code
-# Autobahn really does report 517/517, so 517 is the honest floor for what this
-# repository currently builds.
+# The pin used to carry a WebSocketDeflate.ShouldAccept that accepted any offer
+# whose text merely contained "permessage-deflate", parameters unread. Faced with
+# server_max_window_bits=9 -- the client capping the window this server may
+# compress with -- it answered "accepted" and then compressed with the full
+# 15-bit window anyway, which a peer that had sized its inflate window to 9 bits
+# could not have decoded. Autobahn scored that 517/517, because Python's zlib
+# inflates with a large window regardless and so never notices.
 #
-# The fix is on Hermod master. When the pin advances past it this run will drop
-# to 481 and FAIL against this floor -- on purpose. That failure is the prompt to
-# lower it to 481 deliberately, with the reason recorded, rather than having the
-# number quietly slip. Measured: 481/517 against the fixed library, identical to
-# what the HTTP/1.1 sibling reports, the 36 difference being sections 13.3 and
-# 13.5 declined rather than falsely accepted.
+# Hermod eb7bf410 made it parse the offer and decline what it cannot deliver --
+# RFC 7692 Section 7.1.2.1 requires that rather than permitting it -- and the pin
+# bump of 2026-09-23 brought the fix here. The 36 cases in sections 13.3 and 13.5
+# now report UNIMPLEMENTED instead of OK. Nothing regressed: the missing 36 were
+# the price of claiming a capability we did not have, and 517 was never a number
+# this server had earned.
+#
+# The HTTP/1.1 sibling reports the same 481/517 from an implementation written
+# independently of this one, which is what two correct readings of one RFC ought
+# to look like.
 #
 # UNIMPLEMENTED is the one non-passing verdict tolerated, because it is not a
-# failure: it means the server declined an extension offer it cannot satisfy,
-# which RFC 7692 Section 7.1.2.1 requires rather than permits. Everything else
-# -- FAILED, WRONG CODE, UNCLEAN -- fails the run outright no matter what the
-# count says, so the floor can never launder a real regression into a pass.
+# failure: it means the server declined an extension offer it cannot satisfy.
+# Everything else -- FAILED, WRONG CODE, UNCLEAN -- fails the run outright no
+# matter what the count says, so the floor can never launder a real regression
+# into a pass.
 #
 # Raise it when the number goes up. A floor that is never raised is a ratchet
 # that has rusted.
-min_pass=517
+min_pass=481
 
 while [ $# -gt 0 ]; do
     case "$1" in

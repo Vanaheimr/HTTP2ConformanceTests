@@ -18,6 +18,8 @@
 namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
 {
 
+    using org.GraphDefined.Vanaheimr.Hermod.HTTP;
+
     using System.Net;
     using System.Security.Cryptography;
     using System.Security.Cryptography.X509Certificates;

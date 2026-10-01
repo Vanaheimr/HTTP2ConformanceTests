@@ -6,10 +6,10 @@ test drivers** for the from-scratch HTTP/2 stack (built directly on `SslStream`
 itself lives in the Vanaheimr **Hermod** library, pulled in here as a git
 submodule under `libs/Hermod/Hermod/HTTP2/` (split by concern into `Core` — the
 direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
-`Server`, `Client`, `WebSocket`, and `Auth`). This repo adds the `Demo/` host,
+`Server`, `Client` and `WebSocket`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-215 NUnit unit + integration tests live with the stack in Hermod
+402 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -27,7 +27,7 @@ in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 ## Build & Run
 
 The HTTP/2 stack lives in the **Hermod** submodule (`libs/Hermod/Hermod/HTTP2/`,
-split into `Core`/`Server`/`Client`/`WebSocket`/`Auth`); this repo wraps it with
+split into `Core`/`Server`/`Client`/`WebSocket`); this repo wraps it with
 the runnable `Demo`, the remaining live-host harnesses under `tests/`, and the
 root-level solution `HTTP2.slnx` (which also pulls `Hermod`/`Styx` +
 `HermodTests`/`StyxTests` as dependencies). Clone **with submodules**
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **215 NUnit tests** in
+**Tests:** most coverage is the **402 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **48** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
@@ -75,7 +75,7 @@ not a pass/fail gate, but the baseline any optimisation has to beat. See
 
 The stack lives in the **Hermod** submodule under `libs/Hermod/Hermod/HTTP2/`,
 split by concern into `Core` (shared, direction-neutral), `Server`, `Client`,
-`WebSocket`, and `Auth`; the runnable **`Demo`** (in this repo, `→ Hermod`,
+`WebSocket`; the runnable **`Demo`** (in this repo, `→ Hermod`,
 `Styx`) is the host. Dependency direction is `Core ← Server`, `Core ← Client` —
 Core never references the role-specific code. The concern tables below name the
 primary file(s) per concern; **their paths are relative to
@@ -105,16 +105,15 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field |
 | `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
 | `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
-| `HTTPContentCoding.cs` | RFC 9110 §8.4 content codings in **both** directions (gzip/br/deflate encode *and* decode, with a decompression-bomb bound) — the server compresses through it, the client decodes through it |
 | `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire |
-| `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the `Auth/` schemes, which only validate |
+| `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the validating schemes, which now live in Hermod's shared `HTTP/Authentication/Schemes/` |
 | `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
 | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocketConnection.cs` doesn't depend on the server's concrete tunnel |
 | `WebSocketConnection.cs` (+ `WebSocketDeflate.cs`, `WebSocketOpcode.cs`, `WebSocketMessage.cs`, `WebSocketRole.cs`, `WebSocketProtocolException.cs`) | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) + RFC 7692 permessage-deflate over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` |
 | `HTTPSemantics.cs` (+ `HTTPResource.cs`) | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
-| `HTTPAuthentication.cs` (+ `HTTPAuthenticator.cs`, `IHTTPAuthenticationScheme.cs`, `{Basic,Bearer,Digest,Token}AuthenticationScheme.cs`, `HTTPAuthenticatedIdentity.cs`, `HTTPAuthParams.cs`) | RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization) + Basic (RFC 7617), Bearer (RFC 6750), Digest (RFC 7616) & Token (non-standard) schemes, store-agnostic (app-supplied validators) |
+| `HTTPAuthentication.cs` | The HTTP/2 side of the RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization). The framework itself and the Basic (RFC 7617) / Bearer (RFC 6750) / Digest (RFC 7616) / Token schemes moved **out** of `HTTP2/` on 2026-10-01 into Hermod's version-independent `HTTP/Authentication/` — see the pin-bump note in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) |
 | `HTTPCache.cs` (+ `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs`) | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
 
 **`Server/`** — references `Core`:
@@ -140,7 +139,7 @@ WebSocket value types, and the auth schemes are each their own file).
 |---|---|
 | `Program.cs` | Demo host (TLS `h2` on :8443 + cleartext `h2c` on :8080) + self-signed cert + example request/connect/resource handlers (the app-logic plug-in point), plus a `ConsoleEventListener` showing the observability seam from the consumer side |
 
-The stack (`Core`/`Server`/`Client`/`WebSocket`/`Auth` in Hermod) and the `Demo`
+The stack (`Core`/`Server`/`Client`/`WebSocket` in Hermod) and the `Demo`
 here all share the `org.GraphDefined.Vanaheimr.Hermod.HTTP2` namespace (the
 Vanaheimr/Hermod convention).
 
@@ -230,7 +229,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **215/215** NUnit tests and **48/48** harness runs on *both*
+**Verification:** **402/402** NUnit tests and **48/48** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to

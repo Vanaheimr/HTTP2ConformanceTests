@@ -3328,6 +3328,74 @@ The original hand-off TODO is fully cleared (everything above under Current
 State is done + verified). What follows is a forward-looking roadmap —
 **analyzed 2026-07-18, nothing here is started yet.**
 
+## 2026-10-01 — Advance the pins: 402 tests, and the auth framework leaves HTTP/2
+
+Hermod `8405935e` → `5ab74d7f` (151 commits), Styx `67cc7495` → `ba317094` (5).
+The sibling `HTTP3ConformanceTests` moved to the same pair the same day, from
+`87a561d5` — a `fix/ack-cadence` branch tip that master had since absorbed, so
+both repositories now pin the same two commits again.
+
+**Why it was safe to move.** `against-hermod-master` had been green six nights
+running, and today's run tested *exactly* the pair being pinned — `5ab74d7f`
+plus `ba317094`, printed in the job's own summary — on both legs. That is the
+job's whole purpose, and it is worth pinning what was measured rather than
+whatever master happens to be at the moment of the bump; the two are not the
+same commit for long.
+
+**What that job does not measure, so it was measured here.** The same caveat as
+the previous bump: the nightly runs neither Autobahn nor h2spec against master.
+Both were run locally before the push.
+
+| | |
+|---|---|
+| build | 0 errors |
+| in-process tests | **402/402** (was 215) |
+| harness runs | **48/48** |
+| Autobahn | **481/517**, 36 declined (UNIMPLEMENTED), **0 hard failures** — floor met exactly |
+| h2spec | **146/146**, over `h2` *and* `h2c` |
+| `tests/h2bench` | **not re-measured.** It compiles, which is the failure mode that created the referee job in the first place, but the figures under *Performance* in `CLAUDE.md` are still the 2026-08-13 ones and a moved writer loop is exactly the kind of change that could shift them |
+
+**215 → 402 is not a counting artifact.** 22 of the 151 commits are a single
+campaign on one question: what happens on a stream that has been reset. A write,
+a header write, a trailer write, a body read, a tunnel's DATA, the DATA writer
+loop's own failure, the frames a peer sent before it read our RST_STREAM, the
+connection window a reset stream left unread, an upload reset at the DATA frame
+that takes it past its `content-length`, and the end of a connection resetting
+every stream still open on it. `HTTP2Connection.cs` gained 1091 lines and
+`HTTP2ClientConnection.cs` 494. The tests arrived with the behaviour, which is
+why the count nearly doubled while the harness count did not move.
+
+**The structural half: `Auth/` is gone from `HTTP2/`.** The authentication
+framework and its four schemes moved to Hermod's version-independent
+`HTTP/Authentication/` (+ `Schemes/`), and `HTTPContentCoding` to
+`HTTP/General/`. `HTTP2/` is now `Core`/`Server`/`Client`/`WebSocket` — four
+concerns, not five. This is the `Core` split's premise being cashed in by
+someone else: code that was direction-neutral turned out to be
+*version*-neutral too, and HTTP/1 and HTTP/3 can now share it. The architecture
+tables in `CLAUDE.md` and the counts in `README.md` were updated with the pin
+rather than after it; this repository had already paid the compile half of the
+move in `4e1c242`, a week before the pin caught up.
+
+**An accidental stress test.** The 48 harness runs, including the two
+timing-sensitive RFC 9218 priority scenarios, happened to execute while four
+orphaned `python3 -c while True: pass` processes and three abandoned
+`HermodTests` runs from an unrelated experiment were saturating the machine.
+48/48 under that load is a stronger result than 48/48 on an idle box, and it is
+direct evidence that the 2026-08-13 rewrite of those two scenarios worked: they
+park both streams window-blocked and release them with a single SETTINGS frame,
+so they no longer depend on the scheduler being quick. Autobahn also met its
+floor under the same load. Only the h2spec run and the HTTP/3 suite had a quiet
+machine.
+
+**The HTTP/3 side was the cheap half.** Not one of the 151 commits touches
+`Hermod/HTTP3` or `Hermod/QUIC` — the `fix/ack-cadence` work was already in its
+old pin — so that bump is shared code only: **643/643** in-process tests (was
+636) and **38/38** harness checks, Release, on Windows.
+
+One loose end found and left alone: `HTTP1ConformanceTests` pins `531c0ed5`,
+which is now 55 commits behind master itself. Its own nightly is the thing that
+should vote on that.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

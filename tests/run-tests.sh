@@ -16,7 +16,7 @@
 # talk to the running Demo host on https://localhost:8443. They print per-check
 # marks but exit 0 regardless, so their output is scanned for the failure mark
 # to decide pass/fail. Each is invoked once per scenario (mode [+ sub-case]),
-# 48 runs in total.
+# 49 runs in total.
 #
 # (The formerly self-contained harnesses now live as NUnit tests in Hermod's
 #  HermodTests/HTTP2/ -- see tests/README.md.)
@@ -202,7 +202,7 @@ section "RFC 9110 semantics"
 run_harness "h2semantics" "h2semantics" exitcode
 
 section "Attack / hardening scenarios (h2attack)"
-for m in contcount contbytes ping settings rapidreset streamid-exhaustion outbound-headerlimit; do
+for m in contcount contbytes ping settings rapidreset streamid-exhaustion outbound-headerlimit headerlist-431; do
     run_harness "h2attack $m" "h2attack" nocross "$m"
 done
 for c in missingpath missingmethod missingscheme empty-path uppercase connection \

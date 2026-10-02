@@ -30,7 +30,7 @@ pass/fail summary. Flags:
 - `--no-build` — skip the build step (assumes a current build).
 - `--filter <substr>` — only run harnesses whose label/project matches.
 
-Current status: **48/48 harness runs pass on both platforms** (each self-reports
+Current status: **49/49 harness runs pass on both platforms** (each self-reports
 its own check count — e.g. h2semantics 66/66, plus the h2attack / h2connect /
 h2priority raw-frame scenarios), and CI gates on both.
 

@@ -3456,6 +3456,81 @@ quiet machine can replace them. #63's new writer loop did not touch the open
 per-request serialization: `requestStartLock` is still held across the HEADERS
 write.
 
+## 2026-10-02 — Advance the Hermod pin past #71: a header list too large is a 431, and `contbytes` has to reach 64 KiB
+
+Hermod `22f69747` → `65b26095` (12 commits), the merge of #71, with #72 before
+it. Styx stays at `ba317094`. The four non-HTTP/2 commits in the range touch
+Modbus/TLS, the HTTP/1 server's header timeout and the HTTP/1 WebSocket server —
+nothing under `HTTP2/`.
+
+**Not master's tip, and why.** Master is at `f65da5c9`, the merge of #69 on top
+of this one, and that commit **deadlocks one of Hermod's own HTTP/2 tests**,
+every time: `ClientConnectionEndBetweenFramesTests.AStreamedResponse_Fails_WhenTheConnectionEnds(ClientCloses,
+IgnoreTheToken)`. The first full run here sat idle for half an hour; a second
+with `--blame-hang` dumped after three idle minutes and named the test. The
+bisection, with the fixture run on its own:
+
+| Hermod | fixture |
+|---|---|
+| #69's head `ae6b0c3c` | **8/8**, ~100 ms |
+| `ae6b0c3c` + `cf82dd33` (#72, no #71), merged locally | **hangs** |
+| `f65da5c9` (master) | **hangs** |
+
+So it is #69 × #72, and neither PR's CI saw the other. #72 made `CloseAsync`
+wait for the read loop (`await runLoop`), so that an owned transport is closed
+before `Closed` completes. #69's test passes a transport it owns itself, whose
+reads ignore the cancellation token, and writes the frame that would release the
+pending read only *after* `await CloseAsync()` returns. Each side waits for the
+other. It is also more than a test problem: on a caller-owned transport whose
+reads ignore the token — the very transport #69 was written for —
+`CloseAsync` now never returns. That is Hermod's to settle. Until then the pin
+stays on the commit that has #71, which this bump is about, and not #69.
+
+**Why this bump has a harness change in it.** #71 changed what the server does
+with a large header block. It now states `SETTINGS_MAX_HEADER_LIST_SIZE =
+32768`, measures that limit on the *decoded* list (RFC 9113 §6.5.2), answers a
+request past it with **431** on its own stream, and ends the connection with
+`GOAWAY ENHANCE_YOUR_CALM` only when a block's *compressed* bytes pass twice the
+limit — 65 536 — or at the 64-frame CONTINUATION cap. Before, it ended the
+connection once the compressed bytes passed 8 192.
+
+`h2attack contbytes` sent HEADERS + 40 CONTINUATIONs of 1 KiB, 41 KiB in all,
+written against the old 8 KiB bound. Under #71 that is inside both bounds, and
+run against #71's head it reported exactly what was predicted:
+
+    [attack] ✗ FAIL: no GOAWAY within 5 s (flood not mitigated)
+
+— observed, not assumed: the old scenario was run against the PR before the
+change. It now sends HEADERS + 20 CONTINUATIONs of 4 KiB. The block passes
+65 536 bytes at the 16th CONTINUATION, 21 frames in all, so it is the byte
+bound that trips, not the frame cap — `contcount`'s empty-CONTINUATION flood
+still covers that, unchanged. The new `contbytes` passes on both the old pin and
+the new one.
+
+**And one scenario more: `headerlist-431`.** It sends a request carrying a
+single 40 KiB field — a decoded list past 32 768, a compressed block well under
+65 536, sent as HEADERS + CONTINUATIONs of at most 16 KiB. It expects `:status
+431`, then a follow-up request on stream 3 on the same connection expecting 200.
+The follow-up checks two things at once: that the 431 is stream-scoped, and that
+the refused block was still *decoded* — otherwise the HPACK tables would fall
+out of step and the next request would die with `COMPRESSION_ERROR`, the failure
+`trailers no-endstream` once hid. It fails on the old pin (GOAWAY at 8 KiB,
+reported as "no response … within 5 s") and passes on the new one. The suite is
+**49** runs now, and the counts in `CLAUDE.md`, `README.md`, `tests/README.md`,
+`run-tests.sh` and both workflows moved with it.
+
+**Measured here, Windows** — no `against-hermod-master` run has seen this pair
+yet either:
+
+| | |
+|---|---|
+| build | 0 errors |
+| in-process tests | **567/567** (was 510 — the tests #71 and #72 brought with them), no hang |
+| harness runs | **49/49** |
+| h2spec | **146/146**, over `h2` *and* `h2c` |
+| Autobahn | **not measured** — this box has no Docker. #71 does not touch the WebSocket path; the nightly will re-measure it |
+| `tests/h2bench` | builds; **not run** — the machine was as loaded as for the last bump, so a figure would say nothing |
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

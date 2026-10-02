@@ -23,7 +23,8 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 // Raw HTTP/2 flood-attack client. Verifies that the server tears the connection
 // down with GOAWAY ENHANCE_YOUR_CALM for each of:
 //   contcount  - a flood of empty CONTINUATION frames (no END_HEADERS)
-//   contbytes  - a header block that overruns MAX_HEADER_LIST_SIZE via CONTINUATION
+//   contbytes  - a header block whose compressed bytes pass twice
+//                MAX_HEADER_LIST_SIZE via CONTINUATION (within the frame cap)
 //   ping       - a PING flood
 //   settings   - a SETTINGS flood
 //   legit      - a normal request still succeeds (regression)
@@ -54,6 +55,10 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 //   outbound-headerlimit - advertise a tiny MAX_HEADER_LIST_SIZE in our own
 //     SETTINGS; the demo's normal "/" response headers exceed it (its 500
 //     fallback doesn't) -> :status 500 instead of 200.
+//   headerlist-431 - a request whose decoded header list (one ~40 KiB field)
+//     passes the server's MAX_HEADER_LIST_SIZE (32768) while its compressed
+//     block stays under twice that -> :status 431 (a stream-level answer), and
+//     the connection stays usable for a following request.
 
 var mode = args.Length > 0 ? args[0] : "contcount";
 
@@ -190,11 +195,15 @@ switch (mode)
         break;
 
     case "contbytes":
-        // HEADERS (no END_HEADERS) + CONTINUATION frames with 1 KiB payload each,
-        // overrunning MAX_HEADER_LIST_SIZE (8192) after ~9 frames.
-        await Send(RawHeaders(1, new byte[1024], endHeaders: false));
-        for (var i = 0; i < 40; i++)
-            await Send(RawCont(1, new byte[1024], endHeaders: false));
+        // HEADERS (no END_HEADERS) + CONTINUATION frames with 4 KiB payload each.
+        // The server holds a block's compressed bytes up to twice its
+        // MAX_HEADER_LIST_SIZE (2 x 32768 = 65536) and ends the connection past
+        // that; HEADERS + 16 CONTINUATIONs (69632 bytes) cross it. 21 frames in
+        // all stays well under the 64-frame CONTINUATION cap, so it is the byte
+        // bound that trips here, not the frame count (that is contcount's job).
+        await Send(RawHeaders(1, new byte[4096], endHeaders: false));
+        for (var i = 0; i < 20; i++)
+            await Send(RawCont(1, new byte[4096], endHeaders: false));
         break;
 
     case "ping":
@@ -500,6 +509,61 @@ switch (mode)
         var headerLimitStatus = await OpenAndWait(1, "/");
         Console.WriteLine($"[attack] oversized response headers -> :status {headerLimitStatus}  " +
                           (headerLimitStatus == "500" ? "✓ PASS (fell back to a response that fits)" : "✗ FAIL"));
+        return;
+    }
+
+    case "headerlist-431":
+    {
+        // One 40 KiB field: 40960 + 32 per RFC 9113 §6.5.2 is past the 32768 the
+        // server states, but the block is far below the 65536 compressed bytes
+        // at which it would end the connection instead. The block goes out as
+        // HEADERS + CONTINUATIONs of at most 16384 bytes (the default
+        // SETTINGS_MAX_FRAME_SIZE). It must still be decoded server-side, or
+        // the follow-up request below would find the HPACK tables out of step.
+        var block = encoder.EncodeHeaderBlock(
+        [
+            (":method", "GET"), (":scheme", "https"), (":authority", "localhost:8443"), (":path", "/"),
+            ("x-large", new String('a', 40 * 1024))
+        ]);
+        Console.WriteLine($"[attack] header block: {block.Length} compressed bytes");
+
+        const int maxFrame = 16384;
+        for (var offset = 0; offset < block.Length; offset += maxFrame)
+        {
+            var chunk = block[offset..Math.Min(offset + maxFrame, block.Length)];
+            var last  = offset + maxFrame >= block.Length;
+            await Send(offset == 0
+                ? new HTTP2Frame {
+                      Type = HTTP2FrameType.HEADERS, StreamId = 1, Payload = chunk,
+                      Flags = HTTP2FrameFlags.END_STREAM | (last ? HTTP2FrameFlags.END_HEADERS : HTTP2FrameFlags.NONE)
+                  }
+                : RawCont(1, chunk, endHeaders: last));
+        }
+
+        try
+        {
+            var tooLarge = await StatusFor(1).Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Console.WriteLine($"[attack] oversized header list -> :status {tooLarge}  " +
+                              (tooLarge == "431" ? "✓" : "✗ unexpected status"));
+        }
+        catch (TimeoutException)
+        {
+            Console.WriteLine("[attack] ✗ FAIL: no response to the oversized header list within 5 s");
+            return;
+        }
+
+        // 431 is a stream-level answer: the connection must carry on.
+        try
+        {
+            var followUp = await OpenAndWait(3, "/");
+            Console.WriteLine($"[attack] connection still alive -> :status {followUp}  " +
+                              (followUp == "200" ? "✓ PASS" : "✗ FAIL"));
+        }
+        catch (TimeoutException)
+        {
+            Console.WriteLine("[attack] ✗ FAIL: connection died after the 431 (should be stream-scoped)");
+        }
+
         return;
     }
 }

@@ -1,7 +1,7 @@
 name: Nightly
 
 # ci.yml gates every push with everything this repository carries itself: the
-# in-process HTTP/2 tests and the 48 raw-frame harness scenarios. This workflow
+# in-process HTTP/2 tests and the 49 raw-frame harness scenarios. This workflow
 # adds the two external conformance suites it does not carry — h2spec (RFC 9113 +
 # RFC 7541, 146 cases over both transports) and the Autobahn TestSuite (RFC 6455 +
 # permessage-deflate, 517 cases).
@@ -308,9 +308,9 @@ jobs:
 
       # Both legs now. This used to be Windows-only because the Linux harness
       # suite had three differences of its own that would have drowned the
-      # signal about upstream; all three are settled and both legs are 48/48,
+      # signal about upstream; all three are settled and both legs are 49/49,
       # so restricting it would now hide exactly the case it was protecting.
-      - name: Harness suite (48 runs)
+      - name: Harness suite (49 runs)
         timeout-minutes: 30
         shell: bash
         run: tests/run-tests.sh --no-build

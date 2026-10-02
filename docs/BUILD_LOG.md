@@ -3396,6 +3396,66 @@ One loose end found and left alone: `HTTP1ConformanceTests` pins `531c0ed5`,
 which is now 55 commits behind master itself. Its own nightly is the thing that
 should vote on that.
 
+## 2026-10-02 — Advance the Hermod pin past #70: a buffered response has a size limit now
+
+Hermod `5ab74d7f` → `22f69747` (54 commits), the merge of Hermod PR #70. Styx
+stays at `ba317094` — it has not moved.
+
+**Why this bump, and why this commit.** #70 gave `HTTP2ClientOptions` a
+`MaxResponseBodySize`, 16 MiB by default: a buffered response
+(`SendRequestAsync` / `StartRequestAsync`) whose declared `content-length` or
+received body exceeds it fails with `HTTP2ResponseTooLargeException`, and the
+client resets the stream with `RST_STREAM CANCEL`. `tests/h2bench`'s throughput
+scenario fetches a 64 MiB `/large` exactly that way, with default options, so on
+the new pin it stops with
+
+    HTTP2ResponseTooLargeException: Declared content-length 67108864 exceeds the
+    16777216-byte limit of a buffered response (MaxResponseBodySize).
+
+— observed, not predicted: the unchanged bench was run against the new pin
+first. The bench now passes `MaxResponseBodySize = (bodyMiB + 16) MiB`, the same
+headroom its server already gets through `MaxRequestBodySize`, so `--mib` keeps
+working in both directions. `tests/h2interop` only fetches `/` and needs
+nothing. The pin is the merge commit itself rather than master's tip: what
+landed on top of it this morning touches HTTP/1, the HTTP/1 WebSocket server and
+Modbus — nothing under `HTTP2/` — and no nightly has seen it yet.
+
+**What the referee had not seen.** Unlike the last two bumps, no
+`against-hermod-master` run has tested this pair — #70 and the five HTTP/2 PRs
+merged with it (#62–#68) all landed after the last nightly. So everything was
+measured here, Windows unless noted:
+
+| | |
+|---|---|
+| build | 0 errors |
+| in-process tests | **510/510** (was 402) |
+| harness runs | **48/48** |
+| h2spec | **146/146**, over `h2` *and* `h2c` |
+| Autobahn | **481/517**, 36 declined (UNIMPLEMENTED), **0 hard failures** — floor met exactly (WSL/Debian) |
+| `tests/h2bench` throughput | runs to completion over `h2` and `h2c` |
+
+**402 → 510** comes with eight HTTP/2 PRs, seven of them on the client: a
+stalled reader no longer holds up the other streams on its connection (#62);
+one client writer loop sends request bodies and tunnel writes by RFC 9218
+priority (#63); a peer's first `INITIAL_WINDOW_SIZE` moves open windows from
+65 535, not from our 1 MiB (#64); `PRIORITY_UPDATE` from a server is a
+connection error, and connection errors go out as GOAWAY (#65); an unread
+tunnel or streamed response holds no more than its stream window (#66); the end
+of a connection resets every stream on it (#67); a stream a GOAWAY leaves
+unprocessed closes at once (#68); and the response limit above (#70).
+
+**The bench's numbers were not re-baselined, deliberately.** Throughput came out
+at 30–54 MiB/s over TLS and 55–86 MiB/s over h2c, against the ~260 MiB/s under
+*Performance* in `CLAUDE.md`. That gap is the machine, not the pin: other
+sessions' test hosts were holding the CPU at 100 %, and three interleaved
+old-pin/new-pin rounds (the old pin built separately, since it cannot compile
+the new option) put both pins in the same band — old 30.0–54.0 / 70.5–86.4,
+new 29.7–49.3 / 55.4–79.5 MiB/s, TLS / h2c. Allocation is unchanged at ~6.0×
+the payload (404 MB per 64 MiB transfer). The 2026-08-13 figures stay until a
+quiet machine can replace them. #63's new writer loop did not touch the open
+per-request serialization: `requestStartLock` is still held across the HEADERS
+write.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

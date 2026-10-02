@@ -224,7 +224,14 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
 
     var authority = $"localhost:{port}";
     var scheme    = cleartext ? URIScheme.http : URIScheme.https;
-    var conn      = await HTTP2Client.ConnectAsync("localhost", port, (_, _, _, _) => true, Cleartext: cleartext);
+    // A buffered response is capped at 16 MiB by default (MaxResponseBodySize);
+    // /large is bodyMiB, so the client gets the same headroom as the server's
+    // MaxRequestBodySize above.
+    var conn      = await HTTP2Client.ConnectAsync("localhost", port, (_, _, _, _) => true,
+                                                   Cleartext: cleartext,
+                                                   Options:   new HTTP2ClientOptions {
+                                                                  MaxResponseBodySize = (Int64) (bodyMiB + 16) * 1024 * 1024
+                                                              });
 
     if (Wanted("requests"))
         foreach (var concurrency in new[] { 1, 8, 64 })

@@ -3531,6 +3531,49 @@ yet either:
 | Autobahn | **not measured** — this box has no Docker. #71 does not touch the WebSocket path; the nightly will re-measure it |
 | `tests/h2bench` | builds; **not run** — the machine was as loaded as for the last bump, so a figure would say nothing |
 
+## 2026-10-02 — Advance the Hermod pin past #79: the #69 × #72 hang is settled on both sides
+
+Hermod `65b26095` → `bd34db7c` (six merges on master's first-parent line), the
+merge of #79. Styx stays at `ba317094`. This is the bump the last entry held
+back: `f65da5c9` deadlocked one of Hermod's own HTTP/2 tests, and the pin waited
+for Hermod to settle it.
+
+| Merge | What |
+|---|---|
+| #69 `f65da5c9` | every end of the client's read loop fails what still waits on the connection, even one that comes between two frames |
+| #77 `d3ee5482` | the test side of the hang: the close-between-frames test sends its frame once `CloseAsync` has cancelled the read's token, and awaits `CloseAsync` after that |
+| #75 `14220d15` | the client pool closes a connection drained by a GOAWAY once its requests are done, and on disposal |
+| #76 `8606f3e8` | a response whose `content-length` does not match its DATA is malformed, and refused with `RST_STREAM PROTOCOL_ERROR` |
+| #74 `617aa32a` | Hermod's tests remove the CAs their TLS contexts put in the CA store (tests only) |
+| #79 `bd34db7c` | the product side of the hang: on a transport the caller owns, `CloseAsync` waits for the read loop for one second at most |
+
+**What #79 decided.** Since #72, `CloseAsync` waits for the read loop, so that
+an owned transport is closed after its last read. That wait stays unbounded for
+an owned transport, the only kind `HTTP2Client.ConnectAsync` makes. On a
+transport the caller passed in, a read that ignores the token ends only with the
+server's next bytes or when the caller closes the transport. Waiting for that
+made `CloseAsync` never return when the server sent nothing, and made a caller
+that disposes its stream after `CloseAsync` wait for itself. Now it waits
+`ReadLoopEndTimeout` (1 s, on the options' `TimeProvider`) and returns. The
+connection still fails every waiter when that read does return (#69), and
+`Closed` completes only then.
+
+**Nothing here moved for the harnesses.** Every product change in the range is
+in `HTTP2/Client/` (`HTTP2ClientConnection`, `HTTP2ClientPool`) plus Hermod's
+HTTP/2 README. The server the harnesses and h2spec drive is untouched. The
+in-process count grows by the tests the six merges brought.
+
+**Measured here, Windows:**
+
+| | |
+|---|---|
+| build | 0 errors |
+| in-process tests | **619/619** (was 567), no hang |
+| harness runs | **49/49** |
+| h2spec | **146/146**, over `h2` *and* `h2c` |
+| Autobahn | **not measured** — no Docker on this box, and nothing in the range touches the WebSocket path |
+| `tests/h2bench` | builds; **not run** — the machine is shared with other sessions' test runs |
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

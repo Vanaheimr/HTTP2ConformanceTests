@@ -3574,6 +3574,111 @@ in-process count grows by the tests the six merges brought.
 | Autobahn | **not measured** — no Docker on this box, and nothing in the range touches the WebSocket path |
 | `tests/h2bench` | builds; **not run** — the machine is shared with other sessions' test runs |
 
+## 2026-10-03 — The throughput ceiling is gone, and it was never the lock
+
+Hermod `bd34db7c` → `22768a4a`, Styx unchanged at `ba317094`. Verified at the new
+pin: build 0 errors, **622/622** in-process tests (was 619), **49/49** harness
+runs, **h2spec 146/146** over `h2` *and* `h2c`, **Autobahn 481/517** with 36
+declined and 0 hard failures — floor met exactly. Autobahn is the one the
+previous two bumps deferred for want of Docker, and it was worth closing even
+though its exposure was narrow: since it was last measured at `22f69747` the
+WebSocket files and *both* tunnel files were untouched, and only `HTTP2Stream`
+(+25) and `HTTP2Connection` (+140) sat underneath it.
+
+The substance of this entry is the benchmark.
+
+### What the ceiling was
+
+`CLAUDE.md` had recorded, since 2026-08-13, a per-connection throughput ceiling
+of ~6 100 / ~9 700 / ~5 900 req/s at 1 / 8 / 64 concurrent — the *sag* at 64
+being its signature — and attributed it to `requestStartLock` being held across
+the HEADERS write. It is real and still reproducible: checked out at the pin of
+that era, `efe3b4b` / Hermod `69497656` / Styx `e961709d`, the same bench on this
+machine gives **6 202 / 7 710 / 5 166 req/s** and a send path of **20.6 ms** p50
+at 64 concurrent. At the current pin the same run gives **7 518 / 16 343 /
+16 039** and **0.037 ms**.
+
+### The measurement error that nearly hid it, and then nearly faked it
+
+The first attempt compared `h2bench -- probe` at the new pin against the *full
+default run* figure in `CLAUDE.md`. Probe-only at the **old** pin reports
+**0.204 ms** at 64 concurrent, not 20.6 ms — the bottleneck appears only when
+`requests`, `throughput` and `upload` have already run on that connection. So
+the first "the bottleneck is gone" was comparing two different protocols and
+said nothing at all.
+
+It was caught only because the old pin was measured too, and failed to reproduce
+its own documented number. That is the whole value of re-measuring the baseline
+rather than trusting it: a disagreement with the past is either a finding or a
+broken instrument, and there is no way to tell which without checking both ends
+the same way.
+
+### Bisected to one commit
+
+Predicate: h2bench's `requests` scenario, which runs first and therefore starts
+from the same fresh-connection state either way, with the sag at 64 concurrent
+as the signal. Broken side 1 573 – 4 373 req/s, fixed side 12 933 – 16 039 — no
+overlap, so a threshold of 10 000 is safe. 151 commits, seven steps:
+
+**`38c7a2a7` (2026-09-29) — "HTTP/2 client: an upload answered before its end
+keeps its stream slot and gets its window, and the next request waits for the
+slot."**
+
+Two obstacles were worth the detour. The auth framework moved out of `HTTP2/` in
+this range, so the current `Demo` cannot compile against the older half; but
+`h2bench` references nothing that moved, and the superproject tree at `2a1a4d5`
+has no use of `MaxResponseBodySize` either, so that one tree builds across the
+whole range. Styx `ba317094` builds against both ends, so it could stay fixed.
+
+### The old diagnosis named the right lock and the wrong cost
+
+`requestStartLock` exists at every revision in the range — 8, then 9, then 10
+occurrences — and still guards the encode and the write. Nothing about it
+changed. What changed is three lines away:
+
+```
+await requestStartLock.WaitAsync(linked.Token);     // 1212
+try {
+    await WaitForStreamSlotAsync(linked.Token);     // 1219   <- inside the lock
+```
+
+The slot gate counted **exchanges**, which the client drops at the response's
+END_STREAM, while `HTTP2StreamManager.CreateLocalStream` counts **streams**, open
+or half-closed. The gate was also not woken wherever a stream could close. A
+request that took the lock and then waited on that gate held the lock while
+waiting, so one slow slot-wait serialized every other request start — and
+because "onto the wire" spans the gate wait *and* the lock, the original
+bisection read the cost as the lock's.
+
+`38c7a2a7` makes the gate, `ActiveStreamCount` and `AvailableStreamSlots` count
+what `CreateLocalStream` counts, routes a stream's WINDOW_UPDATE through the
+stream manager, and wakes the gate in `CloseLocalIfOpen`, in `ResetAfterResponse`
+and once a rejected CONNECT's stream has ended. The wait became short; the lock
+stopped mattering. The parked fix in `CLAUDE.md` — shrink the lock, which cannot
+be done because the HPACK dynamic table is stateful — was therefore aimed at the
+wrong target the whole time. That note was right that the lock cannot shrink. It
+simply did not need to.
+
+### What is open instead: the tail
+
+The median and the throughput improved enormously and the far tail got worse. At
+64 concurrent, waiting-for-the-response p99 went from **0.200 ms** at `69497656`
+to **117.7 ms**, and `requests` max from 73.8 ms to 1 246 ms. The reading that
+fits is that the send path no longer serializes, so 64 requests now arrive at the
+server together and the queueing surfaces there instead — a hypothesis, measured
+on a box another session held at 15–36 %, neither bisected nor confirmed quiet.
+
+### The re-baseline, and why it is a range
+
+Five full default runs, median and range, in `CLAUDE.md`. The spread is wide
+(4 380 – 7 743 req/s at 1 concurrent) and it is the load, not the stack: GET
+throughput *peaked* at 263.4 MiB/s, which is the ~260 MiB/s the 2026-08-13 note
+recorded, so nothing regressed. A sixth run died with
+`IOException: Connection closed by peer` in its first scenario, seconds after the
+harness suite, h2spec and Autobahn had each been up and down on those ports —
+the stale-listener hazard `tests/lib.sh` has `free_ports` for. It is excluded and
+said so rather than quietly dropped.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

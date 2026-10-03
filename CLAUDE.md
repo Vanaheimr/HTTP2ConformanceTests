@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client` and `WebSocket`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-619 NUnit unit + integration tests live with the stack in Hermod
+622 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **619 NUnit tests** in
+**Tests:** most coverage is the **622 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **49** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
@@ -229,7 +229,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **619/619** NUnit tests and **49/49** harness runs on *both*
+**Verification:** **622/622** NUnit tests and **49/49** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
@@ -326,38 +326,67 @@ had noticed either:
   as the PowerShell version did). That Autobahn branch is written but
   **unverified** — the nightly runs Autobahn only on `ubuntu-latest`.
 
-**Performance** is measured by `tests/h2bench` (figures below from a full default
-run, 2026-08-13, 16-core Windows box, .NET 10.0.11; client and server share one
-process, so every number covers both roles plus TLS and loopback): ~9.3–9.9 KiB
-allocated per trivial request, a large transfer allocating ~6.0× its payload,
-~260 MiB/s both down and up, ~207 k HPACK blocks/s, ~12.8 M frames/s. Per-request
-*latency* is not anomalous — against a Kestrel control on the same machine our
-server is the faster of the two (0.25 ms vs 0.29 ms p50 per loopback round trip).
+**Performance** is measured by `tests/h2bench`. Figures re-baselined
+**2026-10-03** at pin `22768a4a`, .NET 10.0.12, 16 logical cores, client and
+server in one process (so every number covers both roles plus TLS and loopback).
+**Five full default runs, reported as median (range)**, because the box was not
+idle — other sessions held 15–36 % of the CPU throughout, and the spread below is
+mostly that rather than the stack:
 
-What is ours is a **per-connection throughput ceiling** — ~6 100 req/s at 1
-concurrent, ~9 700 at 8, ~5 900 at 64 — and the cause is unchanged since it was
-first bisected: splitting each request at the point `StartRequestAsync` returns
-shows the client's send path going from 0.17 ms to **13.85 ms** p50 as
-concurrency rises 1 → 64, while server turnaround stays flat (0.056 → 0.082 ms).
-`requestStartLock` is held across the HEADERS write, so every request start waits
-for every other request's socket write, and one connection is capped at roughly
-1/(cost of one serialized start). Only the magnitude has moved: that ceiling was
-~1 000 req/s when first measured, so a serialized start has gotten some 4–5×
-cheaper, but the shape is identical and the arithmetic still matches
-(64 × 0.22 ms ≈ 14 ms).
+| | |
+|---|---|
+| requests/s, 1 concurrent | 6 368 (4 380 – 7 743) |
+| requests/s, 8 concurrent | 16 595 (8 488 – 17 749) |
+| requests/s, 64 concurrent | 16 323 (12 403 – 17 292) |
+| GET 64 MiB | 175 MiB/s (168 – **263**) |
+| POST 64 MiB | 222 MiB/s (193 – 227) |
+| HPACK blocks/s | ~196 k (167 k – 220 k) |
+| frames/s | ~12.5 M (4.8 M – 13.0 M) |
+| allocation per trivial request | 9.1 – 10.3 KiB, rising with concurrency |
+| a large transfer | ~6.0× its payload, unchanged |
 
-The fix is open — and narrower than this note used to claim. The lock cannot
-simply shrink to the stream-ID allocation it nominally exists to order: the HPACK
-encoder's dynamic table is stateful, so encoding and writing must stay atomic
-with respect to each other or the peer's decoder desynchronizes (see the comment
-above `CompleteRequestAsync` in `HTTP2ClientConnection`). Moving the write to a
-queued writer task was already tried and was 10× slower — see
-[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for both that dead end and the original
-bisection.
+Nothing regressed against the 2026-08-13 figures: GET throughput *peaked* at
+263.4 MiB/s, which is the ~260 MiB/s that note recorded, so the lower readings
+are the load and not the stack. Per-request latency against a Kestrel control on
+the same machine still favours our server, in four runs of five (0.339 ms vs
+0.405 ms p50 median; both slower than the 0.25/0.29 recorded on a quiet box).
+
+**The per-connection throughput ceiling is gone.** It was real — at pin
+`69497656` the same bench on the same machine still reproduces it exactly:
+6 202 / 7 710 / **5 166** req/s at 1 / 8 / 64 concurrent, with the send path at
+**20.6 ms** p50 at 64. It disappears at Hermod **`38c7a2a7`** (2026-09-29),
+bisected over 151 commits with the sag at 64 concurrent as the predicate
+(1 573 – 4 373 req/s broken, 12 933 – 16 039 fixed — no overlap). At the current
+pin the send path is **0.036 ms** p50 at 64 concurrent, a factor of ~570, and it
+barely rises with concurrency at all.
+
+**The old diagnosis in this file named the right lock and the wrong cost.** It
+said `requestStartLock` was held across the HEADERS write, so every start waited
+on every other start's socket write — and concluded the lock could not shrink
+because the HPACK encoder's dynamic table is stateful. The lock is still there
+and still held across the encode and the write (`HTTP2ClientConnection.cs`, and
+the comment above `CompleteRequestAsync` is still correct about HPACK). What
+actually cost 20 ms was `WaitForStreamSlotAsync`, awaited **inside** that lock:
+the gate counted *exchanges* where `HTTP2StreamManager.CreateLocalStream` counts
+*streams*, and it was not woken wherever a stream could close. One slow slot-wait
+therefore serialized every concurrent request start. `38c7a2a7` made the gate
+count what `CreateLocalStream` counts and wake wherever a stream may close; the
+wait became short and the lock stopped mattering. So the parked fix was aimed at
+the wrong target — see [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the bisect,
+the protocol error that nearly hid all of this, and the earlier queued-writer
+dead end.
+
+**What is open instead is the tail.** The median and the throughput improved
+enormously; the far tail at 64 concurrent got worse. Waiting-for-the-response
+p99 went from 0.200 ms at `69497656` to **117.7 ms**, and `requests` max from
+73.8 ms to 1 246 ms. The plausible reading is that the send path no longer
+serializes, so 64 requests now reach the server together and the queueing shows
+up there instead — but that is a hypothesis, measured on a loaded box, and it
+has not been bisected or confirmed on a quiet one.
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. Two things are genuinely open (see the task list): the per-request
-serialization described above, and a decision on a client cookie jar.
+**done**. Two things are genuinely open (see the task list): the response-tail
+behaviour described above, and a decision on a client cookie jar.
 
 ### Optional — parked, not planned
 

@@ -102,10 +102,8 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2EarlyData.cs` | RFC 8470: the `Early-Data` field and the safe-method policy behind 425. We terminate no 0-RTT (`SslStream` has no early-data API), so this is about what an *intermediary* forwards to us |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
 | `HTTP2EventSource.cs` (+ `HTTP2Diagnostics.cs`) | The observability seam: structured events + counters via `EventSource`, connection/request spans via `ActivitySource` — both BCL, so no logging dependency. The stack writes nothing to the console itself |
-| `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field |
 | `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
 | `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
-| `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire |
 | `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the validating schemes, which now live in Hermod's shared `HTTP/Authentication/Schemes/` |
 | `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
@@ -115,6 +113,16 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTPSemantics.cs` (+ `HTTPResource.cs`) | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
 | `HTTPAuthentication.cs` | The HTTP/2 side of the RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization). The framework itself and the Basic (RFC 7617) / Bearer (RFC 6750) / Digest (RFC 7616) / Token schemes moved **out** of `HTTP2/` on 2026-10-01 into Hermod's version-independent `HTTP/Authentication/` — see the pin-bump note in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) |
 | `HTTPCache.cs` (+ `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs`) | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
+
+**Moved out of `HTTP2/` into Hermod's version-independent `HTTP/`**, so that
+the HTTP/1.x stack shares them — the HTTP/2 stack still uses each of them,
+under `org.GraphDefined.Vanaheimr.Hermod.HTTP`:
+
+| Concern (file[s] under `libs/Hermod/Hermod/HTTP/`) | Responsibility | Moved |
+|---|---|---|
+| `Authentication/` (Basic/Bearer/Digest/Token schemes) | The RFC 9110 §11 framework the HTTP/2 side in `HTTPAuthentication.cs` builds on | 2026-10-01 |
+| `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field | 2026-10-28 |
+| `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire. Parsed strictly as RFC 9651 structured fields since the move | 2026-10-28 |
 
 **`Server/`** — references `Core`:
 

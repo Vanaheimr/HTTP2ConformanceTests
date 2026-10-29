@@ -3679,6 +3679,42 @@ harness suite, h2spec and Autobahn had each been up and down on those ports —
 the stale-listener hazard `tests/lib.sh` has `free_ports` for. It is excluded and
 said so rather than quietly dropped.
 
+## 2026-10-29 — Alt-Svc and the digest fields leave `HTTP2/`, and get stricter on the way
+
+Hermod `311cda6f` → `32e34504` (10 commits), Styx `1262aa28` → `f494c8cd` (2).
+Verified at the new pin: build 0 errors, **660/660** in-process tests, **49/49**
+harness runs, **h2spec 146/146** over `h2` *and* `h2c`. Autobahn not re-run:
+`Hermod/HTTP2/WebSocket` and both tunnel files are untouched in the range.
+
+Two of the ten commits reach this stack. Hermod#161 and #164 moved
+`HTTPAlternativeService` (RFC 7838) and `HTTPDigest` / `HTTPDigestVerification` /
+`HTTPDigestMismatchException` (RFC 9530) from `HTTP2/Core/` into the
+version-independent `Hermod/HTTP/`, so the HTTP/1.x stack can send and read the
+same fields. They are a namespace move for the code here (`…Hermod.HTTP2` →
+`…Hermod.HTTP`), but **not a pure move**, and the behaviour changes apply to
+HTTP/2 too:
+
+- **Digest fields are parsed strictly as RFC 9651 structured fields.** A field
+  with one unparseable member is now ignored *whole*: `md5=:junk!:, sha-256=:…:`
+  used to verify against its valid second half, and now verifies against
+  nothing. An upper-case key is not a key; a `Want-…` weight outside 0–10, or a
+  bare key, voids the preference instead of being clamped or read as 1.
+  `DigestFieldTests` changed with it: the old "the good member survives"
+  assertion became "the field is empty".
+- **`Alt-Svc`:** `clear` beside alternatives now clears all of them (RFC 7838
+  §3), `clear` matches case-insensitively, and an ALPN id outside the token
+  alphabet is percent-encoded when written.
+
+Because the Alt-Svc parser changed and only one harness feeds it real-world
+input, `tests/h2interop` ran too: **7/8**, with Alt-Svc read as before from
+Google (`h3,h3-29`), Cloudflare (`h3`), LiteSpeed (`h3,h3-29`) and Caddy (`h3`).
+The eighth, `www.haproxy.org`, refused the TCP connection, and refused curl the
+same way, so that one is about the target and says nothing about the stack.
+
+`CLAUDE.md`'s Core table listed both files as living in `HTTP2/Core/`. They now
+sit in a small table of their own, *moved out of `HTTP2/`*, together with the
+authentication framework that left on 2026-10-01.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

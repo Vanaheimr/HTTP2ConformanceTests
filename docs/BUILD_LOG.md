@@ -3955,6 +3955,35 @@ proves the connection survives, not that the tunnel was torn down.
 answers. That rule is deliberate, and the data its own comment asks for before
 tightening it is now in hand. That is the next entry.
 
+## 2026-10-29 — `h2interop` goes red at the third unreachable peer, not the eighth
+
+`tests/h2interop` drives our client against eight foreign servers over the
+public internet, and until now exited non-zero only when *every* one failed.
+That rule was deliberate. Other people's servers refuse datacentre IPs, go
+down and reroute, and a nightly that goes red for that trains people to click
+past it. But it also meant only "the runner has no network" could turn the
+job red: a client regression that broke seven of eight peers was a green
+night. That is the same shape the dead-target audit (previous entry) found
+elsewhere.
+
+The program's own comment named what tightening needed: a baseline of how
+many targets answer a hosted runner on a normal night. The nightly job logs
+have it. Over **78 nightlies, 2026-08-13 to 2026-10-29, 77 reached all eight
+and one reached seven** (2026-09-27, `www.cloudflare.com`).
+
+The rule is now **up to two may fail, and at least one must answer**:
+`minReachable = max(1, targets − 2)`. That is 6 of 8 for the full matrix, and
+the same two-failure allowance for a subset. It would have turned none of the
+78 nights red, and a regression that breaks three peers no longer passes. The
+program prints its verdict ("Verdict: 8 reached, at least 6 required ->
+PASS") under the matrix.
+
+Verified with the real binary. A full run from here: 8/8, PASS. In WSL, a
+private mount namespace sent chosen targets to a dead loopback port through
+its own `/etc/hosts`: two blocked gave 6 reached, PASS; three blocked gave 5,
+FAIL. With no network at all (`unshare --net`): 0, FAIL. The comments in
+`nightly.yml` and `INTEROP.md` now say the same.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

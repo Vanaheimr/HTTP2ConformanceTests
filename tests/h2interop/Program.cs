@@ -100,12 +100,26 @@ Console.WriteLine($"{reachable}/{targets.Length} foreign servers reached (any HT
 Console.WriteLine("MCS = the peer's advertised MAX_CONCURRENT_STREAMS. Alt-Svc marked '*' arrived as an " +
                   "ALTSVC frame, unmarked as an alt-svc header field.");
 
-// Non-zero only when every single target failed, which means the network is gone
-// rather than the stack. A night where six of eight answered says something about
-// those two hosts; turning that into a red run would train people to click past
-// it. Tightening this needs a baseline of how many of these answer a hosted
-// runner on a normal night — see the note in .github/workflows/nightly.yml.
-return reachable > 0 ? 0 : 1;
+// Up to two targets may fail; a third is red. Until 2026-10-29 this was "non-zero
+// only when every single target failed", for a sound reason: a night where a host
+// or two refuse a datacentre IP says something about those hosts, and a run that
+// goes red for it trains people to click past it. But it also meant a client
+// regression that broke seven of the eight peers was a green night, and the
+// dead-target audit of 2026-10-29 found exactly that kind of rule elsewhere.
+//
+// The baseline this comment used to ask for now exists. Over 78 nightlies
+// (2026-08-13 to 2026-10-29), 77 reached all eight and one reached seven
+// (2026-09-27, www.cloudflare.com). Allowing two failures would have turned none
+// of those nights red, and a regression that breaks three peers no longer passes.
+// A subset run allows the same two, but at least one of its targets must answer.
+const int MaxUnreachable = 2;
+
+var minReachable = Math.Max(1, targets.Length - MaxUnreachable);
+
+Console.WriteLine($"Verdict: {reachable} reached, at least {minReachable} required -> " +
+                  (reachable >= minReachable ? "PASS" : "FAIL"));
+
+return reachable >= minReachable ? 0 : 1;
 
 
 // One attempt: fresh connection, GET /, full validation, everything read back.

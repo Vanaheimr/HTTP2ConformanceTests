@@ -16,6 +16,11 @@ dotnet run --project tests/h2interop
 dotnet run --project tests/h2interop -- cloudflare caddy   # a subset
 ```
 
+It exits non-zero when more than two targets fail. One or two refusing a
+datacentre IP is weather: 77 of 78 nightlies up to 2026-10-29 reached all
+eight. A third failure is more likely our client. A subset allows the same two,
+but at least one of its targets has to answer.
+
 **Server side** — start the demo host and point a foreign client at it:
 
 ```bash

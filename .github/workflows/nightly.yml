@@ -319,12 +319,15 @@ jobs:
     # Our client against eight foreign HTTP/2 servers over the public internet —
     # see INTEROP.md for what the matrix covers and why it exists.
     #
-    # This is the one job here that is genuinely informational, and for the
-    # reason the sibling repository's whole nightly is: the targets are other
-    # people's servers. Bot protection forms opinions about datacentre IPs, hosts
-    # go down, CDNs reroute. The harness itself only exits non-zero when EVERY
-    # target failed - which means the runner has no network, not that the stack
-    # broke - so the job effectively gates on that and reports the rest.
+    # The targets are other people's servers, for the reason the sibling
+    # repository's whole nightly is informational: bot protection forms
+    # opinions about datacentre IPs, hosts go down, CDNs reroute. So the
+    # harness tolerates up to two unreachable targets and goes red at the
+    # third. Over 78 nightlies, 77 reached all eight and one reached seven, so
+    # two failures is weather and three is more likely our client. Until
+    # 2026-10-29 it exited non-zero only when EVERY target failed, so the one
+    # thing that could turn it red was a runner without network; see the
+    # comment at the end of tests/h2interop/Program.cs.
     #
     # One platform is enough: the client is the same code on both, and what is
     # under test here is the foreign end.

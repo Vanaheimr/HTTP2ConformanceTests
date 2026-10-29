@@ -224,6 +224,29 @@ if [ "$run_timeout" -gt 0 ] && command -v timeout >/dev/null 2>&1; then
     runner="timeout --signal=TERM --kill-after=30s ${run_timeout}s"
 fi
 
+# The kernel's own account of an OOM kill. On 2026-10-10 the container died of
+# the OOM killer -- `docker inspect` below said so -- and that was all there
+# was to learn, because OOMKilled names the process that was KILLED, not the
+# one that HAD the memory. The kernel chooses its victim by a score (resident
+# memory, adjusted by oom_score_adj), and the candidates were wstest and our
+# own echo server. Its report of the kill lists every task's resident memory
+# and oom_score_adj, so the failure path below reads it.
+#
+# The last report already in the log is noted now, so that one left over from
+# an earlier run is not taken for this run's. And the line is printed now, on
+# every run, because that is what tells a green night whether the kernel log
+# is readable here at all -- rather than the next killed night finding out.
+kernel_readable=0
+oom_before=""
+if klog="$(kernel_log)"; then
+    kernel_readable=1
+    oom_before="$(printf '%s\n' "$klog" | kernel_oom_last | head -n 1 || true)"
+    echo "Kernel log readable: an OOM kill would be reported with the kernel's task table."
+else
+    echo "Kernel log not readable here: an OOM kill would be reported by docker inspect alone."
+fi
+unset klog
+
 echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port)..."
 # shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
 # Deliberately NOT --rm: an auto-removed container takes its exit status with
@@ -291,6 +314,23 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
             echo "container state: $state" >&2
         else
             echo "container already gone; no state to inspect." >&2
+        fi
+
+        # And who had the memory, which only the kernel knows (see above the
+        # run). Looked for on every failure, not only when OOMKilled says
+        # true: had the kernel picked the echo server instead, the container's
+        # state would say false, and this report would be the only place the
+        # kill showed. The full report goes next to the Autobahn report, where
+        # the workflow's artifact upload picks it up.
+        if [ "$kernel_readable" -eq 1 ]; then
+            oom="$(kernel_log | kernel_oom_last || true)"
+            if [ -n "$oom" ] && [ "$(printf '%s\n' "$oom" | head -n 1)" != "$oom_before" ]; then
+                printf '%s\n' "$oom" >"$repdir/kernel-oom.log"
+                echo "--- the kernel's OOM report (in full: kernel-oom.log beside the report) ---" >&2
+                printf '%s\n' "$oom" | kernel_oom_summary >&2 || true
+            else
+                echo "no OOM report in the kernel log since the run started." >&2
+            fi
         fi
 
         docker rm -f "$container" >/dev/null 2>&1 || true

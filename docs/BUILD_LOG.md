@@ -3784,12 +3784,40 @@ either change. Nor can it be shown that the four earlier failures had this same
 cause. 2026-09-18 ended in the same exit 137, which is consistent with it; the
 earlier failures left no state to inspect.
 
-**Not in place yet, and either would settle it:**
+**Either of two things would settle it:**
 
-- **The kernel's own report.** On an OOM kill the kernel logs every task's
-  resident memory and `oom_score_adj`. Reading `dmesg` (or `journalctl -k`) on
-  the 137 path of `tests/autobahn.sh` would name the consumer outright instead
-  of leaving it to inference. The script does not capture it yet.
+- **The kernel's own report, captured since 2026-10-29.** On an OOM kill the
+  kernel logs every task's resident memory and `oom_score_adj`.
+  `tests/autobahn.sh` now reads that on every failure path, through
+  `kernel_log`, `kernel_oom_last` and `kernel_oom_summary` in `tests/lib.sh`.
+  It prints the trigger, the constraint, the victim and the five largest tasks,
+  and writes the whole report to `kernel-oom.log` beside the Autobahn report,
+  so the artifact carries it. If the constraint reads `CONSTRAINT_NONE`, the
+  runner as a whole ran out, and the task table then lists every process on
+  the machine, the echo server included. The failure path does not stop at
+  `OOMKilled=true`: had the kernel picked the echo server, the container's
+  state would read false, and the report would be the only record of the kill.
+  A report already in the log before the run is recognised by its timestamped
+  first line and not attributed to this run.
+
+  Every run, green or not, now starts by saying whether the kernel log is
+  readable. Where `dmesg` is restricted to root, `sudo -n` reads it, with `-n`
+  because a sudo that has no tty to ask on hangs. So the first green night
+  after this change shows whether the capture works, rather than the next
+  killed night finding out.
+
+  Verified in WSL (kernel 6.18) by running the unmodified script with a
+  `docker` shim on `PATH`, in two runs:
+
+  - A real kill. The shim swapped the fuzzingclient for a process holding
+    `mlock`ed memory, which cannot be swapped out, under a 128 MiB limit.
+    Result: exit 137, `oom-killed=true`, the summary agreeing with the kernel's
+    own figures, and `kernel-oom.log` written.
+  - A run that swapped instead of dying and hit the cap. It reported "no OOM
+    report since the run started", although an earlier test's report was
+    still in the log. That is the case the before/after comparison exists for.
+
+  Not verified: the `sudo -n` path on `ubuntu-latest`, until the next nightly.
 - **The right reproduction target, at last.** The earlier loops ran 12.3.3,
   which was a flush boundary and not the failing case. The obvious next attempt
   is 12.4.6 and its neighbours, looped against one long-lived echo server with

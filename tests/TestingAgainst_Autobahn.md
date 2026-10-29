@@ -115,6 +115,13 @@ lists the case IDs if any case fails outright, or if fewer pass than the floor
 in the script (481). The full human-readable report is written to
 `tests/autobahn/reports/index.html`.
 
+**To chase a run that dies rather than fails,**
+[`tools/autobahn-repro.sh`](../tools/autobahn-repro.sh) (Linux/WSL) loops
+chosen cases against one long-lived echo server. It samples both processes'
+resident memory and freezes either one at a limit, so a runaway is named
+before it takes the machine down. Its first use, on 12.4.6, is in
+[`docs/BUILD_LOG.md`](../docs/BUILD_LOG.md).
+
 ## 3. The manual way
 
 Two shells. First, build and start the echo server:

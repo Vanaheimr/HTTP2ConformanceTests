@@ -3821,7 +3821,9 @@ earlier failures left no state to inspect.
 - **The right reproduction target, at last.** The earlier loops ran 12.3.3,
   which was a flush boundary and not the failing case. The obvious next attempt
   is 12.4.6 and its neighbours, looped against one long-lived echo server with
-  the memory of both processes sampled. It has not been run.
+  the memory of both processes sampled. *Update, the same day:* run 200 times
+  with `tools/autobahn-repro.sh`, all clean, and the nightly's order once. See
+  "12.4.6 looped 200 times" below.
 
 The earlier section's bullet keeps its text and gains a pointer to this entry,
 because the measurement it reports is right and only its conclusion was wrong.
@@ -4047,6 +4049,90 @@ Two smaller fixes went into the same files:
   a grep heuristic". The nightly's comment said jq was used. None of that has
   been true since the floor of 2026-09-23 and the switch to counting in Python
   only. All three now say what the script does.
+
+## 2026-10-29 — 12.4.6 looped 200 times: no runaway, and wstest's 3 GiB is section 12.1
+
+The OOM entry above ended with an untried next step. The idea was to loop
+12.4.6 and its neighbours against one long-lived echo server, with the memory
+of both processes sampled, since the kill named only its victim. That step now
+has a tool, **`tools/autobahn-repro.sh`** (Linux and WSL; it reads `/proc`):
+
+- One fuzzingclient container per iteration, `--network host` as in the
+  nightly, always against the same echo server. A leak on our side therefore
+  accumulates the way it would over a full run.
+- A sampler records the resident memory of both processes and `MemAvailable`
+  every 50 ms.
+- A watchdog freezes either process at `--limit-mib` (`SIGSTOP`) and saves its
+  `/proc` status and `smaps_rollup` before killing it. That names the consumer
+  without taking the machine down, which an OOM kill would. It matters in a
+  WSL VM other sessions share, and Docker's `--memory` is no substitute there:
+  the WSL kernel has no swap accounting, so a limited container swaps rather
+  than dies.
+
+All runs below were at Hermod `fc17a49f`, in WSL (Debian, 64 GiB, 16 cores),
+image digest `519915fb…` (the nightly's).
+
+**The nightly's order, once.** This was meant to stop at 12.4.6, but it ran on
+to 12.4.18. wstest takes `*` only as a trailing wildcard, so `12.4.1?`
+excluded nothing. The tool's usage text now says so. 370 cases, all passing.
+wstest's resident memory, by section:
+
+| | wstest | echo server |
+|---|---|---|
+| sections 1–7 | 106 → 117 MiB | ~48–66 MiB |
+| section 9 (limits) | 121 → 271 MiB | peaks at **236 MiB**, in 9.2.5 |
+| 12.1 (JSON payload) | 271 → **3 017 MiB** | ~66–80 MiB |
+| 12.2–12.3 | 3 017 → 3 182 MiB | ~66 MiB |
+| at the start of 12.4.6 | 3 188 MiB | 74 MiB |
+| peak during 12.4.6 | 3 192 MiB | 74 MiB |
+
+Almost all of wstest's memory is taken in section 12.1, and it then barely
+moves. That fits the 3.7 GiB once recorded for a whole run (12.5 and 13 add
+the rest). So at 12.4.6 the runner, with 16 GB, still had around 12 GB
+spare. **Gradual accumulation does not explain the kill.** To be killed there,
+something had to take about 12 GB within the 8.5 s that 12.4.6 had run.
+
+**12.4.5 then 12.4.6, 200 times**, the pair in the order of the night it died,
+against one echo server for all 200:
+
+| | min | median | max |
+|---|---|---|---|
+| 12.4.6 duration | 1 023 ms | 1 343 ms | 4 791 ms |
+| wstest peak | 330 MiB | 337 MiB | 358 MiB |
+| echo server peak | 60 MiB | 64 MiB | 65 MiB |
+
+**200 of 200 clean:** every case passed, every exit was 0, and the watchdog
+never fired. The echo server went from 60 MiB in the first iteration to 65
+MiB in the last, over 400 cases. That is settling, not a leak worth the name.
+
+**What that rules out, and what it does not.** The nightly lost 1 run in 43
+after the instrumentation went in. If one execution of 12.4.6 here carried the
+same risk, 200 clean runs would have had a chance of (42/43)^200 ≈ **0.9 %**,
+and still under 10 % at half that rate. So locally 12.4.6 does not run away at
+anything like the nightly's rate. Three things limit how far that carries:
+
+- **Speed.** Locally the case takes 1–5 s, against 0.4–0.7 s on a hosted
+  runner. A trigger that depends on timing may simply not occur here.
+- **State.** In the loop each iteration gets a fresh wstest process. Only the
+  single nightly-order run gave 12.4.6 the 3 GiB process it meets in CI.
+- **The runner.** What else held memory on the hosted runner that night is
+  unknown.
+
+**The question stays open.** It is now narrower: not "the suite outgrows the
+machine", and not "12.4.6 itself runs away". The kernel report that
+`tests/autobahn.sh` captures since this morning remains what will settle it,
+on the next night that dies. The tool is there for when that report names a
+consumer and a case worth repeating.
+
+Two lessons from building the tool, now recorded in its header:
+
+- **Under WSL, reading a file on `/mnt/d` while another process appends to it
+  fails intermittently** with "No data available". The first 200-iteration
+  attempt died at iteration 7 for that reason. The tool now takes `--out` for
+  a Linux path and retries the read.
+- **A bare `*` on the `wsl.exe` command line is globbed** against the Windows
+  working directory before the script sees it. Arguments with wildcards
+  belong inside the script file.
 
 ## Roadmap — candidate next tracks (planning only)
 

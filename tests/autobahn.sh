@@ -128,7 +128,10 @@ done
 
 # --- free the port (a stale server would fault the new bind) ----------------
 # free_ports lives in tests/lib.sh, shared with the other two runners.
-free_ports "$port"
+free_ports "$port" || {
+    echo "Not starting the echo server beside someone else's listener on :$port." >&2
+    exit 1
+}
 
 # --- start the echo server, output drained to a file -----------------------
 # Run the DLL directly (not `dotnet run`, whose forked child a plain kill would
@@ -144,7 +147,7 @@ srv_pid=$!
 cleanup() {
     kill "$srv_pid" 2>/dev/null || true
     wait "$srv_pid" 2>/dev/null || true
-    free_ports "$port"
+    free_ports "$port" || true
     if [ -s "$srv_log" ] && [ -d "$repdir" ]; then
         cp "$srv_log" "$repdir/echo-server.log" 2>/dev/null || true
     fi

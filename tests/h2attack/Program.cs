@@ -59,6 +59,13 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 //     passes the server's MAX_HEADER_LIST_SIZE (32768) while its compressed
 //     block stays under twice that -> :status 431 (a stream-level answer), and
 //     the connection stays usable for a following request.
+//
+// Every mode judged by the GOAWAY that ends it (the four floods, rapidreset,
+// idle even-stream) first sends an ordinary request on stream 1, which must get
+// :status 200, and attacks from stream 3 on. A GOAWAY alone proves nothing: a
+// server that answered every client with GOAWAY at once would pass all of them
+// without mitigating anything. The dead-target audit of 2026-10-29 built that
+// server, and six of these modes passed against it.
 
 var mode = args.Length > 0 ? args[0] : "contcount";
 
@@ -183,15 +190,35 @@ async Task<string> OpenAndWait(uint sid, string path)
     return await StatusFor(sid).Task.WaitAsync(TimeSpan.FromSeconds(5));
 }
 
+// The connection serves an ordinary request before the attack starts (see the
+// header). Without it, the GOAWAY that ends the attack could be the server's
+// answer to anyone at all.
+async Task<bool> Baseline()
+{
+    try
+    {
+        var status = await OpenAndWait(1, "/");
+        Console.WriteLine($"[attack] baseline request before the attack -> :status {status}  " +
+                          (status == "200" ? "✓" : "✗ FAIL"));
+        return status == "200";
+    }
+    catch (TimeoutException)
+    {
+        Console.WriteLine("[attack] ✗ FAIL: no response to the baseline request within 5 s -- the server was not serving before the attack");
+        return false;
+    }
+}
+
 Console.WriteLine($"[attack] mode = {mode}");
 
 switch (mode)
 {
     case "contcount":
         // HEADERS (no END_HEADERS) + 200 empty CONTINUATION frames.
-        await Send(RawHeaders(1, Req("/"), endHeaders: false));
+        if (!await Baseline()) return;
+        await Send(RawHeaders(3, Req("/"), endHeaders: false));
         for (var i = 0; i < 200; i++)
-            await Send(RawCont(1, [], endHeaders: false));
+            await Send(RawCont(3, [], endHeaders: false));
         break;
 
     case "contbytes":
@@ -201,17 +228,20 @@ switch (mode)
         // that; HEADERS + 16 CONTINUATIONs (69632 bytes) cross it. 21 frames in
         // all stays well under the 64-frame CONTINUATION cap, so it is the byte
         // bound that trips here, not the frame count (that is contcount's job).
-        await Send(RawHeaders(1, new byte[4096], endHeaders: false));
+        if (!await Baseline()) return;
+        await Send(RawHeaders(3, new byte[4096], endHeaders: false));
         for (var i = 0; i < 20; i++)
-            await Send(RawCont(1, new byte[4096], endHeaders: false));
+            await Send(RawCont(3, new byte[4096], endHeaders: false));
         break;
 
     case "ping":
+        if (!await Baseline()) return;
         for (var i = 0; i < 1200; i++)
             await Send(new HTTP2Frame { Type = HTTP2FrameType.PING, StreamId = 0, Payload = new byte[8] });
         break;
 
     case "settings":
+        if (!await Baseline()) return;
         for (var i = 0; i < 1200; i++)
             await Send(HTTP2Frame.CreateSettings((HTTP2SettingsParameter.HEADER_TABLE_SIZE, 4096)));
         break;
@@ -355,6 +385,7 @@ switch (mode)
 
             case "even-stream":
             {
+                if (!await Baseline()) return;
                 await Send(new HTTP2Frame {
                     Type = HTTP2FrameType.HEADERS, StreamId = 2,
                     Flags = HTTP2FrameFlags.END_HEADERS | HTTP2FrameFlags.END_STREAM, Payload = Req("/")
@@ -451,9 +482,12 @@ switch (mode)
         // CVE-2023-44487: open a stream, then RST_STREAM it before it's ever
         // completed (no END_STREAM on the HEADERS, so nothing is dispatched).
         // Falls through to the generic GOAWAY/ENHANCE_YOUR_CALM wait below.
+        // The one completed baseline stream does not save the attacker: the
+        // ratio is checked from the 20th opened stream on, at 19 resets in 20.
+        if (!await Baseline()) return;
         for (var i = 0; i < 30; i++)
         {
-            var sid = (uint) (2 * i + 1);
+            var sid = (uint) (2 * i + 3);
             await Send(RawHeaders(sid, Req("/"), endHeaders: true));
             await Send(HTTP2Frame.CreateRstStream(sid, HTTP2ErrorCode.CANCEL));
         }
@@ -566,6 +600,14 @@ switch (mode)
 
         return;
     }
+
+    // Loudly, not by falling through to the GOAWAY wait below: that only
+    // happened to fail, and a misspelled mode in run-tests.sh must not depend
+    // on luck to show up red.
+    default:
+        Console.WriteLine($"[attack] ✗ FAIL: unknown mode '{mode}'");
+        Environment.Exit(2);
+        return;
 }
 
 var expectedGoAway = mode == "idle" ? HTTP2ErrorCode.PROTOCOL_ERROR : HTTP2ErrorCode.ENHANCE_YOUR_CALM;

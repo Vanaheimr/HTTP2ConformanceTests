@@ -3855,6 +3855,106 @@ in code. Only `CLAUDE.md`'s Core table listed it, and the row now sits in the
 The rest of the range is SSH (Hermod#168) and a fix to the PKI tests'
 certificates.
 
+## 2026-10-29 — The harnesses aimed at nothing: what still passed, and why
+
+The question was the one the HTTP/1.1 sibling asked of its curl matrix on
+2026-10-02: point the suite at something that is not our stack, and see what
+stays green. A green check that cannot go red measures nothing, and running it
+again only reproduces the same vacuum.
+
+**Method.** The scenario list was not copied. The audit driver is
+`tests/run-tests.sh` itself with only the demo start removed, so every label
+ran exactly the arguments it runs in CI. The targets were the real demo as a
+positive control, a dead port, and a scratch fake server (not in the repo)
+that plays six wrong servers:
+
+| Target | Before | After |
+|---|---|---|
+| the real demo (positive control) | 49/49 | 49/49 |
+| nothing listening | 0 | 0 |
+| accepts TCP, closes at once | 0 | 0 |
+| completes TLS (ALPN `h2`), then never writes | 0 | 0 |
+| answers every request with RST_STREAM PROTOCOL_ERROR | 0 | 0 |
+| naive: SETTINGS/PING ACKs, `:status 200` to everything, rejects nothing | 6 | 6 |
+| GOAWAY ENHANCE_YOUR_CALM to every client, at once | **5** | 0 |
+| GOAWAY PROTOCOL_ERROR to every client, at once | **1** | 0 |
+
+All of it ran in WSL inside a private network namespace (`unshare --net`).
+That was not the first plan. The first full pass was **invalid**: partway
+through, the HTTP/1.1 sibling's demo came up on 8443 inside WSL (another
+session's run), 38 of 49 harness runs reached it and failed with "tlsv1 alert
+no application protocol", and the fake could no longer bind for the later
+targets. Every target came out at 0/49, and every one of those 0s was for the
+wrong reason. The rerun therefore had its own loopback, and the fake logged
+every connection it accepted, so each row above has a check against having
+measured someone else (50–53 connections per target, no foreign ALPN error).
+
+**What was found, and fixed:**
+
+- **Six attack modes passed against a server that rejects everyone.** The
+  four floods (`contcount`, `contbytes`, `ping`, `settings`), `rapidreset` and
+  `idle even-stream` are judged by the GOAWAY that ends them, and a GOAWAY
+  alone cannot tell "mitigated the attack" from "throws every client out". Each
+  now first sends an ordinary request on stream 1, which must get `:status 200`,
+  and attacks from stream 3 on. Against the two GOAWAY fakes all six now fail
+  at that baseline. The one completed stream does not save the rapid-reset
+  attacker, because the ratio is checked from the 20th stream on, at 19 resets
+  in 20.
+- **A misspelled mode was a green run.** `h2connect` and `h2priority` answered
+  an unknown mode with an unmarked "unknown mode" line and exit 0, which the
+  runner scored as a pass. `h2attack` fell into its generic GOAWAY wait and
+  failed only by accident. All three now print `✗ FAIL: unknown mode` and exit
+  2. The runner closes the same hole from its side: a `nocross` run must also
+  have printed at least one `✓`, which all 48 of them do today. Three
+  misspelled modes through the fixed runner: 0/3.
+- **`tests/h2spec.sh --spec <typo>` reported "all conformance tests passed".**
+  h2spec prints "No matched tests found." and exits 0, and the script trusted
+  the exit status. It now also requires h2spec's own summary line: tests ran,
+  every one passed (a skip is not a pass), and a full run reports at least
+  `min_tests=146`. Verified: a full run passes 146/146 over `h2` and `h2c`,
+  `--spec http2/6.5` passes 10/10, and `--spec nosuchsection` exits 1.
+
+**`free_ports` killed somebody else's demo, where it worked at all.** This
+came out of the invalid pass rather than the audit proper. The HTTP/1.1 and
+HTTP/2 demos share 8443 and 8080, and `free_ports` killed whatever listened
+there, so running one repo's suite ended the other session's run. Starting
+beside a foreign listener instead would have measured its server. It now stops
+only a process whose command line names `HTTP2.Demo` or `autobahn-server`. Any
+other listener is named and left alone, and `run-tests.sh`, `h2spec.sh` and
+`autobahn.sh` refuse to start (cleanup ignores it). Rewriting it turned up
+that the old version was a no-op in two places:
+
+- **The CI container.** `debian:13` installs neither `fuser` nor `ss`, so the
+  Linux branch found nothing there. It now reads `/proc/net/tcp{,6}` and
+  `/proc/<pid>/fd` directly. Another user's listener comes back as pid `?`,
+  which counts as foreign.
+- **This Windows box.** On Windows 11 10.0.26300, `Get-NetTCPConnection`
+  reports a .NET `TcpListener` with State 0 rather than Listen, so
+  `-State Listen` matched nothing. A listener is now the socket with no remote
+  end (`RemotePort` 0). Whether `windows-latest` reports State correctly was
+  not checked, and with the new filter it does not matter.
+
+Verified on both platforms with the fake as the foreign listener and a copy of
+it renamed `HTTP2.Demo.dll` as ours: the foreign one is reported and survives,
+ours is stopped. On Linux this was checked as root and as a user who cannot see
+root's fds. Against the foreign listener, both `run-tests.sh` and `h2spec.sh`
+stopped before starting the demo. `run-tests.sh` on Windows: 49/49.
+
+**What held.** The dead, closing, mute and reject-all targets got nothing.
+`h2semantics` is self-verifying and strict. The six checks that pass against
+the naive server are all cases where doing nothing special *is* the correct
+answer: valid `TE: trailers`, valid trailers, a WINDOW_UPDATE on an implicitly
+closed stream (RFC 9113 §6.9 says ignore it), a PRIORITY_UPDATE for an unopened
+stream, an out-of-range urgency, and a liveness check after RST_STREAM on a
+tunnel. They guard the other direction, and against the reject-all and GOAWAY
+fakes none of them passes. `h2connect cancel` is the weakest of them: it
+proves the connection survives, not that the tunnel was torn down.
+`autobahn.sh` holds by its floor and its hard-fail buckets.
+
+**Not changed here:** `h2interop` passes when one of eight foreign servers
+answers. That rule is deliberate, and the data its own comment asks for before
+tightening it is now in hand. That is the next entry.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

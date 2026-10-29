@@ -21,7 +21,15 @@ PowerShell one silently ran every harness with no arguments for weeks, and
 different and mostly empty measurement. The bash runner works under the Git Bash
 that ships with Git for Windows; the one genuinely platform-specific piece —
 freeing a stale listener — lives in [`lib.sh`](lib.sh), which is also where
-`h2spec.sh` and `autobahn.sh` get it.
+`h2spec.sh` and `autobahn.sh` get it. It stops only *our* leftovers (a
+process whose command line names `HTTP2.Demo` or `autobahn-server`). Any other
+listener on 8443/8080 — the HTTP/1.1 sibling's demo uses the same ports — is
+named and left alone, and the runner then stops instead of starting beside it,
+since its harnesses could not tell which server answered.
+
+A harness run passes when it exits 0, printed no `✗` and printed at least one
+`✓`. The last clause is from the dead-target audit of 2026-10-29: before it, a
+run that checked nothing at all, such as a misspelled mode, counted as a pass.
 
 Either runner builds the solution, starts the Demo host on `:8443`, drives the
 demo-dependent harnesses against it (one process per scenario), and prints a

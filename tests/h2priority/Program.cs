@@ -426,8 +426,12 @@ switch (mode)
         return;
     }
 
+    // A failure, not a remark. This used to print the line without a mark and
+    // exit 0, which run-tests.sh scored as a PASS, so a misspelled mode there
+    // was a green run that tested nothing (the dead-target audit, 2026-10-29).
     default:
-        Console.WriteLine($"[priority] unknown mode '{mode}'");
+        Console.WriteLine($"[priority] ✗ FAIL: unknown mode '{mode}'");
+        Environment.Exit(2);
         return;
 
 }

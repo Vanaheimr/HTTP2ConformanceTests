@@ -14,9 +14,9 @@
 #
 # The harnesses under tests/ are demo-driven -- raw frame-level clients that
 # talk to the running Demo host on https://localhost:8443. They print per-check
-# marks but exit 0 regardless, so their output is scanned for the failure mark
-# to decide pass/fail. Each is invoked once per scenario (mode [+ sub-case]),
-# 49 runs in total.
+# marks but exit 0 regardless, so their output is scanned for the marks to
+# decide pass/fail: at least one pass mark and no failure mark. Each is invoked
+# once per scenario (mode [+ sub-case]), 49 runs in total.
 #
 # (The formerly self-contained harnesses now live as NUnit tests in Hermod's
 #  HermodTests/HTTP2/ -- see tests/README.md.)
@@ -91,7 +91,10 @@ find_dll() {  # $1 = project name, $2 = directory holding the project
 # --- start the demo --------------------------------------------------------
 section "Starting Demo host on :8443"
 
-free_ports $demo_ports
+free_ports $demo_ports || {
+    echo "Not starting the demo beside someone else's listener: the harnesses would not know which server they reached." >&2
+    exit 1
+}
 
 # Run the built DLL directly, NOT `dotnet run`: the latter forks a child it does
 # not forward signals to, so killing it would orphan the real server and leave
@@ -118,7 +121,7 @@ cleanup() {
     section "Stopping Demo host"
     kill "$demo_pid" 2>/dev/null || true
     wait "$demo_pid" 2>/dev/null || true
-    free_ports $demo_ports
+    free_ports $demo_ports || true
     rm -f "$demo_log"
 }
 trap cleanup EXIT
@@ -146,7 +149,12 @@ sleep 1
 # --- harness runner --------------------------------------------------------
 # $1 = label, $2 = project, $3 = mode, rest = the harness's own arguments.
 #   exitcode : pass when the process exits 0 (self-verifying harnesses)
-#   nocross  : pass when it exits 0 and printed no failure mark
+#   nocross  : pass when it exits 0, printed no failure mark, AND printed at
+#              least one pass mark. The last clause is the one that matters:
+#              without it, a run that checked nothing passed. h2connect and
+#              h2priority answered a misspelled mode with an unmarked "unknown
+#              mode" line and exit 0, so a typo in the scenario list below was a
+#              green run (found by the dead-target audit of 2026-10-29).
 run_harness() {
     local label="$1" project="$2" mode="$3"
     shift 3
@@ -170,7 +178,7 @@ run_harness() {
     if [ "$rc" -eq 0 ]; then
         if [ "$mode" = "exitcode" ]; then
             ok=1
-        elif ! printf '%s' "$out" | grep -qF "$CROSS"; then
+        elif ! printf '%s' "$out" | grep -qF "$CROSS" && printf '%s' "$out" | grep -qF "$CHECK"; then
             ok=1
         fi
     fi
@@ -191,6 +199,8 @@ run_harness() {
             printf '%s\n' "$out" | grep -F "$CROSS" | while IFS= read -r line; do
                 printf '        %s%s%s\n' "$C_RED" "$(printf '%s' "$line" | sed 's/^[[:space:]]*//')" "$C_OFF"
             done
+        elif [ "$rc" -eq 0 ]; then
+            printf '        %s(exit 0, but not a single check reported a pass)%s\n%s\n' "$C_GRAY" "$C_OFF" "$out"
         else
             printf '        %s(exit %s)%s\n%s\n' "$C_GRAY" "$rc" "$C_OFF" "$out"
         fi

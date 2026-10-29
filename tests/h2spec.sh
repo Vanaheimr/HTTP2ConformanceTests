@@ -28,6 +28,15 @@
 #
 set -euo pipefail
 
+# How many tests a full run (no --spec) must at least report, per transport --
+# a floor in the sense of autobahn.sh's min_pass. It exists because h2spec's
+# exit status cannot carry it: a --spec that matches nothing prints "No matched
+# tests found." and exits 0, and before this check the script then announced
+# "all conformance tests passed" (the dead-target audit, 2026-10-29). A run
+# with --spec must still report at least one test. Raise this when h2spec
+# grows; 146 is what 2.6.0 runs.
+min_tests=146
+
 transport="both"
 h2spec="h2spec"
 path="/echo"
@@ -81,7 +90,10 @@ fi
 # Both listeners come up as one set, so both are freed together. free_ports
 # itself lives in tests/lib.sh, shared with the other two runners.
 demo_ports="8443 8080"
-free_ports $demo_ports
+free_ports $demo_ports || {
+    echo "Not starting the demo beside someone else's listener: h2spec would not know which server it reached." >&2
+    exit 1
+}
 
 # --- start the demo, output redirected to a file (see header) --------------
 # Run the built DLL directly, NOT `dotnet run`: the latter forks a child that
@@ -104,8 +116,8 @@ demo_pid=$!
 cleanup() {
     kill "$demo_pid" 2>/dev/null || true
     wait "$demo_pid" 2>/dev/null || true
-    free_ports $demo_ports
-    rm -f "$demo_log"
+    free_ports $demo_ports || true
+    rm -f "$demo_log" "${h2spec_out:-}"
 }
 trap cleanup EXIT
 
@@ -132,9 +144,41 @@ echo "Demo host up (pid $demo_pid)"
 sleep 1
 
 failed=0
+h2spec_out="$(mktemp -t h2spec-out.XXXXXX.log)"
 run_h2spec() {  # $1 = extra args describing the transport
+    local rc summary total passed
+
+    # Teed rather than captured, so the run still streams; set +e because
+    # under pipefail a failing h2spec would otherwise end the script right here.
+    set +e
     # shellcheck disable=SC2086
-    "$h2spec" "$@" -P "$path" $strict $spec || failed=$((failed + 1))
+    "$h2spec" "$@" -P "$path" $strict $spec 2>&1 | tee "$h2spec_out"
+    rc=${PIPESTATUS[0]}
+    set -e
+
+    # The exit status says whether a test failed, not whether any ran -- so the
+    # verdict also needs h2spec's own last line, "N tests, P passed, S
+    # skipped, F failed": tests ran, and every one of them passed (a skip is
+    # not a pass).
+    summary="$(grep -E '^[0-9]+ tests, [0-9]+ passed, ' "$h2spec_out" | tail -n 1 || true)"
+    total="${summary%% tests,*}"
+    passed="$(printf '%s' "$summary" | sed -E 's/^[0-9]+ tests, ([0-9]+) passed.*/\1/')"
+
+    if [ "$rc" -ne 0 ]; then
+        failed=$((failed + 1))
+    elif [ -z "$summary" ]; then
+        echo "h2spec exited 0 but printed no test summary -- nothing was tested." >&2
+        failed=$((failed + 1))
+    elif [ "$passed" -ne "$total" ]; then
+        echo "h2spec: only $passed of $total tests passed (the rest were skipped)." >&2
+        failed=$((failed + 1))
+    elif [ -z "$spec" ] && [ "$total" -lt "$min_tests" ]; then
+        echo "h2spec ran $total tests; a full run must report at least $min_tests." >&2
+        failed=$((failed + 1))
+    elif [ "$total" -lt 1 ]; then
+        echo "h2spec ran no tests." >&2
+        failed=$((failed + 1))
+    fi
 }
 
 if [ "$transport" = "both" ] || [ "$transport" = "tls" ]; then

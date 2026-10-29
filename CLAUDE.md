@@ -246,8 +246,10 @@ what each turned out to be, because none of the three was what it first looked
 like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
-with a caveat, since about one night in eight it hangs rather than reporting a
-result, which is open and written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
+with a caveat, since now and then it dies rather than reporting a result (4 of
+34 nights up to 2026-09-18, 1 of 43 runs since; the one the instrumentation
+caught was a kernel OOM kill inside case 12.4.6, the consumer still unknown),
+which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and
 tests against Hermod/Styx

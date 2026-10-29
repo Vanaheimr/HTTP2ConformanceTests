@@ -3158,6 +3158,11 @@ replaced, whose Windows path was equally unverified and did not say so.
 
 ### The Autobahn nightly hangs, about one night in eight (2026-08-15 → 2026-09-18, open)
 
+*Update 2026-10-29:* the next occurrence came on 2026-10-10. It was a kernel OOM
+kill after all, inside case 12.4.6; see *The Autobahn nightly was a memory kill
+after all* below. The first bullet under *Hypotheses that died* draws the wrong
+conclusion from a measurement that is right.
+
 Still unexplained at the time of writing, which is why it is written down. What
 follows is mostly a record of hypotheses that died, several of them mine, and
 of the instrumentation each death paid for.
@@ -3212,7 +3217,9 @@ next red night names the case instead of a flush boundary.
   because Docker grants matching swap by default. Exit 137 remains unexplained;
   `docker inspect` is now run before the container is removed (hence no `--rm`
   any more) so `State.OOMKilled` will answer it outright rather than by
-  inference.
+  inference. *It did, on 2026-10-10, and the answer was yes. The 3.7 GiB peak
+  still holds, but it only rules out a run that outgrows the runner, not one
+  case that runs away; see the 2026-10-29 entry.*
 - **CPU pressure.** Also no. Pinning both ends to 4 CPUs, matching the runner,
   left the runtime unchanged; halving again to 2 CPUs left it unchanged a second
   time (433–524 s). The suite is latency-bound, not compute-bound, so the
@@ -3714,6 +3721,83 @@ same way, so that one is about the target and says nothing about the stack.
 `CLAUDE.md`'s Core table listed both files as living in `HTTP2/Core/`. They now
 sit in a small table of their own, *moved out of `HTTP2/`*, together with the
 authentication framework that left on 2026-10-01.
+
+## 2026-10-29 — The Autobahn nightly was a memory kill after all, inside one case
+
+*The Autobahn nightly hangs, about one night in eight* (above) ended on the
+instrumentation that was waiting "for the next occurrence". The next occurrence
+came on **2026-10-10** (nightly run 38042380580, at `62b0213`). It was not written
+down until now. The instrumentation reported four things:
+
+- **`container state: exit=137 oom-killed=true`.** The kernel's OOM killer. That
+  is the first hypothesis the earlier section filed under *died*. The
+  measurement behind that verdict still stands: a whole 517-case run peaks at
+  3.7 GiB, far below the runner's 16 GB. But it only ruled out "the suite needs
+  more memory than the runner has". It did not rule out "memory runs away inside
+  one case", and that is what the timestamps below show.
+- **The echo server was still alive**, and `echo-server.log` holds only its
+  startup banner. Nothing on our side crashed.
+- **`ss` printed only its header line**, i.e. no sockets on :9010 at all. That
+  is what to expect *after* the container has died, because its connections
+  died with it. The probe was built for a hang, and a kill leaves it nothing to
+  see. The script's `(no sockets on this port)` fallback did not fire either,
+  because the header alone counts as output.
+- **`PYTHONUNBUFFERED` named the case: 12.4.6.** That is after 12.3.3 and inside
+  the 12.4–13.3 region the earlier section predicted. None of the reproduction
+  loops covered it.
+
+**The timestamps show more than those four lines.** GitHub stamps every line of
+the job log, and with unbuffered output each `Running test case ID` line is
+stamped when the case starts. Up to 12.4.5 the night ran at the pace of an
+ordinary fast green one: 12.5 s from 1.1.1 to 12.1.1 (12.4 s on 2026-10-12),
+and 0.4–0.5 s for each of 12.4.1–12.4.5. Then **12.4.6 had run for 8.5 s when
+the kill came.** Three green nights on the same commit with the same image digest
+(`519915fb…`) finish 12.4.6 in 0.7, 0.4 and 0.7 s. So the run did not slowly
+outgrow the machine. Memory use was normal through 12.4.5, and within seconds
+of 12.4.6 starting the runner was out of memory. The container runs without
+`--memory`, so its cgroup has no limit of its own. Its process could only be
+OOM-killed because the runner as a whole ran out.
+
+**Which process took the memory is still open.** `OOMKilled` names the victim,
+not the consumer. The kernel picks its victim by a score: resident memory,
+adjusted by each process's `oom_score_adj`. A container process being chosen is
+therefore only weak evidence that it was the largest. Nobody has checked how a
+hosted runner sets that adjustment for a step's processes, and our echo server
+is one of them. The candidates:
+
+- **`wstest` itself.**
+- **Our echo server.** Section 12 is permessage-deflate, and an unbounded
+  inflate would look exactly like this. Its obvious form is excluded:
+  `WebSocketConnection` stops an inflated message at `MaxMessageSize`. That
+  held at that night's pin (`d2d608d2`) as it does now. The default is 64 MiB,
+  `tests/autobahn-server` keeps the default, and Autobahn opens one connection
+  per case. A leak outside the message path is not excluded.
+
+**The rate has dropped, and it is not clear why.** Since the instrumentation
+went in, the nightly ran **43 times (2026-09-19 → 10-28)**, and this is the only
+Autobahn failure among them. Before that it was 4 of 34. At one in eight, a
+result of one failure or none in 43 runs has a probability of about 2 %, so the
+rate very probably did change. But the pin moved twice in between. Since
+2026-09-23 the server declines 36 permessage-deflate offers it cannot satisfy,
+and on 2026-10-04 the WebSocket framing was reworked. Nothing ties the drop to
+either change. Nor can it be shown that the four earlier failures had this same
+cause. 2026-09-18 ended in the same exit 137, which is consistent with it; the
+earlier failures left no state to inspect.
+
+**Not in place yet, and either would settle it:**
+
+- **The kernel's own report.** On an OOM kill the kernel logs every task's
+  resident memory and `oom_score_adj`. Reading `dmesg` (or `journalctl -k`) on
+  the 137 path of `tests/autobahn.sh` would name the consumer outright instead
+  of leaving it to inference. The script does not capture it yet.
+- **The right reproduction target, at last.** The earlier loops ran 12.3.3,
+  which was a flush boundary and not the failing case. The obvious next attempt
+  is 12.4.6 and its neighbours, looped against one long-lived echo server with
+  the memory of both processes sampled. It has not been run.
+
+The earlier section's bullet keeps its text and gains a pointer to this entry,
+because the measurement it reports is right and only its conclusion was wrong.
+The run's artifact (`autobahn-report`) is kept until 2027-01-08.
 
 ## Roadmap — candidate next tracks (planning only)
 

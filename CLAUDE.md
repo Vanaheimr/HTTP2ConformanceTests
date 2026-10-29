@@ -105,7 +105,6 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
 | `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
 | `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the validating schemes, which now live in Hermod's shared `HTTP/Authentication/Schemes/` |
-| `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421 |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
 | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocketConnection.cs` doesn't depend on the server's concrete tunnel |
@@ -123,6 +122,7 @@ under `org.GraphDefined.Vanaheimr.Hermod.HTTP`:
 | `Authentication/` (Basic/Bearer/Digest/Token schemes) | The RFC 9110 §11 framework the HTTP/2 side in `HTTPAuthentication.cs` builds on | 2026-10-01 |
 | `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field | 2026-10-28 |
 | `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire. Parsed strictly as RFC 9651 structured fields since the move | 2026-10-28 |
+| `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421. Moved because RFC 9110 §7.4 asks the question whatever the version: the HTTP/1.1 server now answers a `Host` its certificate does not cover with 421 too, through the same predicate. For HTTP/2 only the namespace changed | 2026-10-29 |
 
 **`Server/`** — references `Core`:
 

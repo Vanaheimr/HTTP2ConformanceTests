@@ -3827,6 +3827,34 @@ The earlier section's bullet keeps its text and gains a pointer to this entry,
 because the measurement it reports is right and only its conclusion was wrong.
 The run's artifact (`autobahn-report`) is kept until 2027-01-08.
 
+## 2026-10-29 — `HTTPAuthority` leaves `HTTP2/` too, because HTTP/1.1 answers 421 now
+
+Hermod `14c9701c` → `5b5b2395` (five commits, two of them merges). Styx is unchanged at
+`f494c8cd`. Verified at the new pin: build 0 errors, **660/660** in-process tests,
+**49/49** harness runs, **h2spec 146/146** over `h2` *and* `h2c`. Autobahn and
+`h2interop` were not re-run, because the range touches neither WebSocket nor
+the client.
+
+The one commit that reaches this stack is Hermod#167. It moves
+`HTTPAuthority` (which origins a connection is authoritative for: the RFC 6125
+name matching and the certificate- / Origin-Set-derived predicates behind
+**421 Misdirected Request**) from `HTTP2/Core/` into the version-independent
+`Hermod/HTTP/`. The question was never HTTP/2's alone. RFC 9110 §7.4 has an
+origin server reject a request for an `https` resource unless the connection's
+certificate is valid for that origin, whatever the version. Coalescing just
+made it urgent here first. The HTTP/1.1 server now asks the same predicate of
+`Host`, through `AHTTPServer.IsAuthorityServed`.
+
+For HTTP/2 this is a pure move: the namespace changes, a doc comment is added,
+and `HTTP2Server.cs` gains one `using`. `HermodTests/HTTP2` is untouched, which
+is why the count stays at 660. The new `MisdirectedRequestTests` live under
+`HermodTests/HTTP/`. Nothing in this repository outside `libs/` names the type
+in code. Only `CLAUDE.md`'s Core table listed it, and the row now sits in the
+*moved out of `HTTP2/`* table with the other three.
+
+The rest of the range is SSH (Hermod#168) and a fix to the PKI tests'
+certificates.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

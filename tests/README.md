@@ -194,11 +194,14 @@ framing under test is transport-agnostic). Run from the official Docker image:
 tests/autobahn.sh
 ```
 
-On Windows this needs Docker Desktop, and that path is written but unverified:
-`--network host` is a Linux-namespace feature, so the script switches to the
-default bridge and `host.docker.internal` there — the way the PowerShell runner
-it replaced did it. Nothing exercises that branch, since the nightly runs
-Autobahn only on `ubuntu-latest`.
+On Windows this needs Docker Desktop. `--network host` is a Linux-namespace
+feature, so the script switches to the default bridge and `host.docker.internal`
+there, the way the PowerShell runner it replaced did. The nightly runs Autobahn
+only on `ubuntu-latest`. On 2026-10-29 the Windows branch was driven under Git
+Bash with a stand-in for `docker`, and everything up to the container held.
+That run found one defect: `python3` was the Store stub, so the run ended
+without a verdict (fixed). Docker Desktop itself is still unverified. It also
+needs a Python 3.6+ that actually runs; the script finds one before the run.
 
 The critical cases (framing, fragmentation, UTF-8 §8.1, close §7.4) are also in
 the committed `h2wsconformance` harness, which runs in the gate above with no

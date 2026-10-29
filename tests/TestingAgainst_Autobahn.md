@@ -68,8 +68,8 @@ docker pull crossbario/autobahn-testsuite   # optional; the wrappers pull on fir
 [`tests/autobahn.sh`](autobahn.sh) builds the echo server, starts it (**output
 drained to a file** — same gotcha as h2spec: an undrained console pipe can stall
 a busy server), runs the Autobahn fuzzingclient against it via Docker, parses
-the JSON report, and stops the echo server again — exiting `0` iff every case
-passed.
+the JSON report, and stops the echo server again. It exits `0` only if no case
+failed outright and at least the floor (481) passed.
 
 ```bash
 tests/autobahn.sh
@@ -90,14 +90,29 @@ stylistic one:
   Git Bash would otherwise rewrite `src:/config` as a path list.
 
 This replaced an `autobahn.ps1` that did the Windows half (see
-[`README.md`](README.md) for why the PowerShell runners went away). **The
-Windows branch is unverified**: the nightly runs Autobahn only on
-`ubuntu-latest`, because the suite ships usably only as a Docker image.
+[`README.md`](README.md) for why the PowerShell runners went away). The nightly
+runs Autobahn only on `ubuntu-latest`, because the suite ships usably only as a
+Docker image. On 2026-10-29 the Windows branch was driven under Git Bash with a
+stand-in for `docker`, on a machine without Docker Desktop. Everything up to
+the container held:
 
-Report parsing prefers `jq`, then `python3`, then a `grep` heuristic — the last
-of which only answers yes/no, so install one of the first two if you want a
-count. The script exits non-zero and lists the offending case IDs if any case
-does not pass. The full human-readable report is written to
+- the echo server under Windows, which answers a WebSocket upgrade;
+- the `D:\…` mount paths docker is handed;
+- the `host.docker.internal` URL;
+- the verdict, and the exit-137 failure path.
+
+It also turned up one defect: the `python3` stub described below.
+**Docker Desktop itself is still unverified**, specifically whether its
+container reaches an echo server bound to the host's `127.0.0.1` through
+`host.docker.internal`.
+
+Python 3.6 or newer counts the report: `python3`, `python` or `py -3`,
+whichever actually runs. The script looks for it **before** the run and exits
+127 if there is none. On Windows, `python3` on `PATH` is usually the Store's
+App Installer stub, which only prints "Python was not found", so the script
+tries each candidate rather than trusting `PATH`. The script exits non-zero and
+lists the case IDs if any case fails outright, or if fewer pass than the floor
+in the script (481). The full human-readable report is written to
 `tests/autobahn/reports/index.html`.
 
 ## 3. The manual way

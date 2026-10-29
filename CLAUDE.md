@@ -333,8 +333,11 @@ had noticed either:
   `powershell.exe` because `netstat` is *localized* — a German Windows prints
   "ABHÖREN") and to one branch in `autobahn.sh` (Docker Desktop has no
   `--network host`, so it uses the default bridge and `host.docker.internal`,
-  as the PowerShell version did). That Autobahn branch is written but
-  **unverified** — the nightly runs Autobahn only on `ubuntu-latest`.
+  as the PowerShell version did). The nightly runs Autobahn only on
+  `ubuntu-latest`. On 2026-10-29 that branch was driven under Git Bash with a
+  stand-in for `docker`, and everything up to the container held. The run also
+  turned up a defect: `python3` on Windows was the Store stub, so it ended
+  without a verdict (fixed). **Docker Desktop itself is still unverified.**
 
 **Performance** is measured by `tests/h2bench`. Figures re-baselined
 **2026-10-03** at pin `22768a4a`, .NET 10.0.12, 16 logical cores, client and

@@ -3984,6 +3984,70 @@ its own `/etc/hosts`: two blocked gave 6 reached, PASS; three blocked gave 5,
 FAIL. With no network at all (`unshare --net`): 0, FAIL. The comments in
 `nightly.yml` and `INTEROP.md` now say the same.
 
+## 2026-10-29 — `autobahn.sh` on Windows, driven without Docker Desktop: it would have ended with no verdict
+
+The Windows branch of `tests/autobahn.sh` (Git Bash + Docker Desktop) had been
+"written but unverified" since the PowerShell twins went. This machine has no
+Docker Desktop. So the branch was driven under Git Bash with a stand-in for
+`docker`, placed first on `PATH`. The stand-in records the arguments docker
+would have received and checks from the host whatever can be checked there.
+Then it either writes a report shaped like a real 481/517 night, or exits 137
+to drive the failure path.
+
+**What held, all the way to the container:**
+
+- `free_ports` on :9010, through `Get-NetTCPConnection`.
+- The echo server under Windows: it answers a WebSocket upgrade on
+  `127.0.0.1:9010` with 101.
+- The mounts docker is handed: `D:\Coding\…\tests\autobahn\reports:/config` and
+  `…:/reports`. MSYS does not mangle them, so `MSYS_NO_PATHCONV=1` and
+  `cygpath -w` do their job.
+- `ws://host.docker.internal:9010` in the generated config.
+- The 137 path. It reports "killed (SIGKILL, exit 137)", the echo server as
+  still alive, and the container state, then "No Autobahn report" and exit 1.
+  On Windows it says "Kernel log not readable here", as intended.
+
+**What did not hold was the very last step.** The script counted the report
+with `python3`. On this machine `python3` is the App Installer's Store stub:
+it prints "Python was not found …" (here in German) on stderr, exits 49, and
+writes nothing to stdout. So `read … < <(python3 …)` saw end-of-file, and
+`set -e` ended the script with exit 1. After an eight-minute suite, the only
+output would have been the stub's message: no count, no verdict. This is the
+normal state of a Windows machine, not a quirk of this one. A python.org
+install, which this machine has (`python`, 3.14), provides `python` and `py`,
+and never `python3`.
+
+**The fix.** The script now finds Python before the run. It runs each of
+`python3`, `python` and `py -3` with a 3.6+ check (the counting uses f-strings)
+and exits 127 at once if none works. The count's output also passes through
+`tr -d '\r'`: a Windows Python ends its lines with CRLF, and the last field
+`read` takes would otherwise carry the CR.
+
+Re-driven after the fix:
+
+- The green stand-in gives "481/517 passing, 36 declined, 0 hard failures" and
+  exit 0, with no stray CR.
+- The 137 stand-in takes the failure path as before.
+- A `PATH` holding only the stub exits 127 with "No working Python 3.6+ found",
+  before docker is ever called.
+
+**Still unverified is Docker Desktop itself:** whether its container reaches an
+echo server that binds the host's `127.0.0.1` through `host.docker.internal`. A
+stand-in cannot answer that; only an installed Docker Desktop can.
+
+Two smaller fixes went into the same files:
+
+- **`ss` with nothing to show.** It prints its header even when no socket
+  matches, so the `(no sockets on this port)` fallback never fired; on
+  2026-10-10 the header was the whole output. A header alone now counts as
+  empty. Checked in WSL: an unused port gives the fallback, and a port with an
+  established connection gives the socket and its `-i` line.
+- **Stale descriptions.** The walkthrough still said the script exits 0 "iff
+  every case passed", and that report parsing "prefers jq, then python3, then
+  a grep heuristic". The nightly's comment said jq was used. None of that has
+  been true since the floor of 2026-09-23 and the switch to counting in Python
+  only. All three now say what the script does.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

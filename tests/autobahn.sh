@@ -5,10 +5,15 @@
 #
 # Linux, macOS and WSL are the verified paths. Windows (Git Bash + Docker
 # Desktop) is supported here -- it is where the PowerShell twin's knowledge
-# went when that file was removed -- but is NOT exercised by anything: the
+# went when that file was removed -- but nothing runs it regularly: the
 # nightly runs Autobahn only on ubuntu-latest, because the suite ships usably
-# only as a Docker image. Treat the Windows branch as untested until someone
-# with Docker Desktop runs it.
+# only as a Docker image. On 2026-10-29 the Windows branch was driven under Git
+# Bash with a stand-in for `docker`, on a machine without Docker Desktop.
+# Everything up to the container held: the echo server, the D:\ mount paths
+# docker is handed, the host.docker.internal URL, the verdict and the 137
+# path. One defect turned up, in finding Python (see below). What is still
+# unverified is Docker Desktop itself, i.e. that its container reaches an echo
+# server bound to the host's 127.0.0.1 through host.docker.internal.
 #
 # The Autobahn TestSuite (https://github.com/crossbario/autobahn-testsuite) is
 # the canonical RFC 6455 WebSocket conformance suite; its "fuzzingclient" drives
@@ -109,6 +114,26 @@ repdir="$root/tests/autobahn/reports"
 
 command -v docker >/dev/null 2>&1 || {
     echo "docker not found. Install Docker and retry. See tests/TestingAgainst_Autobahn.md." >&2
+    exit 127
+}
+
+# Python counts the report at the end, so find one now rather than after an
+# eight-minute run. Each candidate is found by RUNNING it, because being on
+# PATH proves nothing on Windows: there, `python3` is usually the App
+# Installer's Store stub. It prints "Python was not found" on stderr and exits
+# 49, and on 2026-10-29 it ended a run of this script under Git Bash after the
+# suite had finished, with no verdict. A python.org install provides `python`
+# and `py`, not `python3`. 3.6 is the floor because the counting uses
+# f-strings.
+python=""
+for cand in python3 python "py -3"; do
+    # shellcheck disable=SC2086  # "py -3" is a command and its argument, on purpose
+    if $cand -c 'import sys; sys.exit(sys.version_info < (3, 6))' >/dev/null 2>&1; then
+        python="$cand"; break
+    fi
+done
+[ -n "$python" ] || {
+    echo "No working Python 3.6+ found (tried python3, python, py -3). It counts the report." >&2
     exit 127
 }
 
@@ -304,6 +329,10 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
             # to right, so it would point stdout at /dev/null and silently throw
             # away the very output being collected.
             sockets="$(ss -tnpi "sport = :$port or dport = :$port" 2>/dev/null || true)"
+            # ss prints its header line even when nothing matches. On
+            # 2026-10-10 that header was the whole output, and the fallback
+            # below never fired, because a header alone is not empty.
+            [ "$(printf '%s\n' "$sockets" | grep -c .)" -gt 1 ] || sockets=""
             echo "${sockets:-  (no sockets on this port)}" >&2
         fi
 
@@ -356,9 +385,12 @@ INDEXFILE="$repdir/index.json"
 # offers we decline -- and that number moving down is what the floor catches.
 #
 # Python does the counting; jq is not assumed, and the old grep fallback could
-# only answer yes/no, which is useless once the answer is a number.
+# only answer yes/no, which is useless once the answer is a number. A Windows
+# Python ends its lines with CRLF, so the CR is stripped before `read` takes the
+# last field.
+# shellcheck disable=SC2086  # $python may be "py -3", see above
 read -r passing declined hard total < <(
-python3 - "$INDEXFILE" <<'PYEOF'
+$python - "$INDEXFILE" <<'PYEOF' | tr -d '\r'
 import json, sys, collections
 PASS     = {"OK", "NON-STRICT", "INFORMATIONAL"}
 DECLINED = {"UNIMPLEMENTED"}

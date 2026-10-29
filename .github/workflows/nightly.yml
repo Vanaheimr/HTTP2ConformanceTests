@@ -184,9 +184,10 @@ jobs:
       # HTTP/1.1 rather than RFC 8441 over HTTP/2, but the framing under test is
       # the same code either way — see tests/TestingAgainst_Autobahn.md.
       #
-      # The script parses index.json itself and exits non-zero unless every case
-      # is OK, NON-STRICT or INFORMATIONAL. jq is preinstalled on this runner, so
-      # it takes that path rather than the python3 fallback.
+      # The script counts index.json itself, with the runner's python3. It exits
+      # non-zero if any case fails outright (FAILED, WRONG CODE, UNCLEAN), or if
+      # fewer than its floor of 481 pass. The 36 declined permessage-deflate
+      # offers are the gap to 517; see min_pass in tests/autobahn.sh.
       - name: Autobahn fuzzingclient (517 cases)
         timeout-minutes: 45
         shell: bash

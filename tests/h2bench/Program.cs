@@ -25,6 +25,7 @@
 //
 //   dotnet run -c Release --project tests/h2bench            # everything
 //   dotnet run -c Release --project tests/h2bench -- hpack   # one scenario
+//   dotnet run -c Release --project tests/h2bench -- control # vs. Kestrel/HttpClient
 //   dotnet run -c Release --project tests/h2bench -- --mib 256
 //
 // WHAT THESE NUMBERS ARE, AND ARE NOT
@@ -189,7 +190,7 @@ if (Wanted("hpack"))
 
 #region Networked scenarios
 
-if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("probe"))
+if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("probe") || Wanted("control"))
 {
 
     var small = "hello, world!"u8.ToArray();
@@ -300,16 +301,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         if (!cleartext)
         {
 
-            using var handler = new SocketsHttpHandler {
-                SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
-                    RemoteCertificateValidationCallback = (_, _, _, _) => true
-                }
-            };
-
-            using var http = new HttpClient(handler) {
-                DefaultRequestVersion = System.Net.HttpVersion.Version20,
-                DefaultVersionPolicy  = HttpVersionPolicy.RequestVersionExact
-            };
+            using var http = DotNetHttpClient();
 
             var url  = $"https://localhost:{port}/";
             var dotnet = new Int64[probes];
@@ -329,20 +321,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
             // only the server differs. Without it, "0.6 ms" has no scale: it could
             // be our server being slow or it could be what a loopback HTTP/2 round
             // trip simply costs here.
-            var kestrelPort = FreePort();
-            var builder     = WebApplication.CreateBuilder();
-
-            builder.Logging.ClearProviders();
-            builder.WebHost.ConfigureKestrel(options =>
-                options.ListenLocalhost(kestrelPort, listen =>
-                {
-                    listen.Protocols = HttpProtocols.Http2;
-                    listen.UseHttps(SelfSignedCertificate());
-                }));
-
-            var kestrel = builder.Build();
-            kestrel.MapGet("/", () => Results.Text("hello, world!"));
-            await kestrel.StartAsync();
+            var (kestrel, kestrelPort) = await StartKestrel(Cleartext: false);
 
             var kestrelUrl     = $"https://localhost:{kestrelPort}/";
             var kestrelSamples = new Int64[probes];
@@ -359,8 +338,64 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
             Percentiles("probe: .NET HttpClient -> Kestrel (control)", kestrelSamples);
 
             await kestrel.StopAsync();
+            await kestrel.DisposeAsync();
 
         }
+
+    }
+
+    // The probe's control, under load. One request at a time says what a round
+    // trip costs; it says nothing about how many a connection carries. Inferring
+    // that from latency medians is Little's law applied to someone else's queue —
+    // so this measures it, on one connection each, as a 2 x 2 matrix with our
+    // client driving our server already covered by "requests" above:
+    //
+    //   * HttpClient -> our server vs. HttpClient -> Kestrel: same client, only the
+    //     server differs. A gap here is our server's.
+    //   * our client -> Kestrel vs. our client -> our server: same client again, so
+    //     the gap is the server's once more, now seen from our own side; and set
+    //     against HttpClient -> Kestrel, the same server with only the client
+    //     swapped, it says what our client costs.
+    //
+    // Every response is checked for 200 over HTTP/2: a control that quietly fell
+    // back to HTTP/1.1, or measured a 404, would be the worst kind of number.
+    if (Wanted("control"))
+    {
+
+        const Int32 concurrency = 64;
+
+        var (kestrel, kestrelPort) = await StartKestrel(cleartext);
+        var kestrelAuthority       = $"localhost:{kestrelPort}";
+        var httpScheme             = cleartext ? "http" : "https";
+
+        using var http = DotNetHttpClient();
+
+        async Task HttpClientGet(String Url)
+        {
+            using var response = await http.GetAsync(Url);
+            if (response.StatusCode != HttpStatusCode.OK || response.Version != HttpVersion.Version20)
+                throw new Exception($"{Url}: {(Int32) response.StatusCode} over HTTP/{response.Version}");
+        }
+
+        await ReportLoad($"control: .NET HttpClient -> our server, {concurrency} concurrent", concurrency, requests,
+                         () => HttpClientGet($"{httpScheme}://{authority}/"));
+
+        await ReportLoad($"control: .NET HttpClient -> Kestrel, {concurrency} concurrent", concurrency, requests,
+                         () => HttpClientGet($"{httpScheme}://{kestrelAuthority}/"));
+
+        var toKestrel = await HTTP2Client.ConnectAsync("localhost", kestrelPort, (_, _, _, _) => true,
+                                                       Cleartext: cleartext);
+
+        await ReportLoad($"control: our client -> Kestrel, {concurrency} concurrent", concurrency, requests, async () =>
+        {
+            var response = await toKestrel.SendRequestAsync(HTTPMethod.GET, scheme, kestrelAuthority, "/");
+            if (response.Status != 200)
+                throw new Exception($"Kestrel: {response.Status}");
+        });
+
+        await toKestrel.CloseAsync();
+        await kestrel.StopAsync();
+        await kestrel.DisposeAsync();
 
     }
 
@@ -473,11 +508,19 @@ void Percentiles(String Name, Int64[] Samples)
 }
 
 /// <summary>
+/// Small GETs from our client to our server, Concurrency at a time.
+/// </summary>
+Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, String Authority, Int32 Concurrency, Int32 Total)
+
+    => ReportLoad($"requests: GET, {Concurrency} concurrent", Concurrency, Total,
+                  () => Connection.SendRequestAsync(HTTPMethod.GET, Scheme, Authority, "/"));
+
+/// <summary>
 /// Drive Concurrency requests in flight at once until the budget is exhausted,
 /// reporting throughput plus the latency distribution — a mean alone hides
 /// exactly the tail behaviour multiplexing is supposed to protect.
 /// </summary>
-async Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, String Authority, Int32 Concurrency, Int32 Total)
+async Task ReportLoad(String Name, Int32 Concurrency, Int32 Total, Func<Task> Request)
 {
 
     var latencies = new Int64[Total];
@@ -489,7 +532,7 @@ async Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, St
         while ((index = Interlocked.Increment(ref next)) < Total)
         {
             var started = Stopwatch.GetTimestamp();
-            _ = await Connection.SendRequestAsync(HTTPMethod.GET, Scheme, Authority, "/");
+            await Request();
             latencies[index] = Stopwatch.GetTimestamp() - started;
         }
     }
@@ -506,6 +549,7 @@ async Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, St
     var gen0   = GC.CollectionCount(0);
     var gen1   = GC.CollectionCount(1);
     var before = GC.GetTotalAllocatedBytes(precise: true);
+    var cpu    = Process.GetCurrentProcess().TotalProcessorTime;
     var watch  = Stopwatch.StartNew();
 
     await Task.WhenAll(Enumerable.Range(0, Concurrency).Select(_ => Worker()));
@@ -513,16 +557,22 @@ async Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, St
     watch.Stop();
     var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
 
+    // CPU time, process-wide like the allocation figure. Per request it is the
+    // cost; set against the wall clock it says whether the run was bound by CPU
+    // at all — a connection that serializes leaves cores idle however slow it is.
+    cpu = Process.GetCurrentProcess().TotalProcessorTime - cpu;
+
     Array.Sort(latencies);
 
     Double Percentile(Double p)
         => latencies[(Int32) (p * (latencies.Length - 1))] * 1000.0 / Stopwatch.Frequency;
 
-    Console.WriteLine($"  requests: GET, {Concurrency} concurrent");
+    Console.WriteLine($"  {Name}");
     Console.WriteLine($"      {Total / watch.Elapsed.TotalSeconds,12:N0} req/s   ({watch.Elapsed.TotalMilliseconds:N1} ms for {Total:N0})");
     Console.WriteLine($"      {"latency ms",12}   p50 {Percentile(0.50):N3}, p90 {Percentile(0.90):N3}, " +
                       $"p99 {Percentile(0.99):N3}, max {Percentile(1.00):N3}");
     Console.WriteLine($"      {allocated / (Double) Total,12:N0} bytes/request   ({allocated / 1024.0 / 1024.0:N1} MiB total)");
+    Console.WriteLine($"      {cpu.TotalMicroseconds / Total,12:N1} µs CPU/request   ({cpu.TotalSeconds / watch.Elapsed.TotalSeconds:N1} cores busy)");
     Console.WriteLine($"      {"GC",12}   gen0 {GC.CollectionCount(0) - gen0}, gen1 {GC.CollectionCount(1) - gen1}");
     Console.WriteLine();
 
@@ -558,6 +608,50 @@ static async Task WaitUntilListening(Int32 Port)
         }
     }
     throw new TimeoutException($"nothing listening on 127.0.0.1:{Port}");
+}
+
+/// <summary>
+/// .NET's own HTTP/2 client, pinned to HTTP/2: with RequestVersionExact it fails
+/// rather than fall back to HTTP/1.1, and over http:// it speaks h2c with prior
+/// knowledge.
+/// </summary>
+static HttpClient DotNetHttpClient()
+
+    => new (new SocketsHttpHandler {
+                SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true
+                }
+            }) {
+           DefaultRequestVersion = HttpVersion.Version20,
+           DefaultVersionPolicy  = HttpVersionPolicy.RequestVersionExact
+       };
+
+/// <summary>
+/// Kestrel, HTTP/2 only, answering GET / with the same 13 bytes our server sends.
+/// It listens on 127.0.0.1 alone, as our server does: ListenLocalhost would add
+/// ::1, and the two servers would then be reached over different loopbacks.
+/// </summary>
+static async Task<(WebApplication Kestrel, Int32 Port)> StartKestrel(Boolean Cleartext)
+{
+
+    var port    = FreePort();
+    var builder = WebApplication.CreateBuilder();
+
+    builder.Logging.ClearProviders();
+    builder.WebHost.ConfigureKestrel(options =>
+        options.Listen(IPAddress.Loopback, port, listen =>
+        {
+            listen.Protocols = HttpProtocols.Http2;
+            if (!Cleartext)
+                listen.UseHttps(SelfSignedCertificate());
+        }));
+
+    var kestrel = builder.Build();
+    kestrel.MapGet("/", () => Results.Text("hello, world!"));
+    await kestrel.StartAsync();
+
+    return (kestrel, port);
+
 }
 
 static X509Certificate2 SelfSignedCertificate()

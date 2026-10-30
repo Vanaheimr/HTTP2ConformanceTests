@@ -4308,6 +4308,98 @@ and the bench ends with that same exception. The run's log is gone, so this
 cannot be proven. A stale listener never was proven either, and it is no longer
 the likelier reading.
 
+## 2026-10-30 — The control under load: our server carries a quarter of what Kestrel does
+
+The `HttpClient` → Kestrel control in `probe` measures one request at a time.
+The PR measurements for Hermod#189 had also run it at 64 concurrent, as a
+temporary patch. Its medians (5.1 ms against us, 1.2 ms against Kestrel)
+suggested by Little's law that Kestrel carries about four times our load on one
+connection. That was an inference, not a measurement. `tests/h2bench` now
+measures it.
+
+### What changed in `h2bench`
+
+- **A `control` scenario.** It runs 64 concurrent requests over one connection
+  each, as a 2 × 2 matrix: `HttpClient` against our server and against Kestrel,
+  and our client against Kestrel. `requests` already covers our client against
+  our server. Every response must be a 200 over HTTP/2, so a silent fallback to
+  HTTP/1.1, or a 404, fails the run instead of producing a number.
+- **CPU per request and cores busy** for every request scenario, from the
+  process's `TotalProcessorTime`. Per request it is the cost. Set against the
+  wall clock, it shows whether a run was bound by CPU at all.
+- **Kestrel listens on 127.0.0.1 only**, in `probe` too. `ListenLocalhost` added
+  `::1`, so the two servers could have been reached over different loopbacks.
+- `requests` and `control` share one load loop (`ReportLoad`). The `requests`
+  output is unchanged apart from the new CPU line.
+
+### The measurement
+
+Pin `531fda5b`, 18 runs: six on their own, twelve as the baseline arm of the
+experiments below. Median, range in brackets:
+
+| 64 concurrent, one connection | requests/s | p50 | cores busy |
+|---|---|---|---|
+| our client → our server | 13 783 (12 072 – 18 474) | 4.5 ms | 3.6 |
+| `HttpClient` → our server | 13 044 (5 579 – 14 260) | 4.8 ms | 6.0 |
+| `HttpClient` → Kestrel | 49 441 (17 716 – 54 498) | 1.2 ms | 9.5 |
+| our client → Kestrel | 24 223 (13 700 – 29 703) | 2.6 ms | 6.1 |
+
+The low ends of the ranges come from runs in which other processes took 10–15
+cores. With the client held fixed, Kestrel carries 3.8 times what our server
+does. With Kestrel held fixed, `HttpClient` sends twice what our client does.
+Both halves of the stack have a gap, and the server's is the larger. A single
+run over h2c gave the same picture, so TLS is not where the difference lies.
+Our own pair keeps only 3.6 of 16 cores busy, so it is bound by serialization,
+not by CPU.
+
+### Where the server's half goes
+
+This part was a throwaway experiment in a scratch tree, and none of it is
+committed. The server's two serial loops per connection were instrumented,
+measured on the `HttpClient` connection:
+
+- **The read loop** was busy for 21 % of the run (419 ms of work against
+  1 584 ms of waiting). It is not the limit.
+- **The DATA writer loop** makes one pick per response and then writes that
+  response's DATA. It is almost always the last writer waiting for the write
+  lock, so it flushes after nearly every response. That was 44 007 writes and
+  26 602 flushes, at about 43 µs each. Every response costs the writer loop a
+  pick and a flush, one after the other.
+
+Two patches, each interleaved four rounds against the pin:
+
+1. **Frames go into a buffer, and the last waiting writer flushes.** This is the
+   leader/followers arrangement the 2026-07-25 entry named as the standing
+   hypothesis: fewer writes, and no extra handoff.
+2. **The writer loop also stays registered as a writer for as long as it has
+   DATA to send.** It flushes when it runs out of sendable streams, whether they
+   are empty or blocked by flow control.
+
+| 64 concurrent, one connection | pin | patch 1 | patches 1 + 2 |
+|---|---|---|---|
+| `HttpClient` → our server | 13.0 – 13.7 k | 16.9 – 20.6 k | **44.2 – 51.5 k** |
+| `HttpClient` → Kestrel, same rounds | 43.1 – 51.5 k | 45.0 – 50.8 k | 42.2 – 51.8 k |
+| our client → our server | 12.1 – 18.5 k | 18.1 – 25.4 k | 26.0 – 30.9 k |
+
+With both patches our server is level with Kestrel under `HttpClient`. Its p50
+falls from 4.8 to 1.0 ms. 22 000 responses take 4 000 – 6 000 flushes, against
+about 24 000 with patch 1 alone and one per frame, some 44 000, at the pin. The
+Kestrel arm, which none of this touches, did not
+move, which is what makes it a control. A read buffer in front of the frame
+reads, tried as well, added nothing measurable: `SslStream` already buffers.
+
+Our pair now stops at 26 – 31 k, and that is the client. Against Kestrel it
+reaches the same 24 – 29 k, and it writes and flushes once per frame just as the
+server did.
+
+### What is not done
+
+The patches were a sketch. A writer that skips its flush because another is
+waiting relies on that other writer to flush. If the waiting writer is cancelled
+instead, as every writer is when the connection ends, a GOAWAY could stay in the
+buffer. The real change goes to Hermod, with tests, and then this repository
+measures it against the pin. The client is the next limit after that.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

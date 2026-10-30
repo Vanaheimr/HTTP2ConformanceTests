@@ -101,14 +101,17 @@ to turn it into a finding, and to give any future optimisation a baseline to bea
 ```bash
 dotnet run -c Release --project tests/h2bench                 # everything
 dotnet run -c Release --project tests/h2bench -- hpack        # one scenario
+dotnet run -c Release --project tests/h2bench -- control      # vs. HttpClient and Kestrel
 dotnet run -c Release --project tests/h2bench -- --mib 256    # bigger transfers
 dotnet run -c Release --project tests/h2bench -- --cleartext  # h2c instead of TLS
 ```
 
 Scenarios: `frames` and `hpack` (pure in-memory, low noise), `requests` (small
-GET at 1/8/64 concurrent, with latency percentiles), `throughput` and `upload`
-(large body). Each reports operations/s, bytes allocated per operation, and the
-GC collections provoked.
+GET at 1/8/64 concurrent, with latency percentiles), `probe` and `control` (the
+diagnostic ones, below), `throughput` and `upload` (large body). Each reports
+operations/s, bytes allocated per operation, and the GC collections provoked;
+the request scenarios also report the process's CPU time per request, and how
+many cores were busy while they ran.
 
 **What these numbers are not.** Client and server run in the *same process* over
 loopback, so every figure covers the whole round trip — both roles, TLS and the
@@ -138,12 +141,38 @@ a millisecond in this environment, and our server is consistently faster at it
 than Kestrel (0.73–1.14 ms vs 1.15–1.69 ms). An absolute number with nothing to
 compare it against is how "slower than expected" gets mistaken for "slow".
 
-What the split *did* find is real and ours: at 64 concurrent requests, "onto the
-wire" goes from 0.22 ms to 13.65 ms while "waiting for the response" stays at
-0.35 ms. The server multiplexes correctly; the client serialises request starts,
-because `requestStartLock` is held across the HEADERS write and not just the
-stream-ID allocation it exists to order. That caps one connection at roughly
-1 000 req/s regardless of concurrency. The fix is tracked separately.
+What the split *did* find was real and ours: at 64 concurrent requests, "onto
+the wire" went from 0.22 ms to 13.65 ms while "waiting for the response" stayed
+at 0.35 ms, and one connection was capped at roughly 1 000 req/s. That ceiling is
+gone since Hermod `38c7a2a7`. The cause was a slot wait inside
+`requestStartLock`, not the lock itself; see the 2026-10-03 entry in
+`docs/BUILD_LOG.md`.
+
+The `control` scenario is the probe's control under load. One request at a time
+says what a round trip costs; it says nothing about how many requests one
+connection carries. So it drives 64 concurrent requests over one connection each,
+as a 2 × 2 matrix: .NET's `HttpClient` against our server and against Kestrel,
+and our client against Kestrel. `requests` already covers our client against our
+server. With the client held fixed, a gap between the two servers is the
+server's; with the server held fixed, a gap between the two clients is the
+client's. Every response is checked for 200 over HTTP/2, so a control that fell
+back to HTTP/1.1, or measured a 404, fails rather than reporting a number.
+Kestrel listens on 127.0.0.1 only, as our server does, so both are reached over
+the same loopback. With `--cleartext`, all four run over h2c.
+
+Its first measurement, at pin `531fda5b`, 18 runs (median, range in brackets):
+
+| 64 concurrent, one connection | requests/s | cores busy |
+|---|---|---|
+| our client → our server | 13 783 (12 072 – 18 474) | 3.6 |
+| `HttpClient` → our server | 13 044 (5 579 – 14 260) | 6.0 |
+| `HttpClient` → Kestrel | 49 441 (17 716 – 54 498) | 9.5 |
+| our client → Kestrel | 24 223 (13 700 – 29 703) | 6.1 |
+
+Kestrel carries about 3.8 times what our server does with the same client. Our
+client reaches half of what `HttpClient` does against the same server. A single
+run over h2c gave the same picture (10 858 / 48 146 / 22 596 req/s for the three
+control arms), so TLS is not where the difference lies.
 
 ## h2spec conformance
 

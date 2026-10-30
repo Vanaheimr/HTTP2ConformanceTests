@@ -372,6 +372,25 @@ the old figures on today's box.
 Per-request latency through `HttpClient` still favours our server over the
 Kestrel control, in all ten runs (0.321 ms vs 0.353 ms p50 median).
 
+**Under load it does not.** The `control` scenario, added 2026-10-30, drives 64
+concurrent requests over one connection, with `HttpClient` against our server
+and against Kestrel, and with our client against Kestrel. Median of 18 runs at
+this pin:
+
+| 64 concurrent, one connection | requests/s |
+|---|---|
+| our client → our server (`requests`) | 13 783 |
+| `HttpClient` → our server | 13 044 |
+| `HttpClient` → Kestrel | 49 441 |
+| our client → Kestrel | 24 223 |
+
+With the client held fixed, our server carries about a quarter of what Kestrel
+does. With the server held fixed, our client sends about half of what
+`HttpClient` does. Our own pair keeps only 3.6 cores busy, so it is bound by
+serialization, not by CPU. A throwaway experiment found the server's half: its
+DATA writer loop flushes the socket once per response. See
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+
 **The per-connection throughput ceiling is gone.** It was real — at pin
 `69497656` the same bench on the same machine still reproduces it exactly:
 6 202 / 7 710 / **5 166** req/s at 1 / 8 / 64 concurrent, with the send path at
@@ -425,8 +444,9 @@ The p50 rose, and that is correct. By Little's law, 64 requests in flight at
 starved tail. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. One thing is genuinely open (see the task list): a decision on a
-client cookie jar.
+**done**. Two things are genuinely open (see the task list): a decision on a
+client cookie jar, and the per-connection throughput gap the `control` scenario
+shows.
 
 ### Optional — parked, not planned
 

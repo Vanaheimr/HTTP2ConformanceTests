@@ -3675,6 +3675,10 @@ fits is that the send path no longer serializes, so 64 requests now arrive at th
 server together and the queueing surfaces there instead — a hypothesis, measured
 on a box another session held at 15–36 %, neither bisected nor confirmed quiet.
 
+*Update 2026-10-30:* not queueing at the server. It was two defects in the
+DATA writer loop, starvation by dictionary order and a lost wakeup, fixed by
+Hermod#189. See the entry of that date.
+
 ### The re-baseline, and why it is a range
 
 Five full default runs, median and range, in `CLAUDE.md`. The spread is wide
@@ -3685,6 +3689,8 @@ recorded, so nothing regressed. A sixth run died with
 harness suite, h2spec and Autobahn had each been up and down on those ports —
 the stale-listener hazard `tests/lib.sh` has `free_ports` for. It is excluded and
 said so rather than quietly dropped.
+*(2026-10-30: more likely the lost wakeup fixed by Hermod#189. See the
+correction at the end of that date's entry.)*
 
 ## 2026-10-29 — Alt-Svc and the digest fields leave `HTTP2/`, and get stricter on the way
 
@@ -4133,6 +4139,174 @@ Two lessons from building the tool, now recorded in its header:
 - **A bare `*` on the `wsl.exe` command line is globbed** against the Windows
   working directory before the script sees it. Arguments with wildcards
   belong inside the script file.
+
+## 2026-10-30 — The response tail was the writer loop: old streams starved by dictionary order, and a wakeup could be lost
+
+Hermod `4f116936` → `531fda5b`, Styx unchanged at `f494c8cd`. The range is
+Hermod#189, the subject of this entry, and two DNS merges (#186, #190) that
+touch nothing under `HTTP2/`.
+
+| | |
+|---|---|
+| build | 0 errors |
+| in-process tests | **665/665** (was 660, plus the five tests #189 brings) |
+| harness runs | **49/49**, the `h2priority` urgency and PRIORITY_UPDATE scenarios among them |
+| h2spec | **146/146**, over `h2` *and* `h2c` |
+| Autobahn | **not measured**: #189 touches neither the WebSocket nor the tunnel path, and the nightly re-measures it |
+| `tests/h2bench` | **re-baselined** on a quiet machine, below |
+
+### What was open
+
+The 2026-10-03 entry closed with the tail. At 64 concurrent requests on one
+connection, waiting for the response had a p99 of **117.7 ms**, and the slowest
+request took **1 246 ms**. The reading offered there was queueing at the
+server: the send path no longer serialized, so 64 requests arrived together.
+That reading was wrong about the mechanism. The connection was not overloaded.
+One stream at a time was passed over while the connection stayed busy.
+
+### What it was not
+
+- **Nagle.** Both ends set `NoDelay` (`HTTP2Server.cs`, `HTTP2Client.cs`).
+- **Thread pool or GC.** A dedicated thread sampled the pool's thread count and
+  queued work items, the total GC pause, and the gaps in its own wake-ups. It
+  found no stall anywhere near the size of the tail.
+- **The machine.** .NET's `HttpClient` sent 64 concurrent requests to our server
+  and to Kestrel in the same round. The p99 was **105–167 ms** against ours and
+  **5–11 ms** against Kestrel. The load was the same for both servers, and only
+  ours had the tail.
+
+### What it was
+
+A stage trace (temporary hooks, not committed) caught one response that was
+queued for the DATA writer at 0.7 ms and taken at **210.8 ms**. Meanwhile the
+connection's I/O never paused for longer than 2.3 ms. The writer was busy the
+whole time; it just kept choosing other streams.
+
+**1. Starvation, in `HTTP2SendOrder.Compare`.** Streams of one urgency are
+ordered by `LastServedSequence`. A stream that has never been served still has
+the initial -1. A small response is a single chunk, so on a busy connection every
+pending stream ties. The tie went to whichever candidate `PickNext` saw first,
+which is the order of the stream manager's `Dictionary`.
+
+A `Dictionary` refills the slots of removed entries first. Once closed streams
+had been pruned, each new stream was enumerated ahead of the older ones still
+waiting, and that held on every pick. The oldest response waited for as long as
+new ones kept arriving.
+
+Never-served streams now go by stream ID, lowest first. That is the order the
+client asked in, and RFC 9218, Section 10 says non-incremental responses of one
+urgency SHOULD be served in it. Among streams that have been served,
+least-recently-served-first is unchanged.
+
+**2. A lost wakeup, in both `DataWriterLoopAsync`.** The loop scanned the
+streams, then took the wakeup task under the flow-control lock. Suppose a stream
+opened, queued its DATA and signalled between the scan and that lock. Its
+signal completed the old wakeup, and `SignalWriterWakeup` armed a fresh one. The
+loop took the fresh one, but the new stream was not among the candidates it had
+scanned. The loop then slept with that DATA queued until something unrelated
+woke it.
+
+With one request at a time nothing does, and the connection sat until the
+120 s idle timeout closed it. The bench then ended with `IOException:
+Connection closed by peer`, in **7 of 44** runs at the old pin. The loop now
+takes the wakeup before the scan.
+
+This race was found first. Fixing it alone left the tail exactly where it was,
+but it accounted for a different symptom, the hangs. The same loop moves the
+server's response bodies and the client's request bodies, so both roles got
+both fixes.
+
+The new tests in Hermod are red without the fixes (3 of 5) and green with them:
+
+- `SendOrderTests` (4 tests):
+  - Never-served streams go in stream ID order.
+  - After a prune, the stream manager offers a new stream ahead of an older
+    one. The test asserts that precondition, then that the older stream is
+    still served first.
+  - Served streams wait behind never-served ones.
+  - Urgency still comes first.
+- `ServerWriterWakeupTests` (1 test). It holds the writer loop at the flow
+  lock right after a DATA write, and queues another stream's DATA under that
+  lock. Unfixed, that DATA never goes out.
+
+The client's loop is covered by reasoning, not by a test of its own.
+
+### Measured before the merge
+
+h2bench, 64 concurrent requests on one connection. Five rounds, alternating
+the unchanged pin with the fix, with other sessions' load paused:
+
+| | | unchanged | fixed |
+|---|---|---|---|
+| ours → ours | p99 | 11–182 ms | **6.5–7.8 ms** (once 40) |
+| | max | 747–1 491 ms | **7–31 ms** (once 67) |
+| | p50 | 0.34–0.40 ms | 4.8–5.2 ms |
+| | req/s | 12.3–13.5 k | 12.8–13.2 k (once 8.5) |
+| `HttpClient` → ours | p99 | 105–167 ms | **7–23 ms** |
+| `HttpClient` → Kestrel | p99 | 5–11 ms | 5–11 ms |
+
+The "once" values all come from the one round in which Kestrel slowed down too
+(p99 33 ms). Hangs at the idle timeout: 7 of 44 runs without the wakeup fix,
+**0 of 21** with it.
+
+**The median rose, and that is correct.** Little's law: 64 requests in flight
+at ~13 k req/s means ~5 ms per request on average. A median of 0.4 ms at that
+throughput was possible only because a few requests waited hundreds of
+milliseconds while the rest went straight through. The old median was paid for
+by the starved tail.
+
+### The re-baseline
+
+Ten full default runs at `531fda5b`. The figures are in `CLAUDE.md`. None of
+the ten hung. For runs 6–10, the CPU of every other process was sampled once
+a second during the run. For runs 1–5 that sampler failed, and only a
+snapshot taken before each run exists.
+
+The tail outliers at 64 concurrent (p99 26 ms, max 47 and 56 ms) all come from
+the two runs in which another session's compiler took 12–15 cores. In the
+other eight runs, p99 was 5.9–6.3 ms and max 6.3–20.3 ms. Otherwise, other
+processes usually held 1–3 cores. Most of that was desktop applications, one
+of them a steady single core, plus the sampler's own WMI queries. The
+snapshots before runs 1 and 4 caught brief spikes of 5–7 cores.
+
+**Throughput at 8 and 64 concurrent came out below 2026-10-03** (14 389 /
+13 716 against 16 595 / 16 323 req/s). To find out whether that is the stack,
+the 2026-10-03 build was rebuilt in a scratch tree (superproject `05e8b78`,
+Hermod `22768a4a`, Styx `ba317094`; `tests/h2bench` is unchanged since).
+It ran interleaved with the new pin, five rounds each, with the load sampled
+the same way:
+
+| | 2026-10-03 build | `531fda5b` |
+|---|---|---|
+| requests/s, 1 / 8 / 64 concurrent | 6 529 / 14 664 / 14 019 | 6 131 / 14 716 / 13 753 |
+| 64 concurrent, p50 | 0.33 ms | 4.6 ms |
+| 64 concurrent, p99 | 17 – 97 ms | 6.1 – 6.4 ms |
+| 64 concurrent, max | 587 – 1 427 ms | 6.9 – 10.6 ms |
+| waiting for the response, 64 concurrent, p99 | 48 – 151 ms | 5.8 – 6.4 ms |
+| GET / POST 64 MiB | 214 / 221 MiB/s | 214 / 217 MiB/s |
+
+The old build no longer reaches its own documented throughput on this machine
+either. The drop comes from the environment, not the stack. The candidates are
+.NET 10.0.12 → 10.0.14 and the desktop load that was not there on 2026-10-03.
+This entry does not separate the two.
+
+At 64 concurrent the new pin ran 2–3 % slower than the old build in the two
+quietest rounds (13 753 / 13 676 against 14 068 / 14 117). #189 is unlikely to
+be the cause. The PR's own A/B compared the pin directly before #189 with the
+fix, and showed no throughput difference (12.3–13.5 k against 12.8–13.2 k). If
+the 2–3 % is real, it came in somewhere between `22768a4a` and `4ac13e3b`. Not
+pursued; two rounds are not enough to call it a regression.
+
+### A correction to 2026-10-03
+
+That entry excluded a sixth run that "died with `IOException: Connection closed
+by peer` in its first scenario" and blamed the stale-listener hazard. The
+lost wakeup above produces exactly that failure. It strikes in the first
+networked scenario, `requests` at 1 concurrent, where nothing else on the
+connection can wake the writer. The connection then waits out the idle timeout
+and the bench ends with that same exception. The run's log is gone, so this
+cannot be proven. A stale listener never was proven either, and it is no longer
+the likelier reading.
 
 ## Roadmap — candidate next tracks (planning only)
 

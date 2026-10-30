@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client` and `WebSocket`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-660 NUnit unit + integration tests live with the stack in Hermod
+665 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **660 NUnit tests** in
+**Tests:** most coverage is the **665 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **49** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
@@ -237,7 +237,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **660/660** NUnit tests and **49/49** harness runs on *both*
+**Verification:** **665/665** NUnit tests and **49/49** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
@@ -341,38 +341,45 @@ had noticed either:
   without a verdict (fixed). **Docker Desktop itself is still unverified.**
 
 **Performance** is measured by `tests/h2bench`. Figures re-baselined
-**2026-10-03** at pin `22768a4a`, .NET 10.0.12, 16 logical cores, client and
+**2026-10-30** at pin `531fda5b`, .NET 10.0.14, 16 logical cores, client and
 server in one process (so every number covers both roles plus TLS and loopback).
-**Five full default runs, reported as median (range)**, because the box was not
-idle — other sessions held 15–36 % of the CPU throughout, and the spread below is
-mostly that rather than the stack:
+**Ten full default runs, reported as median (range).**
+
+No other session ran a load series. Other processes usually held 1–3 cores,
+mostly desktop applications, with brief spikes beyond. In two of the ten runs
+another session's compile took 12–15 cores, and those two runs hold the only
+tail outliers below:
 
 | | |
 |---|---|
-| requests/s, 1 concurrent | 6 368 (4 380 – 7 743) |
-| requests/s, 8 concurrent | 16 595 (8 488 – 17 749) |
-| requests/s, 64 concurrent | 16 323 (12 403 – 17 292) |
-| GET 64 MiB | 175 MiB/s (168 – **263**) |
-| POST 64 MiB | 222 MiB/s (193 – 227) |
-| HPACK blocks/s | ~196 k (167 k – 220 k) |
-| frames/s | ~12.5 M (4.8 M – 13.0 M) |
-| allocation per trivial request | 9.1 – 10.3 KiB, rising with concurrency |
+| requests/s, 1 concurrent | 6 484 (4 606 – 7 001) |
+| requests/s, 8 concurrent | 14 389 (11 901 – 14 674) |
+| requests/s, 64 concurrent | 13 716 (10 075 – 14 081) |
+| latency at 64 concurrent, p50 / p99 / max | 4.6 / 6.1 / 7.1 ms (p99 5.9 – 26.1, max 6.3 – 55.8) |
+| GET 64 MiB | 223 MiB/s (180 – 235) |
+| POST 64 MiB | 225 MiB/s (199 – 237) |
+| HPACK blocks/s | ~206 k (160 k – 222 k) |
+| frames/s | ~13.7 M (7.7 M – 14.8 M) |
+| allocation per trivial request | 9 100 – 10 300 bytes, rising with concurrency, unchanged |
 | a large transfer | ~6.0× its payload, unchanged |
 
-Nothing regressed against the 2026-08-13 figures: GET throughput *peaked* at
-263.4 MiB/s, which is the ~260 MiB/s that note recorded, so the lower readings
-are the load and not the stack. Per-request latency against a Kestrel control on
-the same machine still favours our server, in four runs of five (0.339 ms vs
-0.405 ms p50 median; both slower than the 0.25/0.29 recorded on a quiet box).
+**Requests/s at 8 and 64 concurrent are lower than the 16 595 / 16 323 of
+2026-10-03, and the cause is the machine, not the stack.** The 2026-10-03 build
+(Hermod `22768a4a`), run interleaved with this one today, gives the same:
+14 664 / 14 019 req/s median, against 14 716 / 13 753. Neither build reaches
+the old figures on today's box.
+
+Per-request latency through `HttpClient` still favours our server over the
+Kestrel control, in all ten runs (0.321 ms vs 0.353 ms p50 median).
 
 **The per-connection throughput ceiling is gone.** It was real — at pin
 `69497656` the same bench on the same machine still reproduces it exactly:
 6 202 / 7 710 / **5 166** req/s at 1 / 8 / 64 concurrent, with the send path at
 **20.6 ms** p50 at 64. It disappears at Hermod **`38c7a2a7`** (2026-09-29),
 bisected over 151 commits with the sag at 64 concurrent as the predicate
-(1 573 – 4 373 req/s broken, 12 933 – 16 039 fixed — no overlap). At the current
-pin the send path is **0.036 ms** p50 at 64 concurrent, a factor of ~570, and it
-barely rises with concurrency at all.
+(1 573 – 4 373 req/s broken, 12 933 – 16 039 fixed — no overlap). At pin
+`22768a4a` the send path was **0.036 ms** p50 at 64 concurrent, a factor of
+~570 (0.043 ms at the current pin), and it barely rises with concurrency at all.
 
 **The old diagnosis in this file named the right lock and the wrong cost.** It
 said `requestStartLock` was held across the HEADERS write, so every start waited
@@ -390,17 +397,36 @@ the wrong target — see [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) for the bisect
 the protocol error that nearly hid all of this, and the earlier queued-writer
 dead end.
 
-**What is open instead is the tail.** The median and the throughput improved
-enormously; the far tail at 64 concurrent got worse. Waiting-for-the-response
-p99 went from 0.200 ms at `69497656` to **117.7 ms**, and `requests` max from
-73.8 ms to 1 246 ms. The plausible reading is that the send path no longer
-serializes, so 64 requests now reach the server together and the queueing shows
-up there instead — but that is a hypothesis, measured on a loaded box, and it
-has not been bisected or confirmed on a quiet one.
+**The tail is closed. It was two defects in the DATA writer loop, not
+queueing.** The old reading here was that 64 requests now reached the server
+together and queued there. A stage trace showed something else. One response
+was queued at 0.7 ms and taken at 210.8 ms, while the connection never paused
+for longer than 2.3 ms. The writer was busy the whole time and kept choosing
+other streams. Hermod#189 fixed two defects:
+
+- **Starvation.** Never-served streams of one urgency tied, and the tie went to
+  the stream manager's `Dictionary` order. A `Dictionary` refills freed slots
+  first, so each new stream came ahead of the older ones. Never-served streams
+  now go by stream ID, the order RFC 9218 §10 asks for.
+- **A lost wakeup.** The loop took its wakeup after scanning the streams, so a
+  stream that queued in between was missed. With nothing else on the
+  connection, that response waited for the 120 s idle timeout.
+
+Measured interleaved against the 2026-10-03 build, at 64 concurrent:
+
+| | 2026-10-03 build | now |
+|---|---|---|
+| p99 | 17 – 97 ms | 6.1 – 6.4 ms |
+| max | 587 – 1 427 ms | 6.9 – 10.6 ms |
+| p50 | ~0.33 ms | ~4.6 ms |
+
+The p50 rose, and that is correct. By Little's law, 64 requests in flight at
+~14 k req/s take ~4.6 ms each on average. The old median was paid for by the
+starved tail. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. Two things are genuinely open (see the task list): the response-tail
-behaviour described above, and a decision on a client cookie jar.
+**done**. One thing is genuinely open (see the task list): a decision on a
+client cookie jar.
 
 ### Optional — parked, not planned
 

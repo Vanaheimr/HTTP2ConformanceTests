@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client` and `WebSocket`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-665 NUnit unit + integration tests live with the stack in Hermod
+678 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -54,7 +54,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 
 Target framework is `net10.0`. Uses a self-signed cert generated at startup.
 
-**Tests:** most coverage is the **665 NUnit tests** in
+**Tests:** most coverage is the **678 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **49** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
@@ -96,6 +96,7 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2Frame.cs` (+ `HTTP2FrameType.cs`, `HTTP2FrameFlags.cs`, `HTTP2ErrorCode.cs`, `HTTP2SettingsParameter.cs`, `HTTP2StreamState.cs`, `HTTP2Role.cs`, `HTTP2*Exception.cs`) | 9-byte frame header parse/serialize + frame factories; the frame type/flag/error-code/role enums and the exception types are sibling files |
 | `HPACKDecoder.cs` / `HPACKEncoder.cs` (+ `HuffmanDecoder.cs` / `HuffmanEncoder.cs`) | RFC 7541: static + dynamic table, integer/string coding, Huffman decode **and encode**, full-featured encoder (static + per-connection dynamic table + Huffman) |
 | `HTTP2Stream.cs` (+ `HTTP2StreamManager.cs`, `HTTP2OutboundQueue.cs`, `HTTP2OutboundItem.cs`, `HTTP2Priority.cs`) | Per-stream state machine (RFC 9113 §5.1), per-stream flow-control windows, RFC 9218 priority + outbound DATA queue, role-parameterized `HTTP2StreamManager` |
+| `HTTP2FrameWriter.cs` | The connection's write lock plus a 16 KiB write buffer. The last writer waiting flushes; the DATA writer loop batches until nothing is sendable; a GOAWAY is flushed at once. Only the server uses it so far (Hermod#195); the client measured no gain from it |
 | `HTTP2Settings.cs` | The connection-settings bag (advertised vs. peer), used by both roles |
 | `HTTP2HeaderList.cs` | RFC 9113 §6.5.2 header-list accounting (name + value + 32 per field, uncompressed) — the one formula both roles measure `MAX_HEADER_LIST_SIZE` against |
 | `HTTP2Trailers.cs` | RFC 9113 §8.1 trailer-field validation (no pseudo-headers, lowercase names) — identical whichever direction they travel, so the server's response trailers and the client's request trailers cannot drift apart |
@@ -237,7 +238,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **665/665** NUnit tests and **49/49** harness runs on *both*
+**Verification:** **678/678** NUnit tests and **49/49** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
@@ -341,55 +342,77 @@ had noticed either:
   without a verdict (fixed). **Docker Desktop itself is still unverified.**
 
 **Performance** is measured by `tests/h2bench`. Figures re-baselined
-**2026-10-30** at pin `531fda5b`, .NET 10.0.14, 16 logical cores, client and
+**2026-10-31** at pin `cbdd1bb1`, .NET 10.0.14, 16 logical cores, client and
 server in one process (so every number covers both roles plus TLS and loopback).
-**Ten full default runs, reported as median (range).**
+**Ten full default runs, reported as median (range).** Each run was paired with a
+run of the previous pin `531fda5b`, and the order alternated from pair to pair.
 
-No other session ran a load series. Other processes usually held 1–3 cores,
-mostly desktop applications, with brief spikes beyond. In two of the ten runs
-another session's compile took 12–15 cores, and those two runs hold the only
-tail outliers below:
+No other session ran load during the series. Other processes held 1.5 – 4.9
+cores on average per run. In two runs they peaked at 9 – 11 cores, and those two
+runs hold the low ends of GET, frames/s and HPACK below:
 
 | | |
 |---|---|
-| requests/s, 1 concurrent | 6 484 (4 606 – 7 001) |
-| requests/s, 8 concurrent | 14 389 (11 901 – 14 674) |
-| requests/s, 64 concurrent | 13 716 (10 075 – 14 081) |
-| latency at 64 concurrent, p50 / p99 / max | 4.6 / 6.1 / 7.1 ms (p99 5.9 – 26.1, max 6.3 – 55.8) |
-| GET 64 MiB | 223 MiB/s (180 – 235) |
-| POST 64 MiB | 225 MiB/s (199 – 237) |
-| HPACK blocks/s | ~206 k (160 k – 222 k) |
-| frames/s | ~13.7 M (7.7 M – 14.8 M) |
-| allocation per trivial request | 9 100 – 10 300 bytes, rising with concurrency, unchanged |
+| requests/s, 1 concurrent | 6 500 (6 166 – 6 791) |
+| requests/s, 8 concurrent | 26 514 (25 219 – 27 051) |
+| requests/s, 64 concurrent | 26 510 (24 924 – 27 333) |
+| latency at 64 concurrent, p50 / p99 / max | 2.3 / 3.4 / 16.7 ms (p99 3.4 – 5.3, max 4.0 – 33.0) |
+| GET 64 MiB | 220 MiB/s (159 – 230) |
+| POST 64 MiB | 230 MiB/s (213 – 239) |
+| HPACK blocks/s | ~210 k (139 k – 217 k) |
+| frames/s | ~13.8 M (5.5 M – 15.1 M) |
+| allocation per trivial request | 9 200 – 10 200 bytes, rising with concurrency |
 | a large transfer | ~6.0× its payload, unchanged |
 
-**Requests/s at 8 and 64 concurrent are lower than the 16 595 / 16 323 of
-2026-10-03, and the cause is the machine, not the stack.** The 2026-10-03 build
-(Hermod `22768a4a`), run interleaved with this one today, gives the same:
-14 664 / 14 019 req/s median, against 14 716 / 13 753. Neither build reaches
-the old figures on today's box.
+**What `cbdd1bb1` changed.** Hermod#195 buffers the server's frames and lets the
+last writer waiting flush. Against `531fda5b`, pair by pair:
+
+- **Requests/s at 8 and 64 concurrent nearly doubled**, from 14 642 and 13 700
+  to the figures above, higher in all ten pairs. CPU per request at 64
+  concurrent fell from 270 to 186 µs.
+- **Latency at 64 concurrent:** p50 fell from 4.6 to 2.3 ms and p99 from 6.2 to
+  3.4 ms, in all ten pairs. Little's law gives 2.4 ms at 26.5 k req/s.
+- **The max at 64 concurrent rose** in six of ten pairs, median 7.8 → 16.7 ms.
+  It does so in the quietest runs too, so it is not the machine. The cause is
+  not established.
+- **One request at a time:** unchanged (6 573 vs 6 500 req/s).
+- **GET 64 MiB is about 3 % slower.** It was lower in eight of ten pairs, in both
+  orders, and the median of the paired differences is −3.0 %. The PR's own runs
+  leaned the same way. POST is about 3 % faster, higher in eight of ten. Neither
+  has an established cause. A full DATA frame is larger than the 16 KiB buffer,
+  so it reaches the transport directly, as before.
+- **Allocation per request:** +120 bytes at 1 concurrent, +360 at 8, −50 at 64.
 
 Per-request latency through `HttpClient` still favours our server over the
-Kestrel control, in all ten runs (0.321 ms vs 0.353 ms p50 median).
+Kestrel control, in all ten runs (0.314 ms vs 0.350 ms p50 median).
 
-**Under load it does not.** The `control` scenario, added 2026-10-30, drives 64
-concurrent requests over one connection, with `HttpClient` against our server
-and against Kestrel, and with our client against Kestrel. Median of 18 runs at
-this pin:
+**Under load, our server now carries what Kestrel does.** The `control`
+scenario, added 2026-10-30, drives 64 concurrent requests over one connection,
+with `HttpClient` against our server and against Kestrel, and with our client
+against Kestrel. Medians from the same ten pairs:
 
-| 64 concurrent, one connection | requests/s |
-|---|---|
-| our client → our server (`requests`) | 13 783 |
-| `HttpClient` → our server | 13 044 |
-| `HttpClient` → Kestrel | 49 441 |
-| our client → Kestrel | 24 223 |
+| 64 concurrent, one connection | `531fda5b` | `cbdd1bb1` |
+|---|---|---|
+| our client → our server (`requests`) | 13 700 | 26 510 |
+| `HttpClient` → our server | 13 306 | **53 916** |
+| `HttpClient` → Kestrel | 56 013 | 54 800 |
+| our client → Kestrel | 25 151 | 25 152 |
 
-With the client held fixed, our server carries about a quarter of what Kestrel
-does. With the server held fixed, our client sends about half of what
-`HttpClient` does. Our own pair keeps only 3.6 cores busy, so it is bound by
-serialization, not by CPU. A throwaway experiment found the server's half: its
-DATA writer loop flushes the socket once per response. See
-[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+**The server.** With `HttpClient` as the client, our server has gone from a
+quarter of Kestrel's throughput to level with it. Its CPU per request fell from
+404 to 168 µs. The Kestrel arm did not move between the pins, which is what
+makes it a control. Over h2c, three pairs gave 14.5 – 15.0 k → 44.1 – 46.1 k,
+with Kestrel at 51.5 – 58.5 k.
+
+**The client is now the limit.** With the server held fixed, our client still
+sends half of what `HttpClient` does. Against Kestrel it is exactly where it
+was. The probe shows where the queue moved. At 64 concurrent, a request's time
+onto the wire rose from 0.043 to 2.2 ms p50, and its wait for the response fell
+from 4.6 to 0.13 ms. The queue that used to form at the server now forms in the
+client's send path, everything before `StartRequestAsync` returns. The same
+coalescing applied to the client measured no gain, so the cost there is
+something else. Our own pair keeps 5.0 of 16 cores busy, so it is still bound by
+serialization, not by CPU. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 **The per-connection throughput ceiling is gone.** It was real — at pin
 `69497656` the same bench on the same machine still reproduces it exactly:
@@ -398,7 +421,10 @@ DATA writer loop flushes the socket once per response. See
 bisected over 151 commits with the sag at 64 concurrent as the predicate
 (1 573 – 4 373 req/s broken, 12 933 – 16 039 fixed — no overlap). At pin
 `22768a4a` the send path was **0.036 ms** p50 at 64 concurrent, a factor of
-~570 (0.043 ms at the current pin), and it barely rises with concurrency at all.
+~570 (0.043 ms at `531fda5b`), and it barely rose with concurrency at all. At
+`cbdd1bb1` it is 2.2 ms again, for a different reason: the server stopped being
+the bottleneck, so the queue now forms in the client's send path (see *The
+client is now the limit* above).
 
 **The old diagnosis in this file named the right lock and the wrong cost.** It
 said `requestStartLock` was held across the HEADERS write, so every start waited
@@ -433,7 +459,7 @@ other streams. Hermod#189 fixed two defects:
 
 Measured interleaved against the 2026-10-03 build, at 64 concurrent:
 
-| | 2026-10-03 build | now |
+| | 2026-10-03 build | `531fda5b` |
 |---|---|---|
 | p99 | 17 – 97 ms | 6.1 – 6.4 ms |
 | max | 587 – 1 427 ms | 6.9 – 10.6 ms |
@@ -441,12 +467,14 @@ Measured interleaved against the 2026-10-03 build, at 64 concurrent:
 
 The p50 rose, and that is correct. By Little's law, 64 requests in flight at
 ~14 k req/s take ~4.6 ms each on average. The old median was paid for by the
-starved tail. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+starved tail. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md). At `cbdd1bb1` the
+p50 halved, because throughput doubled. Its max is higher; see above.
 
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
-**done**. Two things are genuinely open (see the task list): a decision on a
-client cookie jar, and the per-connection throughput gap the `control` scenario
-shows.
+**done**. Two things are genuinely open (see the task list):
+- a decision on a client cookie jar;
+- the client's half of the per-connection throughput gap the `control` scenario
+  shows. The server's half closed with Hermod#195.
 
 ### Optional — parked, not planned
 

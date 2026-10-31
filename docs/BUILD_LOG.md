@@ -4400,6 +4400,136 @@ instead, as every writer is when the connection ends, a GOAWAY could stay in the
 buffer. The real change goes to Hermod, with tests, and then this repository
 measures it against the pin. The client is the next limit after that.
 
+## 2026-10-31 — Write coalescing (Hermod#195): our server carries what Kestrel does, and the client is the limit
+
+Hermod `531fda5b` → `cbdd1bb1`, Styx unchanged at `f494c8cd`. The range:
+
+- **Hermod#195:** the HTTP/2 server buffers its frames, and only the last writer
+  waiting flushes. This is the real change behind the sketch in the previous
+  entry.
+- **Hermod#194:** HTTP/3 receive-side retention; it also removes
+  `QuicClientConnection.ApplicationFrames`.
+- **HTTP/1.1:** #185 (103 Early Hints) and #187 (`Content-Disposition`, a new
+  `HTTP/HTTPContentDisposition.cs`).
+- **DNS:** #191 and #192. **SSH host keys:** #193.
+
+Nothing outside #195 touches `HTTP2/`.
+
+### What #195 does
+
+`HTTP2FrameWriter`, a new internal class in `Core`, owns the connection's write
+lock and a 16 KiB buffer.
+
+- **The last writer flushes.** A writer counts itself as pending before it waits
+  for the lock and stops counting as it leaves. The writer that brings the count
+  to zero flushes. Nothing is handed to another thread, because the thread that
+  holds the lock still does the write. A handoff is what made the queued writer
+  of 2026-07-25 ten times slower.
+- **The DATA writer loop batches.** It holds a batch open, counted as one more
+  pending writer, while some stream has DATA it may send. The batch ends, and so
+  flushes, when nothing is sendable, whether the queues are empty or flow
+  control blocks them. The peer cannot grant window for DATA it has not
+  received.
+- **A GOAWAY is flushed at once**, even with writers waiting.
+- **A bounded last flush at the connection's end.** It is bounded at 250 ms, the
+  same bound as the drain after a GOAWAY. It answers the open point of the
+  previous entry: a writer that is cancelled after another writer has left its
+  flush to it.
+- **A failed flush drops what it carried.** The first version sat on
+  `BufferedStream`, which keeps the bytes of a failed write. The GOAWAY's flush
+  then sent them a second time, and
+  `ClientWriterLoopFailureTests.OtherFailure_EndsTheConnectionAtOnce` saw a DATA
+  frame after the failure. The buffer is now emptied before the transport
+  write.
+
+`HTTP2Connection` takes `WriteBufferSize`. It defaults to 16 KiB, and 0 writes
+each frame through. `PipedH2ServerConnection` uses 0, because its hooks name the
+thread that wrote a frame, and with buffering that would be the thread that
+flushed.
+
+#195 adds 13 tests: `FrameWriterTests` (10) and `ServerWriteBatchingTests` (3).
+- **A control in the batching test.** Eight HEADERS queued behind the lock go
+  out in one transport write with the buffer, and in eight without it.
+- **Proof the batch's end matters.** Without it, both buffered cases fail.
+- **Two unexplained timeouts.** `ServerWriteBatchingTests` timed out twice in
+  about 90 runs under heavy machine load, once in the write-through case. Neither
+  recurred in 83 runs since. Its assertion now lists the frames per stream and
+  per transport write.
+
+### Verified at the new pin
+
+- build: 0 errors
+- `Tests.HTTP2`: 678/678, twice (was 665)
+- `run-tests.sh`: 49/49 harness runs
+- h2spec: 146/146 over h2 and over h2c
+
+### h2bench, ten pairs
+
+Each full default run of `cbdd1bb1` was paired with a run of `531fda5b`, built in
+a scratch clone. The order alternated from pair to pair, because with a fixed
+order the second arm runs slower (2026-10-30). Other processes held 1.5 – 4.9
+cores on average per run.
+
+| median (range) | `531fda5b` | `cbdd1bb1` | `cbdd1bb1` higher in |
+|---|---|---|---|
+| requests/s, 1 concurrent | 6 573 (4 298 – 7 188) | 6 500 (6 166 – 6 791) | 3/10 |
+| requests/s, 8 concurrent | 14 642 (12 950 – 15 567) | 26 514 (25 219 – 27 051) | 10/10 |
+| requests/s, 64 concurrent | 13 700 (13 291 – 14 073) | 26 510 (24 924 – 27 333) | 10/10 |
+| p50 / p99 at 64 | 4.64 / 6.20 ms | 2.34 / 3.43 ms | 0/10, 0/10 |
+| max at 64 | 7.8 ms (6.7 – 15.0) | 16.7 ms (4.0 – 33.0) | 6/10 |
+| CPU per request at 64 | 270 µs | 186 µs | 0/10 |
+| `HttpClient` → our server, 64 | 13 306 | 53 916 | 10/10 |
+| `HttpClient` → Kestrel, 64 | 56 013 | 54 800 | 4/10 |
+| our client → Kestrel, 64 | 25 151 | 25 152 | 5/10 |
+| probe at 64, onto the wire, p50 | 0.043 ms | 2.196 ms | 10/10 |
+| probe at 64, waiting for the response, p50 | 4.585 ms | 0.134 ms | 0/10 |
+| GET 64 MiB | 224.6 MiB/s | 220.3 MiB/s | 2/10 |
+| POST 64 MiB | 226.0 MiB/s | 229.7 MiB/s | 8/10 |
+| bytes per request at 1 / 8 / 64 | 9 096 / 9 858 / 10 266 | 9 219 / 10 219 / 10 214 | |
+| frames/s, HPACK blocks/s | 13.9 M, 214 k | 13.8 M, 210 k | 5/10, 4/10 |
+
+Three pairs of `requests control` over h2c, old pin first in each, gave:
+- `HttpClient` → our server: 14.5 – 15.0 k → 44.1 – 46.1 k
+- our pair: 14.6 – 14.9 k → 30.4 – 31.0 k
+- Kestrel: 51.5 – 58.5 k
+
+**The server's half of the gap is closed.** With `HttpClient` as the client,
+our server went from a quarter of Kestrel's throughput to level with it, and its
+CPU per request from 404 to 168 µs. The Kestrel arm did not move, which is what
+makes it a control.
+
+**The queue moved to the client.** Our pair doubled. Our client against Kestrel
+did not move at all, and it still sends half of what `HttpClient` does. The
+probe shows the shift. At 64 concurrent, the wait for the response fell from
+4.6 ms to 0.13 ms. The time until `StartRequestAsync` returns, i.e. until our
+HEADERS are on the wire, rose from 0.04 ms to 2.2 ms. Little's law holds: 64 in
+flight at 26.5 k req/s is 2.4 ms each. Our pair keeps 5.0 cores busy, so it is
+still bound by serialization.
+
+**Two results go the wrong way, and neither is explained:**
+
+- **The max at 64 concurrent rose** in six of ten pairs, median 7.8 → 16.7 ms.
+  It does so in quiet runs too: in pair 3, other processes held 1.8 cores and
+  the max was 26.9 ms. The p99 halved in every pair, so this is one request in
+  20 000 per run.
+- **GET 64 MiB is about 3 % slower.** It was lower in eight of ten pairs, in
+  both orders, and the median of the paired differences is −3.0 %. The PR's
+  eight rounds leaned the same way: 236 against 243 MiB/s, lower in five of
+eight. A full DATA frame is
+  16 393 bytes, larger than the buffer, so it reaches the transport directly, as
+  before. POST is about 3 % faster.
+
+### What is not done
+
+- **The client.** The same coalescing, applied to the client, measured no gain
+  in the PR's experiment: a handoff from `requestStartLock` to the write lock,
+  plus a batch in its writer loop. That run gave 21.5 – 23.9 k against
+  23.6 – 24.3 k at the pin. Its read loop is busy about 19 % of the time. The
+  probe now says where the time goes: before `StartRequestAsync` returns. That
+  is where to look next.
+- **The max at 64 and the GET 3 %.** Both are recorded above, and neither has
+  been investigated.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

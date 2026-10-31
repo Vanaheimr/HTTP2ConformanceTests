@@ -174,6 +174,22 @@ client reaches half of what `HttpClient` does against the same server. A single
 run over h2c gave the same picture (10 858 / 48 146 / 22 596 req/s for the three
 control arms), so TLS is not where the difference lies.
 
+At pin `cbdd1bb1` (Hermod#195) the server buffers its frames, and the last
+writer waiting flushes them. Ten runs, each paired with a run of `531fda5b`, the
+order alternating:
+
+| 64 concurrent, one connection | `531fda5b` | `cbdd1bb1` | cores busy at `cbdd1bb1` |
+|---|---|---|---|
+| our client → our server | 13 700 | 26 510 (24 924 – 27 333) | 5.0 |
+| `HttpClient` → our server | 13 306 | 53 916 (48 379 – 57 551) | 9.1 |
+| `HttpClient` → Kestrel | 56 013 | 54 800 (47 934 – 61 062) | 10.6 |
+| our client → Kestrel | 25 151 | 25 152 (24 590 – 27 042) | 5.1 |
+
+With `HttpClient` as the client, our server is now level with Kestrel. Our
+client has not moved, and it is now the limit of our own pair. Three pairs over
+h2c gave the same picture: 14.5 – 15.0 k → 44.1 – 46.1 k req/s for `HttpClient`
+against our server, with Kestrel at 51.5 – 58.5 k.
+
 ## h2spec conformance
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2

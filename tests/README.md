@@ -190,6 +190,29 @@ client has not moved, and it is now the limit of our own pair. Three pairs over
 h2c gave the same picture: 14.5 – 15.0 k → 44.1 – 46.1 k req/s for `HttpClient`
 against our server, with Kestrel at 51.5 – 58.5 k.
 
+At pin `abe0384f` (Hermod#197) the client writes through the same frame writer,
+and the request starts waiting in line share one flush. Ten runs, each paired
+with a run of `2776e3b6`, whose `HTTP2/` is that of `cbdd1bb1`, the order
+alternating:
+
+| 64 concurrent, one connection | `2776e3b6` | `abe0384f` | cores busy at `abe0384f` |
+|---|---|---|---|
+| our client → our server | 25 933 | 72 398 (54 316 – 77 648) | 4.1 |
+| `HttpClient` → our server | 49 203 | 47 660 (36 780 – 51 533) | 8.2 |
+| `HttpClient` → Kestrel | 54 379 | 48 821 (41 384 – 52 737) | 8.5 |
+| our client → Kestrel | 25 461 | 113 764 (91 635 – 127 978) | 5.8 |
+
+Our client now sends more than twice what `HttpClient` does against Kestrel,
+and our server is the limit of our own pair. Five pairs over h2c gave the
+same: 29.4 k → 84.2 k req/s for our pair and 26.1 k → 114.7 k for our client
+against Kestrel (medians), with the `HttpClient` arms unchanged.
+
+**The arms are not independent of each other.** The Kestrel arm runs none of our
+code, and it still came out 8 % lower, in nine of ten pairs. Ten pairs of
+`control` run on its own put it level (+0.7 %). In a full run, each arm carries
+over state from the scenarios before it in the same process. So a difference of
+that size in one arm means nothing until it holds with the scenario run alone.
+
 ## h2spec conformance
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2

@@ -4695,6 +4695,58 @@ median).
   max at 64 that rose with #195 did not rise further (18.4 → 16.0 ms, higher in
   four pairs).
 
+## 2026-11-01 — A test #197 left without its premise (Hermod#200)
+
+Hermod `abe0384f` → `d03ad546`, Styx `4594209a` → `822389c7`. The range:
+
+- **Hermod#200** changes one test, nothing else.
+- **Styx:** four COSE commits (ECDH-ES with HKDF, ChaCha20/Poly1305, a
+  thumbprint that names its hash algorithm). Nothing outside `Illias/COSE/`.
+
+**The pin `abe0384f` was red on CI.** The Debian leg failed
+`ClientTrailersAfterResetTests.TrailersWaitingForTheLock_ResetMeanwhile_NotSent`:
+the client sent request trailers on a stream the server had reset. The Windows
+leg passed. So had both of the previous entry's runs of `Tests.HTTP2`.
+
+**It was the test, not the client.** The test checks that trailers waiting for
+`requestStartLock` look at the stream again once they have the lock, and send
+nothing if the server reset it meanwhile. To keep them waiting, it held another
+request's start in the write of its HEADERS, and relied on that start holding
+the lock there. Since #197 it does not: the last start in line flushes after it
+has let go of the lock. So the trailers took the lock at once. Whether the read
+loop had handled the RST_STREAM before their check was up to the threads. When
+it had not, the trailers went out crossing the reset, which RFC 9113 §5.1
+allows.
+
+| the old test, run alone | failed |
+|---|---|
+| at `abe0384f`, Windows | 9 of 30 |
+| at `abe0384f`, Debian 13 (WSL) | 7 of 30 |
+| at `2776e3b6`, Windows | 0 of 30 |
+
+**The fix** gives the test a third request's start, which takes the lock and
+waits under it for the write lock that the held flush has. The test waits until
+that start holds the lock, and until the trailers are in line behind it, before
+it sends the reset. The rewritten test failed in 0 of 30 runs on Windows and 0
+of 30 on Debian. With the check under the lock taken out, it failed in 10 of 10.
+`Tests.HTTP2` passed 681/681 once on Windows and in 20 of 20 full runs on Debian,
+with every other test that holds a HEADERS write among them.
+
+**A sibling test does not guard its rule.**
+`TrailersAfterReset_WhileAnotherRequestStarts_FailAtOnce` still passed in 5 of 5
+runs with the `ThrowIfReset` before the wait taken out. Trailers on a stream
+already reset fail at once anyway: the empty marker they queue first is canceled
+with the stream. That path is the same at `2776e3b6`, so this predates #197. It
+was left alone.
+
+### Verified at the new pin
+
+- build: 0 errors
+- `Tests.HTTP2`: 681/681 on Windows; 681/681 three times on Debian 13 (WSL)
+- `run-tests.sh`, h2spec, `h2interop`, Autobahn: not re-run. Nothing under
+  `HTTP2/` changed, and the Styx range is COSE only, which the HTTP/2 stack
+  does not use.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

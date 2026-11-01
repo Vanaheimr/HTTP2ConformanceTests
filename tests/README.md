@@ -104,7 +104,43 @@ dotnet run -c Release --project tests/h2bench -- hpack        # one scenario
 dotnet run -c Release --project tests/h2bench -- control      # vs. HttpClient and Kestrel
 dotnet run -c Release --project tests/h2bench -- --mib 256    # bigger transfers
 dotnet run -c Release --project tests/h2bench -- --cleartext  # h2c instead of TLS
+dotnet run -c Release --project tests/h2bench -- --in-process # all scenarios in one process
+dotnet run -c Release --project tests/h2bench -- --warmup 10 --seconds 3   # the defaults
 ```
+
+**Each measurement warms up for 10 s, and measures for 3 s at least.** Until
+2026-11-01 a warmup was 2 000 requests and a measurement 20 000, a fraction of
+a second each. That was too short for the JIT, which recompiles a method
+optimized, with dynamic PGO, in the background and seconds later. `control` run
+alone measured `HttpClient` → our server at 25 – 28 k req/s, and at 53 – 57 k
+after a warmup of 10 s; it is the slowest arm to warm up. The windows were too
+short as well: after a warmup of 15 s, two runs still differed by 14 – 43 % per
+arm. With windows of 3 s, three full runs spread by 4 – 14 % per request arm,
+largest over smallest. Ten full runs the old way had spread by 43 – 47 % at 1,
+8 and 64 concurrent. Three runs are fewer, and a range only grows with more.
+
+**Each scenario runs in a process of its own**, one after the other. Sharing
+one, a scenario was measured with the JIT work the scenarios before it had
+done, and a scenario that got faster left the next one less. That is the likely
+reason why the Kestrel control came out 8 % lower at `abe0384f` than at
+`2776e3b6` in full runs, though it runs none of our code, and level when run
+alone. Now a full run measures each scenario as running it alone does.
+`--in-process` keeps the old way.
+
+A full run takes about 3 minutes now (193 s), where it took well under one.
+Figures from before 2026-11-01 were taken the old way, and are not comparable
+with new ones. The old way measured code the JIT had not finished with:
+
+| | old way: ten runs at `abe0384f`, median | new way: three runs at `86c7acd6` |
+|---|---|---|
+| requests/s, 1 concurrent | 6 288 | 7 598 – 8 437 |
+| requests/s, 8 concurrent | 30 986 | 32 872 – 34 020 |
+| requests/s, 64 concurrent | 72 398 | 65 252 – 74 268 |
+| HPACK blocks/s | ~204 k | 294 k – 309 k |
+
+`86c7acd6` changes nothing under `HTTP2/` against `abe0384f`, so the pin is not
+the difference.
+
 
 Scenarios: `frames` and `hpack` (pure in-memory, low noise), `requests` (small
 GET at 1/8/64 concurrent, with latency percentiles), `probe` and `control` (the

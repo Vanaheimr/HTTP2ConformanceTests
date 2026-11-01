@@ -4747,6 +4747,86 @@ was left alone.
   `HTTP2/` changed, and the Styx range is COSE only, which the HTTP/2 stack
   does not use.
 
+## 2026-11-01 — h2bench warmed up too briefly, and measured too briefly
+
+The #197 entry left a puzzle. The Kestrel control runs none of our code, yet in
+full runs it came out 8 % lower at `abe0384f` than at `2776e3b6`, and level when
+`control` ran alone. The reading then was that a scenario takes state over from
+the ones before it in the same process. So h2bench was to run each scenario in
+a process of its own.
+
+**That alone made it worse.** Six pairs of full runs, one process against one per
+scenario, the order alternating:
+
+| 64 concurrent, median | one process | one per scenario |
+|---|---|---|
+| `HttpClient` → our server | 47 k | 25.5 k |
+| `HttpClient` → Kestrel | 48 k | 41 k |
+| our client → Kestrel | 117 k | 49 k |
+
+The ten runs of `control` alone for the #197 entry had measured the same low
+figures (24.8 k, 36.9 k, 47.4 k in the first). That entry compared them pin
+against pin, and never with the full runs.
+
+**It was the JIT, and it needs seconds.** The runtime compiles a method quickly
+first, with counters, and recompiles it optimized, with dynamic PGO, in the
+background and later. A warmup was 2 000 requests, a fraction of a second.
+`control` alone, by warmup and size of the measurement:
+
+| `control` alone | `HttpClient` → ours | `HttpClient` → Kestrel | ours → Kestrel |
+|---|---|---|---|
+| 2 000 warmup, 20 000 measured | 28 k | 42 – 43 k | 50 – 54 k |
+| `DOTNET_TieredCompilation=0` | 37 – 43 k | 43 k | 74 – 78 k |
+| 600 000 measured | 45.5 k | 56.0 k | 119.8 k |
+| 600 000 measured, after `requests` | 44.4 k | 51.2 k | 122.0 k |
+| warmup 5 s | 31 k | 47 – 52 k | 115 – 117 k |
+| warmup 10 s | 53 – 57 k | 57 – 61 k | 89 – 123 k |
+
+Without tiering, nothing waits for the JIT, and nothing gets PGO either: below
+the warmed figures. With 600 000 requests the arm's own run warms it up, and
+alone and after `requests` agree. A larger thread pool
+(`ThreadPool_ForceMinWorkerThreads` 64) and a larger gen0 budget changed
+nothing. `HttpClient` → our server is the slowest arm to warm up: still 31 k
+after 5 s, 53 k after 10.
+
+So in one process each scenario was measured with whatever JIT work the
+scenarios before it had done, and a scenario that got faster left the next one
+less. That is the likely reason for the Kestrel arm's 8 %. It is not
+established.
+
+**The windows were too short as well.** 20 000 requests at 50 – 120 k req/s are
+0.2 – 0.4 s. After a warmup of 15 s, two runs of `control` still differed by 14
+– 43 % per arm.
+
+**What h2bench does now:**
+
+- Every measurement first runs its own work for `--warmup` seconds, 10 by
+  default, and then measures for `--seconds`, 3 by default, in rounds of
+  `--requests`. The room for the latencies is sized from the warmup's rate and
+  allocated before the allocation count begins.
+- Each scenario runs in a process of its own. `--in-process` keeps the old way.
+- The probe's four splits warm up the same way.
+
+Three runs of `control` alone now gave 52.1 / 54.3 / 53.7 k, 59.0 / 60.1 /
+56.8 k and 116.8 / 117.5 / 102.0 k. Three full runs at `86c7acd6`, 193 s each:
+
+| | three full runs |
+|---|---|
+| requests/s, 1 / 8 / 64 concurrent | 7 598 – 8 437 / 32 872 – 34 020 / 65 252 – 74 268 |
+| `HttpClient` → our server / → Kestrel | 47 004 – 49 498 / 50 009 – 53 973 |
+| our client → Kestrel | 113 655 – 119 505 |
+| GET / POST 64 MiB | 222.8 – 234.4 / 221.4 – 227.4 MiB/s |
+| HPACK blocks/s, frames/s | 294 k – 309 k, 13.6 M – 16.1 M |
+
+Per request arm that is a spread of 4 – 14 %, largest over smallest. Ten full
+runs the old way spread by 43 – 47 % at 1, 8 and 64 concurrent. Three runs are
+fewer, and a range only grows with more.
+
+**Old figures are not comparable with new ones.** At 1 concurrent the old way
+gave a median of 6 288 req/s and HPACK about 204 k blocks/s, at the same
+`HTTP2/`. The pairs in earlier entries compare two pins measured the same way,
+and stand as such.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

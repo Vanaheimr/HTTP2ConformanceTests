@@ -27,6 +27,10 @@
 //   dotnet run -c Release --project tests/h2bench -- hpack   # one scenario
 //   dotnet run -c Release --project tests/h2bench -- control # vs. Kestrel/HttpClient
 //   dotnet run -c Release --project tests/h2bench -- --mib 256
+//   dotnet run -c Release --project tests/h2bench -- --in-process
+//
+// Each scenario runs in a process of its own, unless --in-process asks for one
+// process for all of them, as it used to be (see "One process per scenario").
 //
 // WHAT THESE NUMBERS ARE, AND ARE NOT
 //
@@ -64,10 +68,15 @@ using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 // Options take a value, so a bare word is only a scenario name if it is not
 // the value of the option before it — otherwise "--mib 64" quietly registers
 // "64" as the one scenario to run, and nothing matches it.
-var valued    = new HashSet<String>(StringComparer.Ordinal) { "--mib", "--requests" };
+var valued    = new HashSet<String>(StringComparer.Ordinal) { "--mib", "--requests", "--warmup", "--seconds" };
 var scenarios = new List<String>();
 var bodyMiB   = 64;
 var requests  = 20_000;
+
+// Seconds of warmup before each measurement, and the least a measurement
+// takes (see WARMUP and MEASUREMENT WINDOW).
+var warmup    = 10;
+var seconds   = 3;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -77,6 +86,8 @@ for (var i = 0; i < args.Length; i++)
 
         if (args[i] == "--mib")      bodyMiB  = value;
         if (args[i] == "--requests") requests = value;
+        if (args[i] == "--warmup")   warmup   = value;
+        if (args[i] == "--seconds")  seconds  = value;
 
         i++;   // consume the value
         continue;
@@ -94,26 +105,111 @@ for (var i = 0; i < args.Length; i++)
 // framing and task plumbing.
 var cleartext = args.Contains("--cleartext");
 
+// Run every scenario asked for in this one process (see below).
+var inProcess = args.Contains("--in-process");
+
+// Set for a process started by the one below to run one scenario: the header
+// is that process's to print, not this one's.
+var isChild   = Environment.GetEnvironmentVariable("H2BENCH_CHILD") == "1";
+
 Boolean Wanted(String name)
     => scenarios.Count == 0 || scenarios.Contains(name, StringComparer.OrdinalIgnoreCase);
 
+// In the order they run.
+var toRun     = new[] { "frames", "hpack", "requests", "probe", "control", "throughput", "upload" }.Where(Wanted).ToList();
+
 #endregion
 
-Console.WriteLine();
-Console.WriteLine("h2bench — hand-rolled HTTP/2 stack");
-Console.WriteLine($"  {Environment.OSVersion}, {Environment.ProcessorCount} logical cores, .NET {Environment.Version}");
-Console.WriteLine($"  server GC: {System.Runtime.GCSettings.IsServerGC}");
+if (!isChild)
+{
+
+    Console.WriteLine();
+    Console.WriteLine("h2bench — hand-rolled HTTP/2 stack");
+    Console.WriteLine($"  {Environment.OSVersion}, {Environment.ProcessorCount} logical cores, .NET {Environment.Version}");
+    Console.WriteLine($"  server GC: {System.Runtime.GCSettings.IsServerGC}");
 
 #if DEBUG
-Console.WriteLine();
-Console.WriteLine("  !! Built in DEBUG. These numbers measure the debugger, not the stack.");
-Console.WriteLine("  !! Re-run with:  dotnet run -c Release --project tests/h2bench");
+    Console.WriteLine();
+    Console.WriteLine("  !! Built in DEBUG. These numbers measure the debugger, not the stack.");
+    Console.WriteLine("  !! Re-run with:  dotnet run -c Release --project tests/h2bench");
 #endif
 
-Console.WriteLine();
-Console.WriteLine("  Client and server share this process; figures cover the whole round trip");
-Console.WriteLine("  (both roles + TLS + loopback) and are for tracking change over time.");
-Console.WriteLine();
+    Console.WriteLine();
+    Console.WriteLine("  Client and server share this process; figures cover the whole round trip");
+    Console.WriteLine("  (both roles + TLS + loopback) and are for tracking change over time.");
+    Console.WriteLine($"  {(inProcess || toRun.Count < 2 ? "All scenarios run in this one process." : "Each scenario runs in a process of its own.")}");
+    Console.WriteLine();
+
+    if (toRun.Except(["frames", "hpack"]).Any())
+    {
+        Console.WriteLine($"  transport: {(cleartext ? "h2c (cleartext — TLS bypassed)" : "h2 over TLS")}");
+        Console.WriteLine();
+    }
+
+}
+
+
+#region One process per scenario
+
+// The scenarios used to share one process, so each was measured with the JIT
+// work the scenarios before it had done (see WARMUP). A scenario that got
+// faster left less of it to the next one. In ten full runs the Kestrel
+// control, which runs none of our code, came out 8 % lower at one pin than at
+// the pin before (docs/BUILD_LOG.md, 2026-11-01). So now each scenario runs in
+// a process of its own, one after the other, and a full run measures each one
+// as running it alone does. This process starts each with the scenario's name
+// and --in-process, waits for it, and prints nothing of its own between them.
+// The child writes to this console directly.
+if (!inProcess && toRun.Count > 1)
+{
+
+    var self   = Environment.ProcessPath!;
+    var failed = new List<String>();
+
+    foreach (var scenario in toRun)
+    {
+
+        var start = new ProcessStartInfo(self) { UseShellExecute = false };
+
+        // Started as "dotnet h2bench.dll" rather than through the apphost.
+        if (Path.GetFileNameWithoutExtension(self).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            start.ArgumentList.Add(System.Reflection.Assembly.GetEntryAssembly()!.Location);
+
+        start.ArgumentList.Add(scenario);
+        start.ArgumentList.Add("--in-process");
+        start.ArgumentList.Add("--mib");
+        start.ArgumentList.Add(bodyMiB.ToString());
+        start.ArgumentList.Add("--requests");
+        start.ArgumentList.Add(requests.ToString());
+        start.ArgumentList.Add("--warmup");
+        start.ArgumentList.Add(warmup.ToString());
+        start.ArgumentList.Add("--seconds");
+        start.ArgumentList.Add(seconds.ToString());
+
+        if (cleartext)
+            start.ArgumentList.Add("--cleartext");
+
+        start.Environment["H2BENCH_CHILD"] = "1";
+
+        using var child = Process.Start(start)!;
+        await child.WaitForExitAsync();
+
+        if (child.ExitCode != 0)
+            failed.Add($"{scenario} (exit code {child.ExitCode})");
+
+    }
+
+    if (failed.Count > 0)
+    {
+        Console.Error.WriteLine($"  !! failed: {String.Join(", ", failed)}");
+        Environment.ExitCode = 1;
+    }
+
+    return;
+
+}
+
+#endregion
 
 
 #region In-memory scenarios (no sockets — the clearest view of allocation)
@@ -199,9 +295,6 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
 
     using var certificate = cleartext ? null : SelfSignedCertificate();
 
-    Console.WriteLine($"  transport: {(cleartext ? "h2c (cleartext — TLS bypassed)" : "h2 over TLS")}");
-    Console.WriteLine();
-
     var port   = FreePort();
     var server = new HTTP2Server(
                      IPAddress.Loopback,
@@ -255,6 +348,16 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         var toWire   = new Int64[probes];
         var toAnswer = new Int64[probes];
 
+        async Task OurGet()
+            => _ = await (await conn.StartRequestAsync(HTTPMethod.GET, scheme, authority, "/")).Response;
+
+        // Each split warms up first with the same requests (see WARMUP).
+        await WarmUpAsync(async () =>
+        {
+            for (var i = 0; i < 200; i++)
+                await OurGet();
+        });
+
         for (var i = 0; i < probes; i++)
         {
             var t0     = Stopwatch.GetTimestamp();
@@ -278,6 +381,12 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
         var wireLoaded   = new Int64[probes];
         var answerLoaded = new Int64[probes];
         var slot         = -1;
+
+        await WarmUpAsync(() => Task.WhenAll(Enumerable.Range(0, 64).Select(_ => Task.Run(async () =>
+        {
+            for (var i = 0; i < 30; i++)
+                await OurGet();
+        }))));
 
         await Task.WhenAll(Enumerable.Range(0, 64).Select(worker => Task.Run(async () =>
         {
@@ -306,7 +415,15 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
             var url  = $"https://localhost:{port}/";
             var dotnet = new Int64[probes];
 
-            _ = await http.GetAsync(url);   // warm the connection + TLS
+            async Task HttpClientGets(String Url)
+            {
+                for (var i = 0; i < 200; i++)
+                {
+                    using var response = await http.GetAsync(Url);
+                }
+            }
+
+            await WarmUpAsync(() => HttpClientGets(url));   // the connection, TLS, and the JIT
 
             for (var i = 0; i < probes; i++)
             {
@@ -326,7 +443,7 @@ if (Wanted("requests") || Wanted("throughput") || Wanted("upload") || Wanted("pr
             var kestrelUrl     = $"https://localhost:{kestrelPort}/";
             var kestrelSamples = new Int64[probes];
 
-            _ = await http.GetAsync(kestrelUrl);
+            await WarmUpAsync(() => HttpClientGets(kestrelUrl));
 
             for (var i = 0; i < probes; i++)
             {
@@ -445,15 +562,55 @@ Console.WriteLine();
 
 #region Measurement
 
+// WARMUP
+//
+// Every measurement runs its own work for --warmup seconds first, and only
+// then measures. A count of warmup rounds is not enough, because the JIT needs
+// time as well as calls. It compiles a method quickly first, with counters,
+// and recompiles it optimized, and with what the counters saw (dynamic PGO),
+// in the background, later. Under load that took seconds. Before, a warmup was
+// 2 000 requests, a fraction of a second. "control" run alone measured
+// 25 – 28 k req/s for HttpClient -> our server, and 47 – 54 k for our client ->
+// Kestrel. With 600 000 requests per arm, it measured 45.5 k and 120 k, as much
+// as after "requests" in the same process. With a warmup of 10 s, HttpClient ->
+// our server measured 53 – 57 k; with 5 s, still 31 k. It is the slowest of the
+// arms to warm up, and sets the default.
+//
+// MEASUREMENT WINDOW
+//
+// A measurement then runs for --seconds at least, in rounds of --requests
+// (or of a scenario's iterations). 20 000 requests at 50 – 120 k req/s are a
+// window of 0.2 – 0.4 s. Even after a warmup of 15 s, two runs of "control"
+// in such windows differed by 14 – 43 % per arm.
+
+/// <summary>
+/// Run Round again and again, for at least --warmup seconds, and discard
+/// what it does: the JIT is to be done before the measurement begins.
+/// </summary>
+async Task WarmUpAsync(Func<Task> Round)
+{
+
+    var warming = Stopwatch.StartNew();
+
+    do
+        await Round();
+    while (warming.Elapsed.TotalSeconds < warmup);
+
+}
+
 /// <summary>
 /// Time a body, reporting throughput, per-operation allocation and the GC
-/// collections it provoked. A warmup pass runs first so JIT and first-use costs
-/// are not attributed to the steady state.
+/// collections it provoked. A warmup runs first (see WARMUP) so JIT and
+/// first-use costs are not attributed to the steady state.
 /// </summary>
 void Report(String Name, Int32 Iterations, Action<Int32> Body, String unit, Int64 bytes = 0)
 {
 
-    Body(Math.Max(1, Iterations / 20));          // warm up: JIT, tables, TLS session
+    var warming = Stopwatch.StartNew();
+
+    do
+        Body(Math.Max(1, Iterations / 20));      // warm up: JIT, tables, TLS session
+    while (warming.Elapsed.TotalSeconds < warmup);
 
     GC.Collect();
     GC.WaitForPendingFinalizers();
@@ -464,21 +621,29 @@ void Report(String Name, Int32 Iterations, Action<Int32> Body, String unit, Int6
     var gen2    = GC.CollectionCount(2);
     var before  = GC.GetTotalAllocatedBytes(precise: true);
     var watch   = Stopwatch.StartNew();
+    var rounds  = 0;
 
-    Body(Iterations);
+    // Rounds of Iterations, for at least --seconds (see MEASUREMENT WINDOW).
+    do
+    {
+        Body(Iterations);
+        rounds++;
+    }
+    while (watch.Elapsed.TotalSeconds < seconds);
 
     watch.Stop();
     var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
 
-    var perSecond = Iterations / watch.Elapsed.TotalSeconds;
+    var done      = (Int64) rounds * Iterations;
+    var perSecond = done / watch.Elapsed.TotalSeconds;
 
     Console.WriteLine($"  {Name}");
-    Console.WriteLine($"      {perSecond,12:N0} {unit}/s   ({watch.Elapsed.TotalMilliseconds:N1} ms for {Iterations:N0})");
+    Console.WriteLine($"      {perSecond,12:N0} {unit}/s   ({watch.Elapsed.TotalMilliseconds:N1} ms for {done:N0})");
 
     if (bytes > 0)
-        Console.WriteLine($"      {bytes / 1024.0 / 1024.0 / watch.Elapsed.TotalSeconds,12:N1} MiB/s");
+        Console.WriteLine($"      {bytes * rounds / 1024.0 / 1024.0 / watch.Elapsed.TotalSeconds,12:N1} MiB/s");
 
-    Console.WriteLine($"      {allocated / (Double) Iterations,12:N0} bytes/{unit.TrimEnd('s')}   " +
+    Console.WriteLine($"      {allocated / (Double) done,12:N0} bytes/{unit.TrimEnd('s')}   " +
                       $"({allocated / 1024.0 / 1024.0:N1} MiB total)");
     Console.WriteLine($"      {"GC",12}   gen0 {GC.CollectionCount(0) - gen0}, " +
                       $"gen1 {GC.CollectionCount(1) - gen1}, gen2 {GC.CollectionCount(2) - gen2}");
@@ -523,13 +688,16 @@ Task ReportRequests(HTTP2ClientConnection Connection, URIScheme Scheme, String A
 async Task ReportLoad(String Name, Int32 Concurrency, Int32 Total, Func<Task> Request)
 {
 
-    var latencies = new Int64[Total];
-    var next      = -1;
+    // The workers take the requests next + 1 up to end, each recording its
+    // latency at its index.
+    Int64[] latencies = [];
+    var     next      = -1;
+    var     end       = 0;
 
     async Task Worker()
     {
         int index;
-        while ((index = Interlocked.Increment(ref next)) < Total)
+        while ((index = Interlocked.Increment(ref next)) < end)
         {
             var started = Stopwatch.GetTimestamp();
             await Request();
@@ -537,22 +705,48 @@ async Task ReportLoad(String Name, Int32 Concurrency, Int32 Total, Func<Task> Re
         }
     }
 
-    // Warmup, discarded.
-    next = Total - Math.Min(Total, 2_000) - 1;
-    await Task.WhenAll(Enumerable.Range(0, Concurrency).Select(_ => Worker()));
+    Task Round(Int32 From, Int32 Count)
+    {
+        next = From - 1;
+        end  = From + Count;
+        return Task.WhenAll(Enumerable.Range(0, Concurrency).Select(_ => Worker()));
+    }
 
-    next = -1;
+    // Warmup, discarded, in rounds of 2 000 requests (see WARMUP). The rate of
+    // its last round sizes the measurement.
+    latencies = new Int64[Math.Min(Total, 2_000)];
+    var rate  = 0.0;
+
+    await WarmUpAsync(async () =>
+    {
+        var round = Stopwatch.StartNew();
+        await Round(0, latencies.Length);
+        rate = latencies.Length / round.Elapsed.TotalSeconds;
+    });
+
+    // Rounds of Total requests, for at least --seconds (see MEASUREMENT
+    // WINDOW). The room for their latencies is allocated before the allocation
+    // count begins: twice what the warmup's rate says --seconds take. A run
+    // that fills it ends there, after half of --seconds at least.
+    latencies = new Int64[Math.Max(1, (Int32) Math.Ceiling(2 * rate * seconds / Total)) * Total];
+
     GC.Collect();
     GC.WaitForPendingFinalizers();
     GC.Collect();
 
-    var gen0   = GC.CollectionCount(0);
-    var gen1   = GC.CollectionCount(1);
-    var before = GC.GetTotalAllocatedBytes(precise: true);
-    var cpu    = Process.GetCurrentProcess().TotalProcessorTime;
-    var watch  = Stopwatch.StartNew();
+    var gen0     = GC.CollectionCount(0);
+    var gen1     = GC.CollectionCount(1);
+    var before   = GC.GetTotalAllocatedBytes(precise: true);
+    var cpu      = Process.GetCurrentProcess().TotalProcessorTime;
+    var watch    = Stopwatch.StartNew();
+    var measured = 0;
 
-    await Task.WhenAll(Enumerable.Range(0, Concurrency).Select(_ => Worker()));
+    do
+    {
+        await Round(measured, Total);
+        measured += Total;
+    }
+    while (watch.Elapsed.TotalSeconds < seconds && measured < latencies.Length);
 
     watch.Stop();
     var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
@@ -562,17 +756,17 @@ async Task ReportLoad(String Name, Int32 Concurrency, Int32 Total, Func<Task> Re
     // at all — a connection that serializes leaves cores idle however slow it is.
     cpu = Process.GetCurrentProcess().TotalProcessorTime - cpu;
 
-    Array.Sort(latencies);
+    Array.Sort(latencies, 0, measured);
 
     Double Percentile(Double p)
-        => latencies[(Int32) (p * (latencies.Length - 1))] * 1000.0 / Stopwatch.Frequency;
+        => latencies[(Int32) (p * (measured - 1))] * 1000.0 / Stopwatch.Frequency;
 
     Console.WriteLine($"  {Name}");
-    Console.WriteLine($"      {Total / watch.Elapsed.TotalSeconds,12:N0} req/s   ({watch.Elapsed.TotalMilliseconds:N1} ms for {Total:N0})");
+    Console.WriteLine($"      {measured / watch.Elapsed.TotalSeconds,12:N0} req/s   ({watch.Elapsed.TotalMilliseconds:N1} ms for {measured:N0})");
     Console.WriteLine($"      {"latency ms",12}   p50 {Percentile(0.50):N3}, p90 {Percentile(0.90):N3}, " +
                       $"p99 {Percentile(0.99):N3}, max {Percentile(1.00):N3}");
-    Console.WriteLine($"      {allocated / (Double) Total,12:N0} bytes/request   ({allocated / 1024.0 / 1024.0:N1} MiB total)");
-    Console.WriteLine($"      {cpu.TotalMicroseconds / Total,12:N1} µs CPU/request   ({cpu.TotalSeconds / watch.Elapsed.TotalSeconds:N1} cores busy)");
+    Console.WriteLine($"      {allocated / (Double) measured,12:N0} bytes/request   ({allocated / 1024.0 / 1024.0:N1} MiB total)");
+    Console.WriteLine($"      {cpu.TotalMicroseconds / measured,12:N1} µs CPU/request   ({cpu.TotalSeconds / watch.Elapsed.TotalSeconds:N1} cores busy)");
     Console.WriteLine($"      {"GC",12}   gen0 {GC.CollectionCount(0) - gen0}, gen1 {GC.CollectionCount(1) - gen1}");
     Console.WriteLine();
 

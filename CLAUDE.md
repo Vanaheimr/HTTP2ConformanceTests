@@ -361,9 +361,18 @@ Other processes held 3.1 – 5.7 cores on average per run, and peaked at 13.5:
 | allocation per trivial request | 9 200 – 9 950 bytes, rising with concurrency |
 | a large transfer | ~6.0× its payload, unchanged |
 
+**These figures were taken the old way.** Since 2026-11-01 h2bench warms every
+measurement up for 10 s, measures for 3 s at least, and runs each scenario in a
+process of its own. The old way, 2 000 requests of warmup and 20 000 measured,
+measured code the JIT had not finished with. Three full runs the new way, at a
+pin with the same `HTTP2/`, gave 7.6 – 8.4 k req/s at 1 concurrent and 294 –
+309 k HPACK blocks/s. The pairs below compare two pins measured the same way,
+and stand as such. New figures are not comparable with them. See
+[`tests/README.md`](tests/README.md).
+
 HPACK and frames/s run in memory and do not touch the client. Both arms measured
 them alike; that they sit below the figures of 2026-10-31 (210 k, 13.8 M) is the
-machine on the day, not the pin.
+machine on the day or the warmup, which the old way left to chance, not the pin.
 
 **What `abe0384f` changed.** Hermod#197: the client writes through
 `HTTP2FrameWriter`, as the server has since #195, and the request starts waiting

@@ -4827,6 +4827,170 @@ gave a median of 6 288 req/s and HPACK about 204 k blocks/s, at the same
 `HTTP2/`. The pairs in earlier entries compare two pins measured the same way,
 and stand as such.
 
+## 2026-11-02 — A small response goes out with its HEADERS (Hermod#202): our server carries four fifths of what Kestrel gives our client
+
+Hermod `86c7acd6` → `1264be56`, Styx `9e0633a7` → `8410073a`. The range:
+
+- **Hermod#202:** the server sends a small buffered response's body with its
+  HEADERS, in one hold of the write lock.
+- **Hermod#203:** the SSH transport offers and accepts RSA host certificates
+  with SHA-2. `SSH/` and its tests only.
+- **Styx:** `OID-Registry.md` and one line in its README. No project file
+  references either.
+
+### Where the server's time went
+
+The #197 entry left our server as the limit of our own pair: our client got
+113.8 k req/s out of Kestrel and 72.4 k out of our server. A temporary
+instrumented build, not committed, split the time per request (h2bench
+`requests`, our client against our server, 64 concurrent, about 74 k req/s, so
+13.4 µs of wall time per request):
+
+| per request | µs | share of the wall time |
+|---|---|---|
+| read loop, waiting for data | ≈ 9 | ≈ 70 % |
+| read loop, CPU: reading, parsing and handling a HEADERS frame | ≈ 4.2 | ≈ 32 % |
+| write lock held, over 2.03 holds | 4.0 | 31 % |
+| write lock free while writers were waiting (the hand-over) | 1.9 | 15 % |
+| `Task.Run` until the handler starts | 5 – 24 | – |
+
+Neither the read loop nor the write lock was saturated. The server worked in
+bursts: the client sends 64 requests at once, the 64 handlers start together,
+and they line up at the write lock. Each response took the lock twice, its
+HEADERS from the handler's task and its DATA from the writer loop, after a
+wakeup of the loop. Each hand-over to the next waiting writer (1.9 µs) took
+about as long as the write it made way for (2.0 µs).
+
+Two candidates went into a switchable prototype, three interleaved rounds each:
+
+| req/s, median of 3 | 1 concurrent | 8 | 64 |
+|---|---|---|---|
+| base | 7 612 | 31 944 | 70 844 |
+| A: no timer and linked CTS per read | 7 988 | 33 476 | 76 088 |
+| B: HEADERS and DATA in one hold | 8 992 | 40 188 | 99 666 |
+| A and B | 9 343 | 39 464 | 100 443 |
+
+A did not stand out from the noise and was dropped. B is #202.
+
+### What #202 does
+
+`HTTP2Connection.TrySendWithHeadersAsync` sends a response's HEADERS and its
+whole body in one hold of the write lock, and ends the stream, when:
+
+- the body fits into one DATA frame (the peer's `MAX_FRAME_SIZE`);
+- it fits into the stream's and the connection's send windows, which are taken
+  before the lock;
+- no stream has DATA queued for the writer loop
+  (`HTTP2StreamManager.AnyOutboundPending`). With nothing queued, the loop has
+  nothing to choose between by RFC 9218 priority, and the body would be its
+  next frame anyway.
+
+Otherwise the response goes the old way. A stream reset meanwhile is checked
+once the lock is held, as in `SendHeaderListAsync`; then nothing is sent and the
+windows go back. Once the END_STREAM is out, an upload still coming in is
+stopped, as the writer loop stops it.
+
+#202 adds two tests to `ServerWriteBatchingTests`, and changes one. Each rule
+fails a test when taken out:
+
+| rule taken out | fails |
+|---|---|
+| the direct path | `ASmallResponse_GoesOutWithItsHeaders` |
+| the guard against queued DATA | `ASmallResponse_WhileAnotherStreamHasDataQueued_GoesThroughTheWriterLoop` |
+| stopping an upload still coming in | 5 existing tests: 421, 425 and 431 with an upload still coming |
+
+The last row is how that rule was found: the five failed in the first full run,
+before it was there. `ServerWriterLoopFailureTests.OtherFailure_EndsTheConnectionAtOnce`
+injects a transport failure into the write of a body, to see the writer loop end
+the connection. A body of one frame now goes out from the handler's task, so
+the test answers with 20 KiB and still tests the writer loop.
+
+A transport failure in the handler's own write is handled as a failure of its
+HEADERS write always was: by the handler's catch, not by an immediate GOAWAY.
+The writer loop ends the connection because without it no body would go out
+any more, and that reason does not hold for a handler.
+
+### Verified at the new pin
+
+- build: 0 errors
+- `Tests.HTTP2`: 683/683 on Windows, at `9886abfa` and again at `1264be56`
+  (was 681: the two new tests). The PR's branch, whose tree the #202 merge
+  commit has unchanged, passed 683/683 three times on Debian 13 (WSL).
+- `run-tests.sh`: 49/49 harness runs, at `9886abfa`
+- h2spec: 146/146 over h2 and over h2c, at `9886abfa`
+- `h2interop`, Autobahn: not re-run. The client and `WebSocketConnection` are
+  unchanged.
+
+#203 changes nothing outside `SSH/` and its tests, so the harness and h2spec
+runs at the #202 merge stand for `1264be56`.
+
+### h2bench, ten pairs
+
+The series was measured the new way (10 s of warmup and 3 s of measurement
+per arm, one process per scenario). Each full default run of `1264be56` was
+paired with a run of `86c7acd6`, and the order alternated from pair to pair.
+.NET 10.0.14, 16 logical cores. Other processes held 3.9 – 7.5 cores on average
+per run, one of them a background process that held one core throughout.
+
+| median (range) | `86c7acd6` | `1264be56` | `1264be56` higher in |
+|---|---|---|---|
+| requests/s, 1 concurrent | 7 289 (5 590 – 7 766) | 8 614 (6 983 – 9 071) | 9/10 |
+| requests/s, 8 concurrent | 31 289 (9 370 – 34 599) | 37 127 (31 691 – 39 543) | 9/10 |
+| requests/s, 64 concurrent | 69 774 (32 717 – 74 185) | 94 217 (72 108 – 101 288) | 10/10 |
+| p50 / p99 at 64 | 0.79 / 2.27 ms | 0.58 / 1.79 ms | 0/10, 0/10 |
+| max at 64 | 40.4 ms (20.6 – 57.5) | 29.9 ms (20.3 – 45.1) | 2/10 |
+| CPU per request at 1 / 8 / 64 | 263 / 115 / 62 µs | 192 / 103 / 53 µs | 0, 0, 0 of 10 |
+| bytes per request at 1 / 8 / 64 | 9 056 / 9 788 / 9 932 | 7 744 / 8 849 / 9 073 | 0, 0, 0 of 10 |
+| `HttpClient` → our server, 64 | 48 382 | 53 604 | 8/10 |
+| `HttpClient` → Kestrel, 64 | 55 067 | 55 682 | 5/10 |
+| our client → Kestrel, 64 | 119 903 | 119 567 | 4/10 |
+| probe at 64, onto the wire, p50 | 0.101 ms | 0.070 ms | 0/10 |
+| probe at 64, waiting for the response, p50 | 0.657 ms | 0.500 ms | 1/10 |
+| probe, `HttpClient` → our server / → Kestrel, p50 | 0.287 / 0.281 ms | 0.259 / 0.281 ms | |
+| GET 64 MiB | 221.5 MiB/s | 221.8 MiB/s | 3/10 |
+| POST 64 MiB | 223.5 MiB/s | 224.9 MiB/s | 6/10 |
+| frames/s, HPACK blocks/s | 15.6 M, 287 k | 15.5 M, 282 k | 6/10, 3/10 |
+
+The paired medians at 1 / 8 / 64 concurrent are +19.2 %, +18.8 % and +38.8 %;
+`HttpClient` against our server +11.9 %. The PR's ten pairs, of `requests
+control` alone against the same `86c7acd6`, gave +15.3 %, +15.4 % and +31.7 %,
+and +6.8 %. Both series put the Kestrel control level (+0.8 % here, −1.0 %
+there), and our client against Kestrel, which runs none of the changed code,
+within its noise (−2.0 %, +2.5 %).
+
+**Our server carries four fifths of what Kestrel does for our client.** The
+median of the per-run ratios, our pair over our client against Kestrel, went
+from 0.58 to 0.82. Through `HttpClient`, one request at a time, our server
+answered faster than Kestrel in all ten runs of `1264be56` and in four of
+`86c7acd6`.
+
+**The max at 64 concurrent does not hold either way.** The PR's series had it
+rising, 31.2 → 36.4 ms, higher in eight pairs of ten. This one has it falling,
+40.4 → 29.9 ms, higher in two. Neither establishes a change.
+
+**GET 64 MiB came out −3.4 %**, higher in three pairs. A 64 MiB body never
+takes the new path: it fails the first check, the size of one frame. POST came
+out +0.6 %.
+
+**A first series was discarded.** It ran while other sessions on the machine
+were building: the compiler server alone held two cores in its worst runs, and
+other processes held 3.2 – 10.1 cores on average per run. Its ranges were too
+wide for a baseline, 29 k – 79 k req/s at 64 concurrent for `86c7acd6`. It was
+compared with `9886abfa`, whose `HTTP2/` is that of `1264be56`. Its paired
+medians point the same way: +15.1 %, +33.1 % and +51.3 % at 1 / 8 / 64
+concurrent, higher in 8, 9 and 10 of 10; the Kestrel control +1.5 %; the max
+at 64 +2.5 %, higher in five.
+
+### What is not done
+
+- **Our client still gets more out of Kestrel than out of our server**: 119.6 k
+  against 94.2 k req/s. Where the rest goes is not established. The
+  instrumented build leaves two candidates, the read loop's CPU (about 4.2 µs
+  per request) and the time from `Task.Run` to a handler's start (5 – 24 µs).
+  Neither has been tried.
+- **Candidate A**, no timer and linked CTS per read, was within the noise and
+  is not in #202.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

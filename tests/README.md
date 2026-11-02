@@ -243,11 +243,29 @@ and our server is the limit of our own pair. Five pairs over h2c gave the
 same: 29.4 k → 84.2 k req/s for our pair and 26.1 k → 114.7 k for our client
 against Kestrel (medians), with the `HttpClient` arms unchanged.
 
-**The arms are not independent of each other.** The Kestrel arm runs none of our
-code, and it still came out 8 % lower, in nine of ten pairs. Ten pairs of
-`control` run on its own put it level (+0.7 %). In a full run, each arm carries
-over state from the scenarios before it in the same process. So a difference of
-that size in one arm means nothing until it holds with the scenario run alone.
+**The arms were not independent of each other.** The Kestrel arm runs none of
+our code, and it still came out 8 % lower, in nine of ten pairs. Ten pairs of
+`control` run on its own put it level (+0.7 %). Sharing one process, each
+scenario was measured with the JIT work the ones before it had done. That is
+why each scenario now runs in a process of its own, after a warmup of 10 s (see
+above).
+
+At pin `1264be56` (Hermod#202) the server sends a small response's body with
+its HEADERS, in one hold of the write lock. These figures were taken the new
+way, so both columns compare with each other, not with the tables above. Ten
+runs, each paired
+with a run of `86c7acd6`, whose `HTTP2/` is that of `abe0384f`, the order
+alternating:
+
+| 64 concurrent, one connection | `86c7acd6` | `1264be56` | cores busy at `1264be56` |
+|---|---|---|---|
+| our client → our server | 69 774 | 94 217 (72 108 – 101 288) | 5.0 |
+| `HttpClient` → our server | 48 382 | 53 604 (40 372 – 57 862) | 8.4 |
+| `HttpClient` → Kestrel | 55 067 | 55 682 (24 561 – 58 402) | 9.3 |
+| our client → Kestrel | 119 903 | 119 567 (62 808 – 127 917) | 6.1 |
+
+Our server now carries four fifths of what Kestrel does for our client: 0.82 as
+the median of the per-run ratios, up from 0.58.
 
 ## h2spec conformance
 

@@ -267,6 +267,23 @@ alternating:
 Our server now carries four fifths of what Kestrel does for our client: 0.82 as
 the median of the per-run ratios, up from 0.58.
 
+At pin `b8d24be3` (Hermod#217, #222) the server sends outside its write lock.
+Ten runs, each paired with a run of `1264be56`, the order alternating. They
+ran as `db0ab809`, the branch of #222, whose `HTTP2/` is that of `b8d24be3`.
+The machine was quieter than for the table above (other processes at 2.8 –
+3.1 cores on average per run, against 3.9 – 7.5), so `1264be56` was measured
+again, and its column here compares with this one only:
+
+| 64 concurrent, one connection | `1264be56` | `b8d24be3` | cores busy at `b8d24be3` |
+|---|---|---|---|
+| our client → our server | 105 867 | 127 401 (123 302 – 132 419) | 6.4 |
+| `HttpClient` → our server | 62 377 | 63 116 (62 395 – 64 282) | 9.6 |
+| `HttpClient` → Kestrel | 62 511 | 62 211 (60 710 – 63 610) | 10.1 |
+| our client → Kestrel | 133 559 | 132 451 (124 343 – 133 900) | 6.4 |
+
+Our server now gives our client nearly what Kestrel does: 0.965 as the median
+of the per-run ratios (0.943 – 0.998), up from 0.80 in the same series.
+
 ## h2spec conformance
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2

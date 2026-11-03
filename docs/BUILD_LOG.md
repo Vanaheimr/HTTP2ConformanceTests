@@ -4991,6 +4991,282 @@ at 64 +2.5 %, higher in five.
 - **Candidate A**, no timer and linked CTS per read, was within the noise and
   is not in #202.
 
+## 2026-11-03 — The server sends outside the write lock (Hermod#217, #222): our server gives our client nearly what Kestrel does
+
+Hermod `1264be56` → `b8d24be3`, Styx `8410073a` → `5f09dd47`. The range:
+
+- **Hermod#217:** the server sends its buffered frames outside the write lock,
+  as soon as the transport is free.
+- **Hermod#222:** #217 could lose a send. The h2bench series for this pin bump
+  found it; see below.
+- **Hermod#204 – #207, #212, #214 – #216, #218, #220:** SSH and SFTP:
+  forwarding and ProxyJump on the client façade, half-closes through the
+  forwarding relays, SFTP symbolic links and `lsetstat`, host certificates asked
+  for first, private keys in every cipher `ssh-keygen` writes, SFTP served
+  session by session. `SSH/` and its tests only.
+- **Hermod#208:** HTTP/3 lets go of tunnels, WebTransport sessions and their
+  streams. `HTTP3/`, `QUIC/` and their tests only.
+- **Hermod#209, #210, and `0f595ac4` on master:** DNS: SVCB and HTTPS refuse a
+  record that is not self-consistent, a stream answer cut off by an orderly
+  close is asked again, and a stream reader closes its own connection. `DNS/`
+  and its tests only.
+- **Hermod#213:** the HTTP/3 hardening tests hold on a loaded machine, with a
+  `FakeTimeProvider` under `HermodTests/Helpers/`. No HTTP/2 test uses it.
+- **Hermod#221:** `HTTP1/README.md` only.
+- **Styx:** COSE, and `StatusSchedule`. ECDSA signatures on P-256, P-384 and
+  P-521 are verified by the platform instead of Bouncy Castle, a certificate in
+  a `COSE_X509` is read only if it is DER, a SHA-1 thumbprint is refused for
+  the reason that is true, and a Partial IV beside an IV is refused.
+  `StatusSchedule` tells of a status change once when it is read while a status
+  is inserted. The HTTP/2 stack uses none of these.
+
+Nothing outside #217 and #222 touches `HTTP2/`, `HTTP/` or
+`HermodTests/HTTP2/`. At `b8d24be3`, those trees are those of #222's branch,
+`db0ab809`.
+
+### First: the GET −3.4 % of the previous entry is noise
+
+The previous entry left GET 64 MiB at −3.4 %, higher in three pairs of ten,
+although a 64 MiB body never takes #202's path. An A/A test asks how often ten
+pairs of one build against itself show that much.
+
+Twenty rounds of `throughput` alone, each run in a process of its own. Three
+arms, the order rotating by one each round: `1264be56` from two copies of one
+build (A and B), and `86c7acd6` (P). Other processes held 7 – 46 cores on
+average per run, so h2bench ran at the High priority class, set right after
+start, well inside the warmup. Two series at normal priority were given up:
+their ranges were too wide to say anything.
+
+| | paired median | first arm higher |
+|---|---|---|
+| A against B, the same build | −0.5 % | 8/20 |
+| A against P | −0.3 % | 10/20 |
+| B against P | +0.7 % | 11/20 |
+
+The median of ten A/B pairs, drawn at random from the twenty rounds, fell
+between −5.4 % and +2.1 % in 90 % of 20 000 draws, and at or below −3.4 % in
+15 % of them. The same build shows −3.4 % against itself about one time in
+seven, and `1264be56` is level with `86c7acd6` when measured directly. So #202
+did not slow GET down, as far as can be told. Whether #195 and #197 did, the
+2 – 3 % their entries left open, was not tested.
+
+### Where the server's time went
+
+A temporary instrumented build, not committed, stamped each request at every
+stage on one clock. In h2bench, client and server share a process, so the
+stages line up across both sides. Five runs of `requests`, our client against
+our server, 64 concurrent, at `1264be56`:
+
+| per response, mean | µs |
+|---|---|
+| server: waiting for the write lock | 44 – 49 |
+| server: holding it | 5 |
+| server: from leaving the lock until the flush that carries it is done | 123 – 137 |
+| server: from reading the request's HEADERS until its response is flushed | 179 – 218 |
+| client view, HEADERS buffered until the response's HEADERS are read: our server | 618 – 665 |
+| the same against Kestrel (our client, `control`) | 548 – 564 |
+
+One flush took 48 – 53 µs: a TLS record and a socket send on loopback. It
+carried 16 – 19 responses.
+
+So nine tenths of a response's time in the server went to the write path. The
+flush was made under the write lock, and every writer behind it waited for it.
+Only the last writer waiting flushed, so the first response of a burst went out
+only with the last one.
+
+A switchable prototype tried two policies, in five interleaved rounds:
+
+| 64 concurrent | base | 1: a writer sends as soon as no send runs | 2: only the last writer waiting sends |
+|---|---|---|---|
+| req/s | 85 397 | 105 326 (+20.4 %, 5/5) | 95 487 (+8.5 %, 4/5) |
+| time in the server | 200 µs | 92 µs | 107 µs |
+
+Both send outside the lock. Policy 1 is #217.
+
+### What #217 does
+
+`HTTP2FrameWriter` gets `SendOutsideTheLock`, and the server sets it:
+
+- A writer still writes into the buffer under the write lock.
+- A writer leaving the lock starts a send if none is running and no batch is
+  open. Meanwhile the next writer takes the lock.
+- What is written during a send stays in the buffer. The sender takes it once
+  its send is done, and goes on until nothing more has gathered.
+- The writer that starts a send makes it. No write is handed to another thread;
+  a handoff is what made the queued writer of 2026-07-25 ten times slower.
+- A batch holds the sends back, as it held the flushes. The sender also stops at
+  an open batch.
+- A write too large for the buffer, a forced flush (a GOAWAY) and `CloseAsync`
+  wait for the send that runs, under the lock, so the transport has one writer
+  at a time.
+- The signal that the transport is free again is made only by the first writer
+  that waits for it. A send nobody waits for allocates nothing. The first
+  version made one per send, and came out 2.8 % slower at 1 concurrent, with
+  88 bytes more per request.
+
+The client keeps the flush under the lock, which is the default. Its request
+starts in line already share one batch (#197). Its tests build their races on a
+write that holds the lock while the transport holds the write: with sending
+outside the lock, 11 of them lost their premise. Sending outside the lock has
+not been measured for the client.
+
+`FrameWriterTests` runs what holds in both modes in both: 8 tests, 16 cases.
+The two tests of the last-writer rule stay, for the client's mode. Six tests
+are new, with a transport that can hold a write. In `ServerWriteBatchingTests`,
+`HeadersQueuedBehindOneAnother_GoOutInOneWrite` (eight HEADERS queued at the
+lock go out in one write) gave way to
+`ResponsesWrittenDuringASend_GoOutTogetherAfterIt`: it holds the server's first
+send on the transport, sees all eight responses in the buffer while the send
+waits, and sees them go out together after the release.
+
+Each rule fails a test when taken out:
+
+| rule taken out | fails |
+|---|---|
+| the send is made outside the lock | 5, the server test among them |
+| the sender takes what gathered meanwhile | 3 – 4 |
+| a large write waits for the send that runs | `AWriteLargerThanTheBuffer_WaitsForTheSendThatRuns` |
+| a forced flush waits for the send that runs | `AForcedFlush_WaitsForTheSendThatRuns` |
+| the sender stops at an open batch | `AnOpenBatch_StopsTheSendThatRuns` |
+| no send starts while a batch is open | `AnOpenBatch_HoldsTheFlushUntilItEnds(True)`, `AnAbandonedBatch_LetsTheWritersAfterItFlush(True)` |
+
+At `e0a9413e`, the #217 merge, every gate passed: `Tests.HTTP2` 696/696,
+`run-tests.sh` 49/49, h2spec 146/146 over h2 and over h2c.
+
+### The bench found a lost send (Hermod#222)
+
+The first h2bench series for this pin bump paired `e0a9413e` with `1264be56`,
+ten full default runs each, at normal priority. Four of the ten runs of
+`e0a9413e` failed, and none of `1264be56`: three in `requests`, one in `probe`.
+Each failed run took 283 – 345 s, where the others took 189 – 202 s, and each
+ended the same way:
+
+```
+HTTP2RequestNotProcessedException: Server sent GOAWAY (lastStreamId=105635, NO_ERROR)
+```
+
+GOAWAY NO_ERROR is the server's idle timeout, 120 s. The client was waiting for
+a response that never came, so it sent nothing, and the server took the
+connection for idle.
+
+**The gap.** After its send, the sender took two steps, each under the gate the
+writers write under:
+
+1. look for what had gathered, and take it unless a batch held it back;
+2. `ReleaseTransport`: `sending = false`.
+
+A writer that left between the two found `sending` still true, and started no
+send. Then the sender gave the transport back, and what that writer had written
+stayed in the buffer until the next writer came. With one request in flight, no
+next writer came: the response waited for the idle timeout. With 64 in flight,
+the next response usually carried it along, but the last of a burst could
+still wait. A batch that ended in the same gap was lost the same way: it found
+the send still running, and the sender had stopped because of that batch.
+
+**Why #217's own series did not show it.** The PR's series ran at the High
+priority class, because of the load from other processes. There the sender was
+not preempted between its two steps. This series ran at normal priority, with
+other processes holding 3 – 19 cores on average per run.
+
+**#222** takes the two steps as one: the sender looks for more and gives the
+transport back in the same gate section (`EndSend()`), and sets the waiters'
+signal once the gate is left. A writer that leaves after that section finds no
+send running and starts its own; one that wrote before it is taken.
+`ReleaseTransport` uses the same `EndSend()`; its other callers hold the write
+lock, so no writer can land in their gap. The failure path in `SendAsync` does
+the same, for consistency.
+
+**The test.** `FrameWriterTests.AWriterLeavingAsASendEnds_IsNeverLeftBehind`
+lands in the gap on purpose, by reflection on the writer's private state. One
+writer starts a send on a thread of its own. The second takes the write lock,
+then takes the gate as soon as the sender has looked; that moment is visible,
+because the sender puts the buffer it sent back as the spare. Holding the gate,
+the second writer writes and leaves in one go: the test's transport completes
+every write at once, so all of it is done before the gate is left. After the
+first writer is done, both frames must be on the transport, for 2 000 rounds.
+
+Against `e0a9413e`'s frame writer, the test fails in the first rounds: 10 of 10
+runs on Windows and 5 of 5 on Debian 13 (WSL), always in round 1 or 6. With
+#222 it passes all 2 000 rounds in about 0.4 s, 20 of 20 runs.
+
+**The first series is discarded.** Its four failed runs lack the scenarios
+they failed in, and other processes held up to 19 cores on average per run.
+The series below measures #217 and #222 together, which is what this pin bump
+brings; `e0a9413e` alone cannot be measured cleanly.
+
+### Verified at the new pin
+
+- build: 0 errors
+- `Tests.HTTP2`: 697/697 on Windows, at `b8d24be3` (was 696: the new test).
+  #222's branch passed 697/697 on Windows and three times on Debian 13 (WSL).
+- `run-tests.sh`: 49/49 harness runs, at `b8d24be3`
+- h2spec: 146/146 over h2 and over h2c, at `b8d24be3`
+- headless Chrome and Edge (`tools/browser-interop.ps1`): 4/4 each,
+  4× `/slow` in 2.0 s
+- h2load on Debian 13 (WSL, `tools/h2load.sh`): 20 000 of 20 000 in each
+  of the three scenarios, 90.6 % header savings (90.4 % at 100 × 100)
+- `h2interop`: not re-run; the client's mode is unchanged. Autobahn: not
+  re-run; it drives `WebSocketConnection` over a plain TCP tunnel, which does
+  not go through the frame writer.
+
+### h2bench, ten pairs
+
+Each full default run of `db0ab809`, whose `HTTP2/` is that of `b8d24be3`, was
+paired with a run of `1264be56`, and the order alternated from pair to pair. At
+normal priority. .NET 10.0.14, 16 logical cores. Other processes held 2.8 –
+3.1 cores on average per run. All 20 runs passed.
+
+| median (range) | `1264be56` | `b8d24be3` | `b8d24be3` higher in |
+|---|---|---|---|
+| requests/s, 1 concurrent | 11 258 (10 958 – 11 608) | 11 441 (10 536 – 11 936) | 7/10 |
+| requests/s, 8 concurrent | 47 408 (46 376 – 47 942) | 54 251 (53 682 – 54 842) | 10/10 |
+| requests/s, 64 concurrent | 105 867 (102 373 – 107 972) | 127 401 (123 302 – 132 419) | 10/10 |
+| p50 / p99 at 64 | 0.540 / 1.57 ms | 0.413 / 1.54 ms | 0/10, 2/10 |
+| max at 64 | 30.0 ms (17.3 – 36.1) | 31.0 ms (20.6 – 45.9) | 7/10 |
+| CPU per request at 1 / 8 / 64 | 150 / 86 / 52 µs | 148 / 76 / 50 µs | 3, 0, 3 of 10 |
+| bytes per request at 1 / 8 / 64 | 7 744 / 8 856 / 9 075 | 7 744 / 8 319 / 8 696 | level, 0, 0 of 10 |
+| `HttpClient` → our server, 64 | 62 377 | 63 116 | 8/10 |
+| `HttpClient` → Kestrel, 64 | 62 511 | 62 211 | 3/10 |
+| our client → Kestrel, 64 | 133 559 | 132 451 | 2/10 |
+| probe at 64, onto the wire, p50 | 0.064 ms | 0.052 ms | 1/10 |
+| probe at 64, waiting for the response, p50 | 0.473 ms | 0.353 ms | 0/10 |
+| probe, `HttpClient` → our server / → Kestrel, p50 | 0.212 / 0.230 ms | 0.212 / 0.229 ms | |
+| GET 64 MiB | 291.6 MiB/s | 296.9 MiB/s | 6/10 |
+| POST 64 MiB | 295.8 MiB/s | 296.5 MiB/s | 6/10 |
+| frames/s, HPACK blocks/s | 19.0 M, 327 k | 19.0 M, 323 k | 4/10, 3/10 |
+
+The paired medians at 1 / 8 / 64 concurrent are +0.9 %, +13.9 % and +21.7 %.
+At 1 concurrent there is nothing to gather: a response is sent outside the lock
+as before it was flushed under it. The prototype's +20.4 % at 64 concurrent
+holds.
+
+**Our server gives our client nearly what Kestrel does.** The median of the
+per-run ratios, our pair over our client against Kestrel, went from 0.80 to
+0.965 (0.943 – 0.998). The Kestrel control stayed level (−0.9 %), and so did
+our client against Kestrel, which runs none of the changed code (−0.8 %).
+Through `HttpClient` our server gained +0.8 %: there `HttpClient` is the limit,
+and the two servers were level already.
+
+**The max at 64 concurrent is no change.** 30.0 → 31.0 ms, higher in seven
+pairs, with ranges that overlap almost entirely.
+
+**This series ran on a quieter machine than the previous one.** `1264be56`
+reached 105 867 req/s at 64 concurrent here and 94 217 in its own series, with
+other processes at 2.8 – 3.1 cores against 3.9 – 7.5. Figures from the two
+series are not comparable with each other; the pairs within each are.
+
+### What is not done
+
+- **Our client still gets a little more out of Kestrel than out of our
+  server**: 132.5 k against 127.4 k req/s. The instrumented build of #202 left
+  two candidates, the read loop's CPU and the time from `Task.Run` to a
+  handler's start. Neither has been tried.
+- **Sending outside the lock for the client** has not been measured. Its tests
+  would need new premises first.
+- **None of the gates caught #217's lost send.** The bench did, because a
+  failed scenario fails its run. The gap is a few instructions wide, and the
+  gates did not land in it.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

@@ -102,7 +102,7 @@ free_ports $demo_ports || {
 # $demo_pid IS the server, so the cleanup below actually stops it.
 demo_dll=""
 for cfg in Debug Release; do
-    cand="$root/Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
+    cand="$root/Demo/bin/$cfg/net11.0/HTTP2.Demo.dll"
     [ -f "$cand" ] && { demo_dll="$cand"; break; }
 done
 if [ -z "$demo_dll" ]; then

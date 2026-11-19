@@ -46,6 +46,7 @@
 using System.Diagnostics;
 using System.Net.Security;
 
+using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 
@@ -75,6 +76,12 @@ if (targets.Length == 0)
 
 var timeout = TimeSpan.FromSeconds(20);
 
+// Since Hermod 8ba53f6e the client resolves a host name only with the DNS client
+// it is given, never with the resolver of the operating system. This one asks the
+// name servers the machine's network configuration names, so the client's own DNS
+// stack is exercised too, and one instance shares its cache across the targets.
+var dnsClient = new DNSClient();
+
 Console.WriteLine("== HTTP/2 interop matrix — our client against foreign servers (full certificate validation) ==");
 Console.WriteLine();
 Console.WriteLine($"{"Target",-24} {"Expected",-14} {"server:",-20} {"MCS",5}  {"Alt-Svc",-12} {"ORIGIN",-6}  Result");
@@ -84,7 +91,7 @@ var reachable = 0;
 
 foreach (var (host, expected) in targets)
 {
-    var r = await Probe(host, timeout);
+    var r = await Probe(host, dnsClient, timeout);
 
     if (r.Ok)
         reachable++;
@@ -123,7 +130,7 @@ return reachable >= minReachable ? 0 : 1;
 
 
 // One attempt: fresh connection, GET /, full validation, everything read back.
-static async Task<Probed> Probe(String Host, TimeSpan Timeout)
+static async Task<Probed> Probe(String Host, IDNSClient DNSClient, TimeSpan Timeout)
 {
 
     using var cts = new CancellationTokenSource(Timeout);
@@ -139,6 +146,7 @@ static async Task<Probed> Probe(String Host, TimeSpan Timeout)
                                    Host,
                                    443,
                                    (_, _, _, sslPolicyErrors) => sslPolicyErrors == SslPolicyErrors.None,
+                                   Options:           new HTTP2ClientOptions { DNSClient = DNSClient },
                                    CancellationToken: cts.Token
                                );
 

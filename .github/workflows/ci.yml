@@ -72,7 +72,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
 
       # Debug, not Release, which is where this gate diverges from the sibling
       # repositories — and it is the harness runner that forces it.

@@ -146,7 +146,7 @@ fi
 # --- locate the built echo server DLL --------------------------------------
 srv_dll=""
 for cfg in Debug Release; do
-    cand="$root/tests/autobahn-server/bin/$cfg/net10.0/autobahn-server.dll"
+    cand="$root/tests/autobahn-server/bin/$cfg/net11.0/autobahn-server.dll"
     [ -f "$cand" ] && { srv_dll="$cand"; break; }
 done
 [ -n "$srv_dll" ] || { echo "Echo server not built (no autobahn-server.dll). Run without --no-build first." >&2; exit 1; }

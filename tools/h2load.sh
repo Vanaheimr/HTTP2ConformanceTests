@@ -55,7 +55,7 @@ fi
 
 dll=""
 for cfg in Debug Release; do
-    cand="$root/Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
+    cand="$root/Demo/bin/$cfg/net11.0/HTTP2.Demo.dll"
     [ -f "$cand" ] && { dll="$cand"; break; }
 done
 [ -n "$dll" ] || { echo "Demo host not built (no HTTP2.Demo.dll). Run without --no-build first." >&2; exit 1; }

@@ -128,7 +128,7 @@ Two shells. First, build and start the echo server:
 
 ```bash
 dotnet build HTTP2.slnx
-dotnet tests/autobahn-server/bin/Debug/net10.0/autobahn-server.dll 9010
+dotnet tests/autobahn-server/bin/Debug/net11.0/autobahn-server.dll 9010
 # -> [autobahn-server] WebSocket echo server listening on ws://127.0.0.1:9010/
 ```
 

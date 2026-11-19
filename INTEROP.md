@@ -67,6 +67,12 @@ Both also run nightly on GitHub — see [`.github/workflows/nightly.yml`](.githu
 As of **2026-08-13** — 8 independent server implementations, every one reached end to end with
 full certificate validation:
 
+Since Hermod `8ba53f6e` (pinned here 2026-11-19) the client resolves a host name only with the
+DNS client it is given, never with the resolver of the operating system. `tests/h2interop` gives
+it Hermod's own `DNSClient`, asking the name servers the machine's network configuration names,
+so the matrix runs our DNS client too. Without one, every target fails with
+`NameResolutionException` — 0/8, which is how the change announced itself.
+
 | Target | Expected stack | `server:` said | MAX_CONCURRENT_STREAMS | Alt-Svc | Result |
 |---|---|---|---|---|---|
 | `www.nginx.com` | nginx | **volt-adc** | 100 | — | 403, 0 B |

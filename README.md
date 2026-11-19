@@ -36,7 +36,7 @@ six foreign clients against our server, including headless Chrome, Edge and
 
 ## Requirements
 
-- .NET 10 SDK (`net10.0` target)
+- .NET 11 SDK (`net11.0` target)
 
 ## Get the sources
 

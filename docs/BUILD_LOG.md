@@ -5267,6 +5267,86 @@ series are not comparable with each other; the pairs within each are.
   failed scenario fails its run. The gap is a few instructions wide, and the
   gates did not land in it.
 
+## 2026-11-19 — .NET 11 with Hermod and Styx, and the client resolves with its own DNS client
+
+Hermod `244cbfeb` → `4b8be28a`, Styx `5f09dd47` → `a6b9f9fb`, the pair
+HTTP3ConformanceTests pins since `b6ab0d3`.
+
+**The nightly was red for nine nights, and not for HTTP/2.** From 2026-11-11
+to 2026-11-19 (runs `43006056230` to `44515202601`, and `44518258412` started
+by hand), `against-hermod-master` failed at Build on both legs. Debian said
+`NETSDK1045`, "The current .NET SDK does not support targeting .NET 11.0".
+Windows said `NU1201`: a `net10.0` project cannot reference a `net11.0` one.
+Hermod `62704cc1` and Styx `2874a327` had moved every project to `net11.0`,
+and their workflows to the SDK 11.0.x. This repository was not part of that
+move. The pinned jobs (h2spec, Autobahn, interop) stayed green. Interop's one
+red night, 2026-11-18, was something else: four of the eight targets failed
+with `SocketException: Resource temporarily unavailable`, a name lookup on the
+runner, and the next night reached all eight.
+
+**What moved:**
+
+- `net10.0` → `net11.0` in `Directory.Build.props`, `Demo` and the eight
+  projects under `tests/` that name their own;
+- `ci.yml` and the four `setup-dotnet` steps of `nightly.yml` install the SDK
+  11.0.x;
+- `run-tests.sh`, `h2spec.sh`, `autobahn.sh`, `tools/h2load.sh`,
+  `tools/autobahn-repro.sh` and `tools/browser-interop.ps1` find the builds
+  under `net11.0`.
+
+The pins had to move with it. The pinned `net10.0` Hermod would have needed a
+.NET 10 runtime next to the SDK 11 on CI.
+
+**h2interop reached none of its eight targets.** Hermod `8ba53f6e` lets every
+client resolve a host name only with the DNS client it is given, never with
+the resolver of the operating system. Given none, `HTTP2Client.ConnectAsync`
+refuses a host name with `NameResolutionException`, and the matrix read 0/8.
+`tests/h2interop` now passes `HTTP2ClientOptions.DNSClient`: one Hermod
+`DNSClient` that asks the name servers the machine's network configuration
+names. With it, 8/8. The other client call sites here dial `localhost`, which
+needs no DNS client.
+
+**The range, for HTTP/2.** 79 first-parent commits, mostly SSH, DNS, TOTP and
+QUIC. What reaches `HTTP2/` or `HTTP/`:
+
+- `d4c1eac8`: raw public keys (RFC 7250) over TCP. A second TLS stack beside
+  `SslStream`, chosen per connection, in `HTTP2Server` and `HTTP2Client`. The
+  key pins it builds on (`8ac43004`, `30dd670c`) live outside `HTTP2/`;
+- `a7a82e6a`: Hermod's general WebSocket client and server open a
+  WebSocket over HTTP/2 too, by extended CONNECT (RFC 8441), and a refused
+  tunnel throws `HTTP2TunnelRefusedException`, which says the status;
+- `8ba53f6e`: the DNS client, above;
+- `cb0046bb`, `f7b00ef2`, `ce248d8d`: a TOTP challenge in `WWW-Authenticate`,
+  case-insensitive ids, `HTTPRoot`. Not on the HTTP/2 path.
+
+`19db5cad` turns Nagle's algorithm off in `ATCPClient` and `ATCPServer`. The
+HTTP/2 stack set `NoDelay` on both ends already.
+
+**702 tests, not 697.** The filter `FullyQualifiedName~Tests.HTTP2` picks up
+five new tests outside `HermodTests/HTTP2/`: three in
+`Tests.TLS.KeyPins.KeyPinHandshakeTests` and two in
+`Tests.TLS.KeyPins.RawPublicKeyOverTCPTests`, each named `HTTP2_…`. They run an
+HTTP/2 server and client over key pins and raw public keys, so they belong in
+the count, by their names rather than their namespace. `WebSocketOverHTTP2Tests`
+(namespace `Tests.HTTP.WebSockets`) does not match the filter and is not
+counted.
+
+### Verified at the new pin
+
+- build: 0 errors, Debug and Release, SDK 11.0.100
+- `Tests.HTTP2`: 702/702 on Windows
+- `run-tests.sh`: 49/49
+- h2spec: 146/146 over h2 and over h2c
+- headless Chrome and Edge (`tools/browser-interop.ps1`): 4/4 each, 4×
+  `/slow` in 2.0 s
+- h2load on Debian 13 (WSL, SDK 11.0.100, `tools/h2load.sh`): 20 000 of
+  20 000 in each of the three scenarios, 90.6 % header savings (90.4 % at
+  100 × 100)
+- `h2interop`: 8/8 with the DNS client
+- Autobahn: not re-run here; the nightly runs it on the new pin.
+
+h2bench is measured in the next entry.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

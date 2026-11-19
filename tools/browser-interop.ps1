@@ -57,7 +57,7 @@ if (-not $NoBuild) {
 
 $dll = $null
 foreach ($cfg in @("Debug", "Release")) {
-    $cand = Join-Path $root "Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
+    $cand = Join-Path $root "Demo/bin/$cfg/net11.0/HTTP2.Demo.dll"
     if (Test-Path $cand) { $dll = $cand; break }
 }
 if (-not $dll) { throw "Demo host not built (no HTTP2.Demo.dll). Run without -NoBuild first." }

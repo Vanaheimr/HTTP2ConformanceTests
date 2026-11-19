@@ -116,7 +116,7 @@ if [ -z "$server_dll" ]; then
         dotnet build "$root/tests/autobahn-server/autobahn-server.csproj" -v quiet >/dev/null
     fi
     for cfg in Debug Release; do
-        cand="$root/tests/autobahn-server/bin/$cfg/net10.0/autobahn-server.dll"
+        cand="$root/tests/autobahn-server/bin/$cfg/net11.0/autobahn-server.dll"
         [ -f "$cand" ] && { server_dll="$cand"; break; }
     done
 fi

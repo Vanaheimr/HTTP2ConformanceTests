@@ -82,7 +82,7 @@ demo_ports="8443 8080"
 find_dll() {  # $1 = project name, $2 = directory holding the project
     local project="$1" dir="$2" cfg cand
     for cfg in Debug Release; do
-        cand="$dir/$project/bin/$cfg/net10.0/$project.dll"
+        cand="$dir/$project/bin/$cfg/net11.0/$project.dll"
         [ -f "$cand" ] && { printf '%s' "$cand"; return 0; }
     done
     return 1
@@ -102,7 +102,7 @@ free_ports $demo_ports || {
 # server, so the cleanup below actually stops it.
 demo_dll=""
 for cfg in Debug Release; do
-    cand="$root/Demo/bin/$cfg/net10.0/HTTP2.Demo.dll"
+    cand="$root/Demo/bin/$cfg/net11.0/HTTP2.Demo.dll"
     [ -f "$cand" ] && { demo_dll="$cand"; break; }
 done
 if [ -z "$demo_dll" ]; then

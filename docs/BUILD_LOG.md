@@ -5347,6 +5347,114 @@ counted.
 
 h2bench is measured in the next entry.
 
+## 2026-11-19 — h2bench on .NET 11: the runtime costs our code a third to a half more CPU per request
+
+The previous entry moved the stack to .NET 11 and the pin from `244cbfeb` to
+`4b8be28a` in one step. This one measures it, and pulls the two apart.
+
+**The full series.** Ten pairs of full default runs, `244cbfeb` on .NET
+10.0.15 against `4b8be28a` on .NET 11.0.0, the order alternating. All 20 runs
+passed. The machine was busy, with other sessions running their gates: 6.1 –
+10.5 cores in use on average per run, h2bench's own included, sampled every
+2 s from `Win32_PerfFormattedData_PerfOS_Processor`. (`typeperf` would have
+needed the localized counter names.) Pair by pair:
+
+| | `244cbfeb`, .NET 10 | `4b8be28a`, .NET 11 | paired | higher |
+|---|---|---|---|---|
+| requests/s, 1 concurrent | 8 151 | 9 362 | +17.1 % | 9/10 |
+| requests/s, 8 concurrent | 40 790 | 43 780 | −1.7 % | 4/10 |
+| requests/s, 64 concurrent | 114 984 | 98 220 | −9.6 % | 1/10 |
+| p50 at 64 concurrent | 0.443 ms | 0.508 ms | +11.8 % | 10/10 |
+| CPU per request, 1 / 8 / 64 | 198 / 95 / 54 µs | 281 / 130 / 69 µs | +41 / +42 / +26 % | 9, 10, 9 of 10 |
+| our client → Kestrel | 101 631 | 103 997 | −0.0 %; CPU +49 % | 5/10 |
+| `HttpClient` → our server | 57 357 | 49 287 | −6.5 % | 2/10 |
+| `HttpClient` → Kestrel | 56 243 | 57 205 | −1.6 % | 4/10 |
+| GET / POST 64 MiB | 217 / 225 MiB/s | 230 / 232 MiB/s | +4.2 / +2.6 % | 8, 7 of 10 |
+| HPACK blocks/s, frames/s | 284 k, 13.4 M | 291 k, 14.1 M | +0.7 / +14 % | 5, 6 of 10 |
+
+The ranges were wide (64 concurrent at .NET 11: 45 848 – 105 989), and so were
+the old arm's. What stood out was the CPU per request: up by a quarter to a
+half wherever our code runs, while `HttpClient` → Kestrel, which runs none of
+it, rose 2.8 %. A pin of 79 commits and a new runtime could each have done
+that.
+
+**Three builds pull them apart.** `244cbfeb` was built a second time with
+`net10.0` replaced by `net11.0` throughout, from `git archive` of the same
+commits. Ten rounds of `requests` and `control` over `old` (`244cbfeb`, .NET
+10), `old11` (`244cbfeb`, .NET 11) and `new` (`4b8be28a`, .NET 11), the order
+rotating from round to round, 6.8 – 9.2 cores in use per run. Medians:
+
+| | `old` | `old11` | `new` |
+|---|---|---|---|
+| requests/s, 1 concurrent | 9 823 | 11 550 | 11 509 |
+| requests/s, 8 concurrent | 49 682 | 49 477 | 49 530 |
+| requests/s, 64 concurrent | 133 706 | 116 690 | 116 715 |
+| p50 at 64 concurrent | 0.400 ms | 0.464 ms | 0.464 ms |
+| CPU per request, 1 / 8 / 64 | 169 / 81 / 50 µs | 265 / 124 / 69 µs | 261 / 123 / 68 µs |
+| cores busy at 1 concurrent | 1.7 | 3.1 | 3.0 |
+| our client → Kestrel | 133 219 | 116 126 | 116 549 |
+| `HttpClient` → our server | 62 304 | 57 861 | 58 598 |
+| `HttpClient` → Kestrel | 63 273 | 60 999 | 60 806 |
+
+`old` → `old11` is the runtime alone: every row except 8 concurrent moved in
+10 of 10 rounds (or 0 of 10), +19.1 % at 1 concurrent, −11.7 % at 64, CPU
++54 / +53 / +37 %, our client against Kestrel −12.5 % at CPU +58 %. `old11` →
+`new` is the pin alone: nothing moved by more than 2.5 %, and no row was
+higher in more than 6 of 10 rounds. **The pin is neutral. .NET 11 is the
+whole effect.**
+
+**The runtime, not the compiler.** `old` and `old11` were compiled by the same
+SDK 11.0.100 against different reference packs, and both Hermod DLLs carry the
+same 1 229 compiler-generated async state machines, so runtime async is not in
+play. To be sure, the `net10.0` build was run unchanged, with only its
+`runtimeconfig.json` pointed at 11.0.0. Six pairs of `requests` against the
+same build on 10.0.15: +17.2 % at 1 concurrent (6/6), −0.0 % at 8, −11.9 % at
+64 (0/6), CPU +55 / +52 / +35 %. Same IL, same numbers.
+
+**Most of the extra CPU is the thread pool spinning.** Single runs of
+`requests` on `new`, five seconds of warmup, three measured:
+
+| | 1 concurrent | 8 concurrent | 64 concurrent |
+|---|---|---|---|
+| default, two runs | 11 257 / 11 757 req/s, 269 / 266 µs | 49 984 / 45 034, 124 / 129 µs | 115 497 / 111 792, 72 / 74 µs |
+| `DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0`, two runs | 9 434 / 9 431, 157 / 161 µs | 45 204 / 42 053, 68 / 70 µs | 117 120 / 109 822, 34 / 43 µs |
+| `DOTNET_TieredPGO=0` | 10 449, 287 µs | 43 651, 143 µs | 96 439, 84 µs |
+
+Without the spinning, the CPU per request halves, below even .NET 10's, and
+the gain at 1 concurrent goes with it: that gain was bought with the spinning,
+3.1 cores busy for one request in flight. At 64 concurrent the switch changes
+nothing. The −12 % there is not spinning, and what it is was not looked for
+further.
+
+**It hits our code harder than the BCL's.** `HttpClient` → Kestrel loses
+4 % on .NET 11 at 3 % more CPU. Our client against Kestrel loses 12.5 % at 58 %
+more, and our pair 11.7 % at 37 %. Both roles hand work between threads with
+`SemaphoreSlim`, `Task.Run` and `TaskCompletionSource`, so that is where a
+guess would start. None was tested.
+
+**Our server gives our client what Kestrel does.** The ratio of our pair to
+our client → Kestrel, per round, was 1.00 in all three builds (`old` 0.98 –
+1.06, `old11` 1.00 – 1.05, `new` 0.93 – 1.07). The 0.965 of 2026-11-03 came
+from a different series.
+
+**Two series of one build, the same afternoon, a fifth apart.** `new` gave
+98 220 req/s at 64 concurrent in the full series and 116 715 in the
+three-build one. The full series ran while other sessions ran their gates.
+Neither is wrong, and neither compares with the other. CLAUDE.md's baseline
+table is the full series, because only it has every scenario; its 64-concurrent
+figure is the low one.
+
+### Not done
+
+- **Why .NET 11 costs 12 % at 64 concurrent.** Spinning is ruled out for that
+  part; a profile of `old` against `old11` would be the next step.
+- **Whether to turn the spinning down.** `UnfairSemaphoreSpinLimit=0` is a
+  process-wide knob for the host, not something a library sets, and it trades
+  latency at low concurrency for CPU. Nothing was changed.
+- **Debian.** Everything here is Windows. The h2load run on Debian 13 (WSL)
+  in the previous entry was on .NET 11 and completed all requests, but it
+  measures no CPU.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

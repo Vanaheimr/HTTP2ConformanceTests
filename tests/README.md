@@ -284,6 +284,24 @@ again, and its column here compares with this one only:
 Our server now gives our client nearly what Kestrel does: 0.965 as the median
 of the per-run ratios (0.943 – 0.998), up from 0.80 in the same series.
 
+On 2026-11-19 the stack moved to .NET 11 with pin `4b8be28a`. Ten rounds of
+`requests` and `control`, three builds in rotating order: `244cbfeb` on .NET
+10.0.15, the same pin built for `net11.0` on 11.0.0, and `4b8be28a` on 11.0.0.
+The machine was in use at 6.8 – 9.2 cores on average per run, h2bench
+included:
+
+| 64 concurrent, one connection | `244cbfeb`, .NET 10 | `244cbfeb`, .NET 11 | `4b8be28a`, .NET 11 |
+|---|---|---|---|
+| our client → our server | 133 706 | 116 690 | 116 715 (108 550 – 119 640) |
+| `HttpClient` → our server | 62 304 | 57 861 | 58 598 (52 356 – 59 995) |
+| `HttpClient` → Kestrel | 63 273 | 60 999 | 60 806 (50 828 – 61 555) |
+| our client → Kestrel | 133 219 | 116 126 | 116 549 (112 085 – 118 086) |
+
+Our server gives our client what Kestrel does, 1.00 as the median of the
+per-run ratios in all three columns. .NET 11 costs both of our roles about
+12 % here, the pin nothing; see the Performance section of
+[`CLAUDE.md`](../CLAUDE.md).
+
 ## h2spec conformance
 
 [h2spec](https://github.com/summerwind/h2spec) is the canonical HTTP/2

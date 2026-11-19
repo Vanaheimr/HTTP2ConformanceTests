@@ -343,25 +343,57 @@ had noticed either:
   without a verdict (fixed). **Docker Desktop itself is still unverified.**
 
 **Performance** is measured by `tests/h2bench`. Figures re-baselined
-**2026-11-03** at pin `b8d24be3`, .NET 10.0.14, 16 logical cores, client and
+**2026-11-19** at pin `4b8be28a`, **.NET 11.0.0**, 16 logical cores, client and
 server in one process (so every number covers both roles plus TLS and loopback).
 **Ten full default runs, reported as median (range).** Each run was paired with a
-run of the previous pin `1264be56`, and the order alternated from pair to pair.
-They ran as `db0ab809`, the branch of Hermod#222, whose `HTTP2/` is that of
-`b8d24be3`. Other processes held 2.8 – 3.1 cores on average per run:
+run of the previous pin `244cbfeb` on .NET 10.0.15, and the order alternated from
+pair to pair. The machine was busy: 6.1 – 10.5 cores in use on average per run,
+h2bench's own included, and the ranges show it:
 
 | | |
 |---|---|
-| requests/s, 1 concurrent | 11 441 (10 536 – 11 936) |
-| requests/s, 8 concurrent | 54 251 (53 682 – 54 842) |
-| requests/s, 64 concurrent | 127 401 (123 302 – 132 419) |
-| latency at 64 concurrent, p50 / p99 / max | 0.41 / 1.5 / 31.0 ms (p99 1.50 – 1.59, max 20.6 – 45.9) |
-| GET 64 MiB | 297 MiB/s (278 – 304) |
-| POST 64 MiB | 296 MiB/s (147 – 301) |
-| HPACK blocks/s | ~323 k (302 k – 340 k) |
-| frames/s | ~19.0 M (16.5 M – 19.4 M) |
-| allocation per trivial request | 7 744 – 8 696 bytes, rising with concurrency |
+| requests/s, 1 concurrent | 9 362 (8 406 – 10 985) |
+| requests/s, 8 concurrent | 43 780 (19 169 – 46 311) |
+| requests/s, 64 concurrent | 98 220 (45 848 – 105 989) |
+| latency at 64 concurrent, p50 / p99 / max | 0.51 / 2.0 / 32.0 ms (p99 1.76 – 9.24, max 27.7 – 62.3) |
+| CPU per request at 1 / 8 / 64 concurrent | 281 / 130 / 69 µs |
+| GET 64 MiB | 230 MiB/s (192 – 252) |
+| POST 64 MiB | 232 MiB/s (196 – 278) |
+| HPACK blocks/s | ~291 k (167 k – 326 k) |
+| frames/s | ~14.1 M (9.6 M – 18.4 M) |
+| allocation per trivial request | 7 736 – 8 906 bytes, rising with concurrency |
 | a large transfer | ~6.0× its payload, unchanged |
+
+A quieter series of `requests` and `control` alone, ten rounds the same
+afternoon, gave this build 11 509 / 49 530 / 116 715 req/s at 1 / 8 / 64
+concurrent (64: 108 550 – 119 640). The two series do not compare with each
+other; see below.
+
+**What .NET 11 changed: it costs our code a third to a half more CPU per
+request, and 12 % of the throughput at 64 concurrent.** Not the pin. Three
+builds, ten rounds of `requests` and `control`, the order rotating: `244cbfeb`
+built for `net10.0`, the same pin built for `net11.0`, and `4b8be28a`:
+
+| | `244cbfeb` → same, on .NET 11 | `244cbfeb` → `4b8be28a`, both on .NET 11 |
+|---|---|---|
+| requests/s, 1 concurrent | **+19.1 %**, 10/10 higher | +0.1 %, 5/10 |
+| requests/s, 8 concurrent | −0.3 %, 4/10 | +0.0 %, 5/10 |
+| requests/s, 64 concurrent | **−11.7 %**, 0/10 | −1.3 %, 4/10 |
+| CPU per request, 1 / 8 / 64 | **+54 / +53 / +37 %**, 10/10 each | −0.2 / −0.9 / −2.5 % |
+| our client → Kestrel | **−12.5 %**, 0/10; CPU **+58 %** | −0.1 %; CPU −0.5 % |
+| `HttpClient` → our server | −6.5 %, 0/10; CPU +4.3 % | +1.6 %; CPU +0.4 % |
+| `HttpClient` → Kestrel | −4.3 %, 0/10; CPU +3.1 % | −0.5 %; CPU −0.1 % |
+
+It is the runtime, not the compiler: the `net10.0` build, unchanged, with only
+its `runtimeconfig.json` pointed at 11.0.0, does the same (six pairs: +17.2 % at
+1 concurrent, −11.9 % at 64, CPU +55 % and +35 %). Both builds have the same
+1 229 async state machines, so runtime async is not in play. Most of the extra
+CPU is the thread pool spinning: with `DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0`
+the CPU per request halves (268 → 157, 124 → 68, 72 → 34 µs) and the gain at
+1 concurrent goes with it, but 64 concurrent stays at 110 – 117 k, short of
+.NET 10's 133 k. What costs that is not established. Code that is not ours
+(`HttpClient` → Kestrel) loses 4 %, at 3 % more CPU; ours loses 12 %, at 37 – 58 %
+more. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 **Compare figures only within one series.** Since 2026-11-01 h2bench warms
 every measurement up for 10 s, measures for 3 s at least, and runs each
@@ -372,9 +404,16 @@ gives 7 289 and ~287 k at `86c7acd6`, whose `HTTP2/` is the same. Figures from
 before 2026-11-01 are not comparable with these. Nor are two series of the new
 way on a machine that is shared: `1264be56` gave 94 217 req/s at 64 concurrent
 in its own series, with other processes at 3.9 – 7.5 cores, and 105 867 in this
-one. The pin-against-pin pairs in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md)
+one. On 2026-11-19 `4b8be28a` gave 98 220 req/s at 64 concurrent in the full
+series, with the machine at 6.1 – 10.5 cores, and 116 715 in the quieter one
+that afternoon. The pin-against-pin pairs in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md)
 compare two pins measured side by side, and stand as such. See
 [`tests/README.md`](tests/README.md).
+
+The sections below record how the pair got to the 2026-11-03 baseline, at
+`b8d24be3` on .NET 10.0.14: 11 441 / 54 251 / 127 401 req/s at 1 / 8 / 64
+concurrent, p50 0.41 ms at 64, GET 297 and POST 296 MiB/s, ~323 k HPACK
+blocks/s, ~19.0 M frames/s.
 
 **What `b8d24be3` changed.** Hermod#217: the server sends its buffered frames
 outside the write lock. A writer leaving the lock starts a send if none runs,
@@ -517,12 +556,13 @@ p50 halved, because throughput doubled, and the max rose; see above. At
 All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 **done**. Two things are genuinely open (see the task list):
 - a decision on a client cookie jar;
-- our server's share of what our own pair reaches: our client gets 132.5 k
-  req/s out of Kestrel and 127.4 k out of our server, 0.965 of it per run. The
-  gap the `control` scenario first showed closed in four steps: the server's
-  write coalescing with Hermod#195, the client's with Hermod#197, the server's
-  small responses in one write with Hermod#202, and the server's sends outside
-  the write lock with Hermod#217. Where the rest goes is not established.
+- what .NET 11 costs our code. Same IL, CPU per request +35 – 58 % and
+  −12 % at 64 concurrent, where `HttpClient` → Kestrel loses 4 %. The extra CPU
+  is mostly the thread pool spinning; the loss at 64 concurrent is not
+  explained. The gap to Kestrel the `control` scenario first showed is closed,
+  in four steps (Hermod#195, #197, #202, #217): on 2026-11-19 our client got as
+  much out of our server as out of Kestrel, 1.00 per run (0.93 – 1.07), on
+  .NET 10 and on .NET 11 alike.
 
 ### Optional — parked, not planned
 

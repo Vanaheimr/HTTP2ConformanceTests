@@ -9,6 +9,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- .NET 11's thread pool keeps a worker spinning after it was woken for
+         work that another worker had already taken, up to this many times
+         (default 10). Profiled on 2026-11-20, that spinning is where .NET 11's
+         extra CPU per request goes; at 0 the CPU falls below .NET 10's, at the
+         cost of a little latency when few requests are in flight. A host's
+         knob, not a library's, which is why it is here and not in Hermod.
+         DOTNET_ThreadPool_SpuriousDispatchNoSpinThreshold overrides it. See
+         docs/BUILD_LOG.md. -->
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.SpuriousDispatchNoSpinThreshold" Value="0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\libs\Hermod\Hermod\Hermod.csproj" />
     <ProjectReference Include="..\libs\Styx\Styx\Styx.csproj" />
   </ItemGroup>

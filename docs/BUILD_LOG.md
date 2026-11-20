@@ -5571,6 +5571,54 @@ Kestrel loses on .NET 11 (4 %).
   request. Nothing was changed in Hermod or in the demo.
 - **Debian.** Everything here is Windows.
 
+## 2026-11-20 — The demo host sets the threshold to 0: +25 % at 64 streams on one connection, under Linux
+
+The previous entry left the threshold to the host. The demo is a host, so
+`Demo/HTTP2.Demo.csproj` now sets it, as a `RuntimeHostConfigurationOption`
+for `System.Threading.ThreadPool.SpuriousDispatchNoSpinThreshold` = 0. It
+lands in `HTTP2.Demo.runtimeconfig.json`. Read back by reflection, the
+runtimeconfig value takes effect, and
+`DOTNET_ThreadPool_SpuriousDispatchNoSpinThreshold` still overrides it, so one
+build gives both arms. Hermod is unchanged.
+
+**Measured with h2load, not h2bench.** h2bench runs its client and server in
+one process and never starts the demo. So the demo ran inside WSL (Debian 13,
+.NET 11.0.0, 16 cores) under h2load, on ports 9643/9280, away from the shared
+8443/8080. One build, with the threshold at 0 from the runtimeconfig and at the
+default 10 by environment. Twelve rounds, the order alternating, and each run
+warmed up with 100 000 requests first. The demo's CPU time comes from
+`/proc/<pid>/stat`. All 4.9 million requests succeeded. The demo writes a
+console line per request, which went to `/dev/null`. It is in every figure, in
+both arms alike.
+
+| h2load, TLS | req/s, 10 → 0 | 0 / 10, per round | CPU µs per request, 10 → 0 |
+|---|---|---|---|
+| 1 connection, 1 stream | 4 146 → 3 819 | 0.916 (0/12 higher) | 348 → 280, 12/12 lower |
+| 1 connection, 8 streams | 28 773 → 28 829 | 0.997 (6/12) | 75 → 58, 12/12 lower |
+| 1 connection, 64 streams | 87 645 → **108 456** | **1.251 (12/12, 1.15 – 1.28)** | 53 → **33**, 12/12 lower |
+| 10 connections × 32 streams | 210 721 → 209 478 | 0.987 (5/12) | 34 → 34 |
+
+- **At 64 streams on one connection the threshold at 0 wins outright:** a
+  quarter more requests at 38 % less CPU, in every round. This is the load at
+  which h2bench shows .NET 11's −12 %. Under Windows, in h2bench, the same
+  switch gained 2.5 %. Whether the difference is the platform, the separate
+  client process, or both, was not separated.
+- **One stream at a time loses 8 %,** at 19 % less CPU: the latency the
+  spinning bought.
+- **Eight streams:** throughput level, CPU −23 %.
+- **Ten connections:** nothing either way. There the workers are busy anyway,
+  and nobody is woken for nothing.
+
+The 49 harness runs pass with the switch set (Windows, Git Bash).
+
+### Not done
+
+- **The demo on .NET 10 under Linux.** Without it, this does not say whether
+  the threshold accounts for all of .NET 11's loss at 64 concurrent there, or
+  only some of it.
+- **h2bench.** It does not start the demo, and its own runtimeconfig is
+  untouched. Its figures stay comparable with the series before.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

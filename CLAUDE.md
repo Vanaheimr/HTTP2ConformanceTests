@@ -405,8 +405,19 @@ is ruled out: `DOTNET_Lock_SpinCount=400` cuts the contention twentyfold and
 leaves the throughput where it was. **The loss at 64 concurrent is still
 unexplained.** It was 6 % in that series, and the threshold at 0 recovers
 2.5 %, too little to tell from noise. `dotnet-trace` 10 cannot attach to a
-.NET 11 process, so the traces were started by environment variable. See
-[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+.NET 11 process, so the traces were started by environment variable.
+
+**The demo host sets the threshold to 0** (`Demo/HTTP2.Demo.csproj`, a
+`RuntimeHostConfigurationOption`; the environment variable still overrides
+it). Hermod does not set it: it is a process-wide knob, and a host's to choose.
+The demo was measured under h2load in WSL (Debian 13), twelve alternating
+rounds. At 64 streams on one connection it gave **+25 %** (87 645 → 108 456
+req/s, higher in 12 of 12 rounds) at 38 % less CPU per request. With one stream
+it gave −8 % at 19 % less CPU, and with 8 streams or 10 connections the same
+throughput. Under Linux, then, it recovers far more than the 2.5 % it gave
+h2bench under Windows. Whether that is all of .NET 11's loss there is open:
+the demo was not run on .NET 10 under Linux. h2bench's own runtimeconfig is
+untouched. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 **Compare figures only within one series.** Since 2026-11-01 h2bench warms
 every measurement up for 10 s, measures for 3 s at least, and runs each

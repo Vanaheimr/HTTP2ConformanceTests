@@ -415,9 +415,14 @@ rounds. At 64 streams on one connection it gave **+25 %** (87 645 → 108 456
 req/s, higher in 12 of 12 rounds) at 38 % less CPU per request. With one stream
 it gave −8 % at 19 % less CPU, and with 8 streams or 10 connections the same
 throughput. Under Linux, then, it recovers far more than the 2.5 % it gave
-h2bench under Windows. Whether that is all of .NET 11's loss there is open:
-the demo was not run on .NET 10 under Linux. h2bench's own runtimeconfig is
-untouched. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+h2bench under Windows. Measured against .NET 10 on the same IL, under h2load
+in WSL with twelve rotating rounds, it is most of .NET 11's loss there, not all.
+At the default threshold, .NET 11 costs the demo **22 %** at 64 streams on one
+connection and 9 % at 8. At 0, the loss is 4 % and 6 %, and one stream is 8 %
+below .NET 10. The CPU is 17 – 28 % below .NET 10's in all three. Ten
+connections are level in every arm. The residue of 4 – 8 % is not located.
+h2bench's own runtimeconfig is untouched. See
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 **Compare figures only within one series.** Since 2026-11-01 h2bench warms
 every measurement up for 10 s, measures for 3 s at least, and runs each
@@ -585,7 +590,9 @@ All originally-planned roadmap tracks (A–E) plus every follow-up extension are
   is the thread pool spinning, located on 2026-11-20 in .NET 11's new
   `SpuriousDispatchNoSpinThreshold` (at 0, below .NET 10's CPU); our own
   work costs the same, and `Monitor`-on-`Lock` contention is ruled out. The
-  loss at 64 concurrent is not explained. The gap to Kestrel the `control` scenario first showed is closed,
+  loss at 64 concurrent is not explained under Windows. Under Linux the demo
+  loses 22 % there, and the threshold at 0 gives back all but 4 %; that
+  residue is not located either. The gap to Kestrel the `control` scenario first showed is closed,
   in four steps (Hermod#195, #197, #202, #217): on 2026-11-19 our client got as
   much out of our server as out of Kestrel, 1.00 per run (0.93 – 1.07), on
   .NET 10 and on .NET 11 alike.

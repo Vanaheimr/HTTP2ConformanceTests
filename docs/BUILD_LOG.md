@@ -5619,6 +5619,63 @@ The 49 harness runs pass with the switch set (Windows, Git Bash).
 - **h2bench.** It does not start the demo, and its own runtimeconfig is
   untouched. Its figures stay comparable with the series before.
 
+## 2026-11-20 — The demo on .NET 10 under Linux: .NET 11 costs 22 % at 64 streams, the threshold at 0 gives back all but 4 %
+
+The previous entry left open whether the threshold accounts for all of .NET
+11's loss under Linux. This answers it, with the same setup: h2load inside WSL
+(Debian 13, 16 cores), ports 9643/9280, a warmup of 100 000 requests per run,
+the demo's CPU from `/proc/<pid>/stat`. Four arms, the order rotating from
+round to round, twelve rounds, all 48 runs complete:
+
+- **net10**: the demo of `7340def` (pin `244cbfeb`, `net10.0`) on 10.0.15;
+- **o11**: the same binary, its runtimeconfig pointed at 11.0.0, the threshold
+  at its default;
+- **o11z**: the same binary on 11.0.0, the threshold at 0 by environment;
+- **new**: the demo of `3af379d` (pin `4b8be28a`, `net11.0`), the threshold at
+  0 from its runtimeconfig.
+
+The runtime each run actually loaded was read from its mapped files. The demo's
+source is the same in both commits, so net10, o11 and o11z run the same IL.
+
+| h2load, TLS, req/s (CPU µs per request) | net10 | o11 | o11z | new |
+|---|---|---|---|---|
+| 1 connection, 1 stream | 4 067 (359) | 4 139 (361) | 3 829 (279) | 3 903 (273) |
+| 1 connection, 8 streams | 30 396 (68) | 27 601 (78) | 28 568 (56) | 29 365 (57) |
+| 1 connection, 64 streams | 107 253 (49) | 83 444 (55) | 103 080 (35) | 106 056 (35) |
+| 10 connections × 32 streams | 194 325 (37) | 200 834 (34) | 200 287 (34) | 204 010 (33) |
+
+Medians of the per-round ratios, with the rounds the first arm was faster in:
+
+| | o11 / net10 | o11z / net10 | o11z / o11 | new / o11z |
+|---|---|---|---|---|
+| 1 stream | 1.011 (7/12), CPU 1.00 | **0.921 (1/12)**, CPU 0.78 | 0.925 (3/12) | 1.026 (8/12) |
+| 8 streams | **0.907 (0/12)**, CPU 1.16 | 0.943 (2/12), CPU 0.83 | 1.046 (8/12) | 1.013 (7/12) |
+| 64 streams | **0.781 (1/12)**, CPU 1.11 | 0.959 (4/12), CPU 0.72 | **1.267 (12/12)** | 1.037 (7/12) |
+| 10 connections | 1.028 (7/12), CPU 0.93 | 1.031 (8/12), CPU 0.92 | 1.031 (9/12) | 0.953 (4/12) |
+
+- **Under Linux, .NET 11 costs the demo 22 % at 64 streams on one
+  connection, and 9 % at 8.** That is more than h2bench's −12 % under Windows,
+  at far less extra CPU: +11 – 16 %, where h2bench showed +37 – 58 %. The gain
+  at one stream that h2bench showed (+19 %) does not appear here: +1 %, at the
+  same CPU.
+- **The threshold at 0 gives back most of it, not all.** At 64 streams the
+  loss shrinks to 4 %, at 8 streams to 6 %, both at CPU well below .NET 10's
+  (−28 % and −17 %). At one stream it costs 8 % against .NET 10, at 22 % less
+  CPU. So the spinning explains the CPU, and most of the throughput lost where
+  one connection carries many streams. A residue of 4 – 8 % remains, and
+  nothing here locates it.
+- **Ten connections:** level in every arm. The workers are busy anyway.
+- **The pin is neutral:** `new` and `o11z` are level within 5 %, with no
+  consistent direction. o11z / o11 repeats the previous entry's +25 % at 64
+  streams as +27 %, 12/12.
+
+### Not done
+
+- **The residue.** Neither a trace under Linux nor a second knob was tried.
+  The traces of 2026-11-20 were taken under Windows, in h2bench.
+- **Nothing changed in the demo or in Hermod.** The knob stays at 0; at one
+  stream it costs 8 %, and the demo serves its many-stream case better with it.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

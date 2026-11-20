@@ -387,13 +387,26 @@ built for `net10.0`, the same pin built for `net11.0`, and `4b8be28a`:
 It is the runtime, not the compiler: the `net10.0` build, unchanged, with only
 its `runtimeconfig.json` pointed at 11.0.0, does the same (six pairs: +17.2 % at
 1 concurrent, −11.9 % at 64, CPU +55 % and +35 %). Both builds have the same
-1 229 async state machines, so runtime async is not in play. Most of the extra
-CPU is the thread pool spinning: with `DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0`
-the CPU per request halves (268 → 157, 124 → 68, 72 → 34 µs) and the gain at
-1 concurrent goes with it, but 64 concurrent stays at 110 – 117 k, short of
-.NET 10's 133 k. What costs that is not established. Code that is not ours
-(`HttpClient` → Kestrel) loses 4 %, at 3 % more CPU; ours loses 12 %, at 37 – 58 %
-more. See [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+1 229 async state machines, so runtime async is not in play. Code that is not
+ours (`HttpClient` → Kestrel) loses 4 %, at 3 % more CPU; ours loses 12 %, at
+37 – 58 % more.
+
+**Profiled on 2026-11-20: the extra CPU is the thread pool's idle path, not our
+code.** EventPipe traces of the 64-concurrent window put the work the thread
+pool dispatches at the same thread time on both runtimes (42 – 45 µs per
+request). The workers spin about 15 µs per request longer in .NET 11's rebuilt
+`LowLevelLifoSemaphore`. The knob behind it is new in .NET 11:
+`DOTNET_ThreadPool_SpuriousDispatchNoSpinThreshold` (default 10). Set to 0, the
+CPU per request falls below .NET 10's (269 → 157, 124 → 79, 68 → 40 µs, against
+181 / 86 / 51). The gain at 1 concurrent goes with it, because it was bought
+with the spinning (ten rotating rounds). `Monitor` now runs on
+`System.Threading.Lock`, with nearly three times the contention events, but that
+is ruled out: `DOTNET_Lock_SpinCount=400` cuts the contention twentyfold and
+leaves the throughput where it was. **The loss at 64 concurrent is still
+unexplained.** It was 6 % in that series, and the threshold at 0 recovers
+2.5 %, too little to tell from noise. `dotnet-trace` 10 cannot attach to a
+.NET 11 process, so the traces were started by environment variable. See
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
 **Compare figures only within one series.** Since 2026-11-01 h2bench warms
 every measurement up for 10 s, measures for 3 s at least, and runs each
@@ -558,8 +571,10 @@ All originally-planned roadmap tracks (A–E) plus every follow-up extension are
 - a decision on a client cookie jar;
 - what .NET 11 costs our code. Same IL, CPU per request +35 – 58 % and
   −12 % at 64 concurrent, where `HttpClient` → Kestrel loses 4 %. The extra CPU
-  is mostly the thread pool spinning; the loss at 64 concurrent is not
-  explained. The gap to Kestrel the `control` scenario first showed is closed,
+  is the thread pool spinning, located on 2026-11-20 in .NET 11's new
+  `SpuriousDispatchNoSpinThreshold` (at 0, below .NET 10's CPU); our own
+  work costs the same, and `Monitor`-on-`Lock` contention is ruled out. The
+  loss at 64 concurrent is not explained. The gap to Kestrel the `control` scenario first showed is closed,
   in four steps (Hermod#195, #197, #202, #217): on 2026-11-19 our client got as
   much out of our server as out of Kestrel, 1.00 per run (0.93 – 1.07), on
   .NET 10 and on .NET 11 alike.

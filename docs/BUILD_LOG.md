@@ -5455,6 +5455,122 @@ figure is the low one.
   in the previous entry was on .NET 11 and completed all requests, but it
   measures no CPU.
 
+## 2026-11-20 — Profiled: the extra CPU is the new spurious-dispatch spinning, the 64-concurrent loss is still open
+
+The previous entry left two things open: where .NET 11's extra CPU goes, and
+why it costs 12 % at 64 concurrent. Everything here runs one binary, the
+`net10.0` build of `244cbfeb`'s h2bench, once on 10.0.15 (`old`) and once with
+its `runtimeconfig.json` pointed at 11.0.0 (`on11`). Same IL on both sides.
+Windows, 16 logical cores, the machine shared with other sessions.
+
+**`dotnet-trace` 10.0.750501 cannot attach to a .NET 11 process.** Against
+11.0.0 it never got past session start, and it hung until it was killed. The
+traces were therefore switched on at process start, by environment variable:
+`DOTNET_EnableEventPipe=1`, with the SampleProfiler and the runtime provider at
+keywords `0x14C14FCCBD`, level 4. A small analyzer on TraceEvent cut each trace
+to the measured window of the 64-concurrent phase, by wall clock against the
+benchmark's own output lines. It then weighted every sample with the time since
+the same thread's previous one, which is the way the speedscope export weights
+them. The SampleProfiler suspends the runtime for every sample, so the
+throughput of a traced run is not a benchmark figure. Three pairs ran
+interleaved; one `on11` run was disturbed (43 918 req/s, a tenth of the samples)
+and is left out.
+
+| 64 concurrent, µs of thread time per request | `old` | `on11` |
+|---|---|---|
+| work: `ThreadPoolWorkQueue.Dispatch`, inclusive | 44.7 / 42.5 | 42.8 / 44.4 |
+| thread pool workers spinning, managed, in `LowLevelLifoSemaphore` | 28.5 / 26.0 | 42.0 / 41.5 |
+| lock slow paths, inclusive | 18.4 / 17.2 | 6.7 / 7.7 |
+| lock contention events per 1 000 requests | 11.5 / 10.2 | 28.2 / 29.3 |
+| req/s while traced | 112 345 / 115 392 | 105 759 / 104 227 |
+
+- **Our code does not cost more.** The work dispatched by the thread pool,
+  which is everything the client and the server do for a request, takes the
+  same thread time on both runtimes.
+- **The thread pool's idle path does.** .NET 11 rebuilt how a worker waits.
+  `LowLevelLifoSemaphore.WaitForSignal` became `WaitAsWaiter` / `Block`, and the
+  workers spin about 15 µs longer per request.
+- **`Monitor` runs on `System.Threading.Lock` in .NET 11.** The stacks show it
+  directly: `Monitor.Enter` → `Lock.Enter` → `Lock.TryEnterSlow`, where .NET 10
+  went to the native `Monitor.Enter_Slowpath`. The new path spins less and
+  blocks sooner. That gives nearly three times the contention events, at less
+  than half the thread time. The contention sits in the monitors inside the two
+  `SemaphoreSlim`s behind `HTTP2FrameWriter.EnterAsync` (`writeLock`) and
+  `HTTP2ClientConnection.EnterStartAsync` (`requestStartLock`), and in
+  `HTTP2StreamManager.AnyOutboundPending`. Those are the serialized sections of
+  the path, so a hand-over that blocks there looked like the cause.
+
+**The `Monitor` hypothesis is refuted.** `DOTNET_Lock_SpinCount=400` takes
+effect: read back by reflection, `Lock.s_maxSpinCount` goes from 22 to 400. Two
+traced runs each, `on11` against `on11` with the knob:
+
+| 64 concurrent | req/s while traced | contention per request |
+|---|---|---|
+| `on11` | 104 366 / 99 271 | 0.023 / 0.022 |
+| `on11`, `Lock_SpinCount=400` | 101 749 / 99 345 | 0.001 / 0.001 |
+
+The contention falls by a factor of twenty, far below even .NET 10's 0.012, and
+the throughput does not move. Five untraced rotating rounds agree: with the knob
+the median rose 3.2 %, higher in 3 of 5 rounds, and the per-round ratios ran
+from 0.94 to 1.12. In the same rounds `old` was ahead by 11.2 % in all five. The
+new wake cooldown (`DOTNET_ThreadPool_UnfairSemaphoreWakeCooldown=0`) changed
+nothing either (−1.6 %, 2 of 5).
+
+**The extra CPU is `SpuriousDispatchNoSpinThreshold`.** .NET 11 has two thread
+pool knobs that .NET 10 does not: the wake cooldown above, and
+`ThreadPool.SpuriousDispatchNoSpinThreshold`, default 10. Ten rotating rounds of
+untraced `requests`, with the knob at 0 and at 30 000 next to the two
+baselines. Values above 32 767 are silently ignored: 1 000 000 read back as 10,
+and the first start of this series was stopped for it.
+
+| CPU µs per request, median of 10 | 1 concurrent | 8 concurrent | 64 concurrent |
+|---|---|---|---|
+| `old` | 181 | 86 | 51 |
+| `on11` | 269 | 124 | 68 |
+| `on11`, threshold 0 | **157** | **79** | **40** |
+| `on11`, threshold 30 000 | 275 | 128 | 71 |
+
+| req/s, paired per round | 1 concurrent | 8 concurrent | 64 concurrent |
+|---|---|---|---|
+| `on11` / `old` | 1.128 (8/10 higher) | 0.997 (5/10) | 0.940 (2/10) |
+| `on11`, threshold 0 / `old` | 0.997 (5/10) | 0.973 (1/10) | 0.990 (5/10) |
+| `on11`, threshold 0 / `on11` | 0.878 (2/10) | 0.989 (3/10) | 1.025 (7/10) |
+| `on11`, threshold 30 000 / `on11` | 0.994 (4/10) | 1.024 (8/10) | 1.002 (5/10) |
+
+With the threshold at 0, the CPU per request falls below .NET 10's at every
+level, and .NET 11's gain at 1 concurrent goes with it, to 0.997 of `old`. Both
+were the same thing: a worker that keeps spinning takes the next request sooner,
+and costs a core for it. This is the mechanism the previous entry found with
+`UnfairSemaphoreSpinLimit=0`, now located in the knob that is new in .NET 11.
+
+**The loss at 64 concurrent is not explained.** In this series it was 6 %, not
+12 %, and the machine was restless. Rounds 2, 6 and 9 each had one arm hit by a
+load spike, with a ratio of 0.51 – 2.56 against its partner. With the threshold
+at 0, 64 concurrent rose 2.5 % against `on11`. Paired with `old` over the seven
+undisturbed rounds, it gave 0.96, against `on11`'s 0.95. That is no difference
+this series can resolve. What remains is of the order that `HttpClient` →
+Kestrel loses on .NET 11 (4 %).
+
+### Ruled out
+
+- **Our code:** the dispatched work takes the same thread time.
+- **`Monitor` on `Lock`:** contention ÷20, throughput unchanged.
+- **The new wake cooldown:** no effect.
+- **GC and allocation:** the same per request on both runtimes. A startup-hook
+  sampler showed it earlier, and the traces agree, at 10.7 – 11.0 gen0 GCs per
+  10 000 requests on both.
+
+### Not done
+
+- **The rest of the 64-concurrent loss.** Settling a 2 – 6 % effect needs a
+  quieter machine or many more rounds than ten. With per-round noise at ±7 %,
+  this series could not.
+- **Setting the threshold.** It is a process-wide knob for the host, not
+  something a library sets. `DOTNET_ThreadPool_SpuriousDispatchNoSpinThreshold=0`
+  trades about 12 % of the throughput at 1 concurrent for 40 % less CPU per
+  request. Nothing was changed in Hermod or in the demo.
+- **Debian.** Everything here is Windows.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

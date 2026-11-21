@@ -249,8 +249,8 @@ like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since now and then it dies rather than reporting a result (4 of
-34 nights up to 2026-09-18, 2 of 53 runs since; both were kernel OOM kills
-early in section 12.4, in 12.4.6 on 2026-10-10 and in 12.4.4 on 2026-11-20. The
+34 nights up to 2026-09-18, twice since against at least 52 green nights; both
+were kernel OOM kills early in section 12.4, in 12.4.6 on 2026-10-10 and in 12.4.4 on 2026-11-20. The
 second named the consumer: **wstest itself**, the fuzzing client, at 16.6 GiB,
 against 63 MiB for our echo server. What makes wstest run away is not known,
 and local runs in the nightly's order with `tools/autobahn-repro.sh` stay
@@ -407,10 +407,20 @@ CPU per request falls below .NET 10's (269 → 157, 124 → 79, 68 → 40 µs, a
 with the spinning (ten rotating rounds). `Monitor` now runs on
 `System.Threading.Lock`, with nearly three times the contention events, but that
 is ruled out: `DOTNET_Lock_SpinCount=400` cuts the contention twentyfold and
-leaves the throughput where it was. **The loss at 64 concurrent is still
-unexplained.** It was 6 % in that series, and the threshold at 0 recovers
-2.5 %, too little to tell from noise. `dotnet-trace` 10 cannot attach to a
+leaves the throughput where it was. `dotnet-trace` 10 cannot attach to a
 .NET 11 process, so the traces were started by environment variable.
+
+**Located on 2026-11-21: the loss at 64 concurrent that the threshold leaves
+under Windows is in .NET 11's own thread pool.** With the threshold at 0,
+h2bench still loses 8 – 10 % there against .NET 10. Two series agree: 0.916
+(2 of 12 rounds higher) and 0.896 (3 of 10). Threshold 2 is no better. With
+`DOTNET_ThreadPool_UseWindowsThreadPool=1` on both runtimes, the gap is gone:
+0.992 at 64 (5 of 10), 0.987 at 8, 1.032 at 1. The switch was checked by
+reflection on both. That clears runtime async, which .NET 11's own BCL now uses:
+`System.Net.Security` keeps 4 of its 22 C# state machines, `System.Net.Sockets`
+none of its 4. 11.0.0 has no switch to turn it off, but it stays in place when
+the Windows pool runs, and the gap goes. The Windows pool is no way out, though.
+With it both runtimes run 11 % below .NET 10 on its own pool.
 
 **The demo host sets the threshold to 0** (`Demo/HTTP2.Demo.csproj`, a
 `RuntimeHostConfigurationOption`; the environment variable still overrides
@@ -423,9 +433,15 @@ throughput. Under Linux, then, it recovers far more than the 2.5 % it gave
 h2bench under Windows. Measured against .NET 10 on the same IL, under h2load
 in WSL with twelve rotating rounds, it is most of .NET 11's loss there, not all.
 At the default threshold, .NET 11 costs the demo **22 %** at 64 streams on one
-connection and 9 % at 8. At 0, the loss is 4 % and 6 %, and one stream is 8 %
-below .NET 10. The CPU is 17 – 28 % below .NET 10's in all three. Ten
-connections are level in every arm. The residue of 4 – 8 % is not located.
+connection and 9 % at 8. At 0, the CPU is 18 – 30 % below .NET 10's.
+Throughput depends on the streams. Pooled over two series, twenty rounds, 64
+streams on one connection are level with .NET 10 (0.999, 10 of 20 higher).
+The 4 % of the first series was noise. 8 streams are at 0.972 and one stream
+at 0.931. That is the trade the threshold makes: spinning buys latency when
+little is in flight. In one sweep of eight rounds, thresholds 1 – 4 kept 64
+streams level and put one stream at 0.99 – 1.05, where the default 10 lost
+16 % at 64. Eight rounds are too few to choose among 1 – 4. Ten connections
+are level in every arm.
 h2bench's own runtimeconfig is untouched. See
 [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
 
@@ -594,10 +610,11 @@ All originally-planned roadmap tracks (A–E) plus every follow-up extension are
   −12 % at 64 concurrent, where `HttpClient` → Kestrel loses 4 %. The extra CPU
   is the thread pool spinning, located on 2026-11-20 in .NET 11's new
   `SpuriousDispatchNoSpinThreshold` (at 0, below .NET 10's CPU); our own
-  work costs the same, and `Monitor`-on-`Lock` contention is ruled out. The
-  loss at 64 concurrent is not explained under Windows. Under Linux the demo
-  loses 22 % there, and the threshold at 0 gives back all but 4 %; that
-  residue is not located either. The gap to Kestrel the `control` scenario first showed is closed,
+  work costs the same, and `Monitor`-on-`Lock` contention is ruled out. Under
+  Linux the threshold at 0 gives the demo back all of it at 64 streams. Under
+  Windows 8 – 10 % remain at 64 concurrent. They are in .NET 11's own thread
+  pool, since with the Windows pool on both runtimes the gap is gone. Not
+  runtime async. What inside the pool is not known. The gap to Kestrel the `control` scenario first showed is closed,
   in four steps (Hermod#195, #197, #202, #217): on 2026-11-19 our client got as
   much out of our server as out of Kestrel, 1.00 per run (0.93 – 1.07), on
   .NET 10 and on .NET 11 alike.
@@ -629,6 +646,11 @@ caught, and the exact verification for each — is in
 
 ## Conventions
 - English for code, identifiers, comments, and commit messages.
+- **No references to failed GitHub runs** (run IDs, links) in the docs:
+  GitHub removes failed runs automatically, so such a reference dies within a
+  day. Name the night and the commit instead, and keep what a finding rests on
+  under `docs/evidence/<date>-<topic>/`. For the same reason, a count of nights
+  read off GitHub's run list counts only the green ones.
 - Style follows the surrounding Vanaheimr/Hermod code: aligned member
   declarations, region blocks per concern, RFC section references in comments.
 - Keep it dependency-free (BCL only). No NuGet packages for the core stack.

@@ -1,11 +1,10 @@
 # Evidence: the Autobahn OOM kill of 2026-11-20
 
-The nightly run these files come from, **44727173478** (2026-11-20, at
-`3af379d`, pin `4b8be28a`, .NET 11.0.0), no longer exists on GitHub. Since
-2026-11-21 it answers 404, as the run of 2026-10-10 did before it. These are
-copies taken on 2026-11-21, before it went. The entry *The Autobahn kill of
-2026-11-20 names its consumer* in [`docs/BUILD_LOG.md`](../../BUILD_LOG.md)
-rests on them.
+These files come from the nightly of 2026-11-20, at `3af379d` (pin
+`4b8be28a`, .NET 11.0.0). GitHub removes failed runs automatically, and the
+run is gone. These are copies taken on 2026-11-21, before it went. The entry
+*The Autobahn kill of 2026-11-20 names its consumer* in
+[`docs/BUILD_LOG.md`](../../BUILD_LOG.md) rests on them.
 
 | file | what it is |
 |---|---|

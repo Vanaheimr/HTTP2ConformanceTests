@@ -3732,7 +3732,7 @@ authentication framework that left on 2026-10-01.
 
 *The Autobahn nightly hangs, about one night in eight* (above) ended on the
 instrumentation that was waiting "for the next occurrence". The next occurrence
-came on **2026-10-10** (nightly run 38042380580, at `62b0213`). It was not written
+came on **2026-10-10** (the nightly at `62b0213`). It was not written
 down until now. The instrumentation reported four things:
 
 - **`container state: exit=137 oom-killed=true`.** The kernel's OOM killer. That
@@ -5273,8 +5273,7 @@ Hermod `244cbfeb` → `4b8be28a`, Styx `5f09dd47` → `a6b9f9fb`, the pair
 HTTP3ConformanceTests pins since `b6ab0d3`.
 
 **The nightly was red for nine nights, and not for HTTP/2.** From 2026-11-11
-to 2026-11-19 (runs `43006056230` to `44515202601`, and `44518258412` started
-by hand), `against-hermod-master` failed at Build on both legs. Debian said
+to 2026-11-19, and once more started by hand, `against-hermod-master` failed at Build on both legs. Debian said
 `NETSDK1045`, "The current .NET SDK does not support targeting .NET 11.0".
 Windows said `NU1201`: a `net10.0` project cannot reference a `net11.0` one.
 Hermod `62704cc1` and Styx `2874a327` had moved every project to `net11.0`,
@@ -5681,13 +5680,13 @@ Medians of the per-round ratios, with the rounds the first arm was faster in:
 *The Autobahn nightly was a memory kill after all* (2026-10-29) left one
 question open: which process took the memory. `OOMKilled` names the victim, not
 the consumer. The kernel report that `tests/autobahn.sh` captures was to settle
-it "on the next night that dies". That night was **2026-11-20**: nightly run
-44727173478, at `3af379d` (pin `4b8be28a`, .NET 11.0.0). It was the first
-nightly since 2026-11-10, because GitHub's scheduler had started none in
-between. Its other five jobs were green: h2spec on both platforms, interop, and
-`against-hermod-master` on both. The run itself is gone from GitHub since
-2026-11-21, as the run of 2026-10-10 is. Its kernel report, the timestamped
-Autobahn step and the echo server's log are kept in
+it "on the next night that dies". That night was **2026-11-20**: the nightly
+at `3af379d` (pin `4b8be28a`, .NET 11.0.0). Its other five jobs were green:
+h2spec on both platforms, interop, and `against-hermod-master` on both.
+GitHub removes failed runs automatically, so the run itself is gone, as the
+run of 2026-10-10 is, and so are the nine red nights before it (see the
+2026-11-19 entry). Its kernel report, the timestamped Autobahn step and the
+echo server's log are kept in
 [`docs/evidence/2026-11-20-autobahn-oom/`](evidence/2026-11-20-autobahn-oom/README.md).
 
 **The kill has the same signature as on 2026-10-10.** The fuzzing client died
@@ -5748,9 +5747,10 @@ copy of `tools/autobahn-repro.sh` passed the Docker option through. Both runs:
 
 **What remains open is inside wstest.** Something in PyPy's handling of 12.4's
 per-message garbage can stop keeping pace, and then it takes about 1.7 GB/s
-until the runner has nothing left. It happened in 2 of 53 nightly runs since the
-instrumentation went in on 2026-09-19. GitHub's run list no longer contains the
-run of 2026-10-10, so it shows 52 runs and one failure. Locally it has not
+until the runner has nothing left. Since the instrumentation went in on
+2026-09-19 it is known to have happened twice, against at least 52 green
+nights. The exact count of nights cannot be read off GitHub, because failed
+runs are removed from its list automatically. Locally it has not
 happened: 2 runs in the nightly's order here, 1 on 2026-10-29, and 200 loops of
 12.4.5 → 12.4.6. That is not enough runs to settle the rate. At the nightly's
 rate, 3 clean runs in the nightly's order were to be expected. The loops were
@@ -5807,6 +5807,107 @@ A full real run with Docker in WSL (as root, so the kernel log was readable),
 at pin `4b8be28a` on .NET 11.0.0, took the normal path: one attempt, **481/517
 passing, 36 declined, no hard failures**, exit 0. It is also the first Autobahn
 run on .NET 11 since the move.
+
+## 2026-11-21 — .NET 11's residue: none at 64 streams under Linux, and under Windows it is in .NET 11's own thread pool
+
+Two 2026-11-20 entries left a residue open. Under Linux, the demo with the
+threshold at 0 stayed 4 – 8 % below .NET 10. Under Windows, h2bench at 64
+concurrent kept a loss the threshold did not explain. Same binaries as there:
+the `7340def` demo and the `244cbfeb` h2bench, both `net10.0`, on 10.0.15 and
+with their runtimeconfig pointed at 11.0.0. Same IL in every arm.
+
+**First, what the BCL now is.** .NET 11 compiles parts of its own libraries
+with runtime async. In `System.Net.Security`, where `SslStream` lives, 4 of
+10.0.15's 22 C# async state machines are left. In `System.Net.Sockets`, none
+of its 4 are, and `CaptureInlinedFrameTransition…` helpers stand in their
+place. `libcoreclr.so` 10.0.15 carries a `RuntimeAsync` config string, and
+11.0.0 does not. So no switch turns it off, and nothing within .NET 11 can be
+measured without it. It was the obvious suspect for a cost our code does not
+cause.
+
+### Linux: no residue at 64 streams
+
+A sweep of the threshold, h2load in WSL as before, eight rounds, the order
+rotating. Arms: .NET 10 and .NET 11 at the thresholds 0, 1, 2, 4 and 10. All
+runs complete. Ratios to .NET 10 per round, median (rounds higher), with CPU per
+request as a ratio:
+
+| threshold | 1 stream | 8 streams | 64 streams |
+|---|---|---|---|
+| 0 | 0.968 (2/8), CPU 0.75 | 0.977 (3/8), CPU 0.80 | 1.059 (6/8), CPU 0.68 |
+| 1 | 1.049 (5/8), CPU 0.93 | 0.928 (2/8), CPU 1.01 | 0.993 (4/8), CPU 0.72 |
+| 2 | 0.990 (3/8), CPU 1.00 | 0.930 (2/8), CPU 1.05 | 1.061 (6/8), CPU 0.69 |
+| 4 | 1.043 (6/8), CPU 0.94 | 0.966 (2/8), CPU 1.05 | 0.997 (4/8), CPU 0.82 |
+| 10, the default | 1.031 (7/8), CPU 0.94 | 0.966 (2/8), CPU 1.05 | **0.837 (1/8)**, CPU 1.07 |
+
+Pooled with the twelve rounds of 2026-11-20, threshold 0 against .NET 10 over
+twenty rounds:
+
+| | ratio | rounds higher | range | CPU |
+|---|---|---|---|---|
+| 64 streams | **0.999** | 10/20 | 0.48 – 1.53 | 0.70 |
+| 8 streams | 0.972 | 5/20 | 0.62 – 1.71 | 0.82 |
+| 1 stream | 0.931 | 3/20 | 0.62 – 1.33 | 0.77 |
+
+- **The 4 % at 64 streams was noise.** That series gave 0.959, this one 1.059,
+  and pooled it is level. Thresholds 1 – 4 are level there too. Only the default
+  10 loses, 16 % in this series and 22 % in the last.
+- **At one stream the threshold trades CPU for latency.** At 0, one stream is
+  7 % below .NET 10, at 23 % less CPU. With 1 – 10 the loss is gone, at
+  0.93 – 1.00 of .NET 10's CPU. Eight rounds are too few to choose among 1 – 4.
+- **Eight streams stay 2 – 7 % below in every arm.** Small, and not
+  separated from noise.
+
+### Windows: 8 – 10 % at 64 concurrent, and it is .NET 11's own pool
+
+h2bench `requests`, in-process, warmup 10 s and 5 s measured, the order
+rotating, each run waiting until the machine was below 40 % load.
+
+**Twelve rounds:** .NET 10, .NET 11 at threshold 0, .NET 11 at threshold 2.
+The machine was quiet, 3 – 71 % before a run with most under 20 %, and .NET
+10's figures sat close together, 126 – 134 k req/s at 64 bar three.
+
+| | 1 concurrent | 8 concurrent | 64 concurrent |
+|---|---|---|---|
+| threshold 0 / .NET 10 | 1.005 (6/12), 167 vs 186 µs | 0.976 (4/12), 81 vs 88 µs | **0.916 (2/12)**, 40 vs 51 µs |
+| threshold 2 / .NET 10 | **1.157 (11/12)**, 269 µs | 1.008 (7/12), 91 µs | **0.909 (3/12)**, 46 µs |
+
+So under Windows the loss at 64 concurrent is real, and the threshold is not
+what holds it. The series of 2026-11-20 had read 0.990 for threshold 0 at 64,
+paired with .NET 10. That series was noisy, with .NET 10 at 52 k and 78 k in two
+of its rounds, and this one does not bear it out.
+
+**Ten rounds, the thread pool swapped:** .NET 10 and .NET 11 at threshold 0,
+each also with `DOTNET_ThreadPool_UseWindowsThreadPool=1`. That replaces the
+portable pool, and its rebuilt `LowLevelLifoSemaphore`, with the Windows
+thread pool. A small reflection probe confirmed `UseWindowsThreadPool` as
+`True` under the switch on 10.0.15 and on 11.0.0. The machine was busier
+(8 – 80 % before a run).
+
+| | 1 concurrent | 8 concurrent | 64 concurrent |
+|---|---|---|---|
+| .NET 11, threshold 0 / .NET 10 | 1.030 (7/10) | 0.950 (2/10) | **0.896 (3/10)** |
+| .NET 11 / .NET 10, both on the Windows pool | 1.032 (8/10) | 0.987 (3/10) | **0.992 (5/10)** |
+| .NET 10 on the Windows pool / .NET 10 | 0.915 (0/10) | 0.884 (0/10) | 0.886 (1/10) |
+
+- **On the Windows pool the two runtimes are level**, at every concurrency.
+  The loss at 64 concurrent is therefore in .NET 11's own, portable thread pool.
+  It goes with the pool and comes back with it.
+- **Runtime async is cleared.** The BCL's runtime-async code runs in both
+  .NET 11 arms, on the Windows pool too, and there the gap is gone.
+- **The Windows pool is no way out.** On it both runtimes run 11 – 12 % below
+  .NET 10 on its own pool at 8 and 64 concurrent.
+
+### Not done
+
+- **Which part of the portable pool.** The spurious-dispatch threshold is one
+  knob in it. `UnfairSemaphoreSpinLimit`, present in both runtimes, was not
+  tried. Nor was a trace of .NET 11 on the portable pool against the Windows
+  pool, which would show where the workers' time goes once the threshold no
+  longer spins it away.
+- **Linux at one stream.** Choosing among thresholds 1 – 4 for the demo would
+  need more rounds than eight. The demo stays at 0, which is level at 64 streams
+  and costs one stream 7 %.
 
 ## Roadmap — candidate next tracks (planning only)
 

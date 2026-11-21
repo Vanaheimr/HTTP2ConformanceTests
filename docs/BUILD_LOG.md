@@ -5768,6 +5768,43 @@ not a fair trial, because their wstest started fresh, at 330 MiB.
   Without a way to provoke the runaway, there is nothing to measure them
   against.
 
+### The first of the three, built the same day
+
+`tests/autobahn.sh` now repeats a run lost to wstest's runaway, once, as a
+whole run (`oom_retries=1`, `--oom-retries 0` turns it off). The script repeats
+only on the kernel's own word, and only if all of these hold:
+
+- exit 137, and `docker inspect` says `oom-killed=true`;
+- the OOM report is new since the attempt began, and its `Killed process` is
+  `wstest`;
+- our echo server is alive, and the kernel's task table gives its pid at most
+  1 GiB resident (`oom_retry_server_max_mib`).
+
+A server that had grown is our problem, and is never repeated. The lost
+attempt's files go to `attempt-<n>/` beside the report, so the artifact keeps
+them. The repeat is announced three times: a `RETRY:` line, a
+`::warning::` annotation on the run, and a `NOTE:` above the verdict, which
+the step summary shows. The repeat is judged by the same verdict as any run.
+If it is lost again, the night fails. If the server is too large, the log says
+why it was not repeated. Two helpers in `tests/lib.sh` read the report:
+`kernel_oom_victim` and `kernel_oom_task_rss_kib`. Against the real report of
+2026-11-20 they give `wstest` and 64 280 KiB for pid 2978.
+
+Verified in WSL with a stand-in for `docker` and `dmesg`. It replays the real
+kernel report of 2026-11-20 with the pid of the echo server actually running:
+
+| scenario | outcome |
+|---|---|
+| OOM, then a clean run | repeated, exit 0, the verdict marked as attempt 2's, `attempt-1/` kept |
+| OOM twice | repeated once, then exit 1, "lost attempt 2 too" |
+| OOM with the echo server at 1.6 GB | not repeated, exit 1, the reason printed |
+| a clean run | unchanged, exit 0 |
+
+A full real run with Docker in WSL (as root, so the kernel log was readable),
+at pin `4b8be28a` on .NET 11.0.0, took the normal path: one attempt, **481/517
+passing, 36 declined, no hard failures**, exit 0. It is also the first Autobahn
+run on .NET 11 since the move.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

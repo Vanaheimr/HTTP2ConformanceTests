@@ -238,6 +238,46 @@ kernel_oom_summary() {
 
 }
 
+# --- kernel_oom_victim -----------------------------------------------------
+# From one OOM report on stdin, print the name of the process the kernel
+# killed ("Killed process 3130 (wstest)" gives "wstest"), or nothing.
+kernel_oom_victim() {
+
+    _kernel_strip_timestamps \
+        | sed -n 's/.*Killed process [0-9]* (\([^)]*\)).*/\1/p' \
+        | head -n 1
+
+}
+
+# --- kernel_oom_task_rss_kib -----------------------------------------------
+# From one OOM report on stdin, print the resident memory in KiB that the
+# kernel's task table gives for pid $1, or nothing if the pid is not in it.
+# The rss column is found by name, as in kernel_oom_summary.
+kernel_oom_task_rss_kib() {
+
+    local page_kib
+    page_kib=$(( $(getconf PAGESIZE 2>/dev/null || echo 4096) / 1024 ))
+
+    _kernel_strip_timestamps \
+        | awk -v want="$1" -v kib="$page_kib" '
+              /^\[ *pid *\]/ && /total_vm/ {
+                  hdr = $0; sub(/^\[ *pid *\] */, "", hdr)
+                  n = split(hdr, h, / +/)
+                  for (i = 1; i <= n; i++) if (h[i] == "rss") ri = i
+                  next
+              }
+              /^oom-kill:/ { ri = 0 }
+              ri && /^\[ *[0-9]+\]/ {
+                  pid = $0; sub(/^\[ */, "", pid); sub(/\].*/, "", pid)
+                  if (pid != want) next
+                  row = $0; sub(/^\[ *[0-9]+\] */, "", row)
+                  split(row, f, / +/)
+                  print f[ri] * kib
+                  exit
+              }'
+
+}
+
 # dmesg prefixes every line with "[seconds.micros] ", and with a caller id
 # such as "[ T1234]" behind it on kernels built with CONFIG_PRINTK_CALLER.
 _kernel_strip_timestamps() {

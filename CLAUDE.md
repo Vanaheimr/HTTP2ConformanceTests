@@ -254,7 +254,9 @@ early in section 12.4, in 12.4.6 on 2026-10-10 and in 12.4.4 on 2026-11-20. The
 second named the consumer: **wstest itself**, the fuzzing client, at 16.6 GiB,
 against 63 MiB for our echo server. What makes wstest run away is not known,
 and local runs in the nightly's order with `tools/autobahn-repro.sh` stay
-clean),
+clean. Since 2026-11-21 `tests/autobahn.sh` repeats a run lost that way once,
+as a whole run and with a warning. It does so only when the kernel's report
+names wstest and our server is under 1 GiB),
 which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and

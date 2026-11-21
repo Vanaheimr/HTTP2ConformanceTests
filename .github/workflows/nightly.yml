@@ -188,6 +188,12 @@ jobs:
       # non-zero if any case fails outright (FAILED, WRONG CODE, UNCLEAN), or if
       # fewer than its floor of 481 pass. The 36 declined permessage-deflate
       # offers are the gap to 517; see min_pass in tests/autobahn.sh.
+      #
+      # A run lost to wstest's own memory runaway (the kernel OOM-kills the
+      # fuzzing client while our echo server is small) is repeated once, as a
+      # whole run, with a warning annotation; see oom_retries in the script.
+      # A worst case stays inside the 45 minutes: such a kill comes within
+      # about four minutes, and the repeat is capped at twenty like any run.
       - name: Autobahn fuzzingclient (517 cases)
         timeout-minutes: 45
         shell: bash

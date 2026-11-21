@@ -35,6 +35,7 @@
 #   tests/autobahn.sh --no-build
 #   tests/autobahn.sh --port 9010 --image crossbario/autobahn-testsuite
 #   tests/autobahn.sh --run-timeout 1200   # cap the fuzzingclient (seconds, 0 = off)
+#   tests/autobahn.sh --oom-retries 0      # never repeat a run wstest's OOM kill lost
 #
 set -euo pipefail
 
@@ -92,12 +93,33 @@ run_timeout=1200
 # that has rusted.
 min_pass=481
 
+# How often a run lost to the fuzzing client's own memory runaway is repeated.
+#
+# On 2026-10-10 and 2026-11-20 the nightly died the same way: early in section
+# 12.4, wstest grew by about 1.7 GB/s until the kernel's OOM killer took it.
+# The second night's kernel report named the consumer: wstest at 16.6 GiB,
+# our echo server at 63 MiB (docs/BUILD_LOG.md, 2026-11-21). That says nothing
+# about our server, and a night it fails is a night the gate reports nothing.
+#
+# So such a run is repeated, as a WHOLE run, and the repeat is judged by the
+# same verdict as any other; one that is lost the same way again fails. The
+# repeat happens only when the kernel's own report says so: the container
+# OOM-killed, its victim wstest, and our echo server alive and at most
+# oom_retry_server_max_mib in the kernel's task table. A server that had grown
+# is our problem, and is never retried. A repeat is announced in the log, in
+# the verdict, and as a GitHub warning, and the lost attempt's evidence is kept
+# in attempt-<n>/ beside the report. Linux only, because only there is the
+# kernel's report readable (see kernel_log in lib.sh).
+oom_retries=1
+oom_retry_server_max_mib=1024
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)        port="$2";        shift 2 ;;
         --image)       image="$2";       shift 2 ;;
         --run-timeout) run_timeout="$2"; shift 2 ;;
         --min-pass)    min_pass="$2";    shift 2 ;;
+        --oom-retries) oom_retries="$2"; shift 2 ;;
         --no-build)    nobuild=1;        shift ;;
         -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -275,7 +297,10 @@ else
 fi
 unset klog
 
-echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port)..."
+attempt=1
+while :; do
+client_oom=0
+echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port), attempt $attempt..."
 # shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
 # Deliberately NOT --rm: an auto-removed container takes its exit status with
 # it, and "why did this die" is exactly the question. `docker inspect` below
@@ -360,6 +385,21 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
                 printf '%s\n' "$oom" >"$repdir/kernel-oom.log"
                 echo "--- the kernel's OOM report (in full: kernel-oom.log beside the report) ---" >&2
                 printf '%s\n' "$oom" | kernel_oom_summary >&2 || true
+
+                # Lost to wstest's own runaway? See oom_retries above. Every
+                # condition must hold; a pid missing from the task table
+                # leaves srv_kib empty, and then there is no retry.
+                victim="$(printf '%s\n' "$oom" | kernel_oom_victim || true)"
+                srv_kib="$(printf '%s\n' "$oom" | kernel_oom_task_rss_kib "$srv_pid" || true)"
+                if [ "$rc" -eq 137 ] && [[ "$state" == *"oom-killed=true"* ]] \
+                   && [ "$victim" = wstest ] && kill -0 "$srv_pid" 2>/dev/null \
+                   && [ -n "$srv_kib" ] && [ "$srv_kib" -le $(( oom_retry_server_max_mib * 1024 )) ]; then
+                    client_oom=1
+                elif [ "$victim" = wstest ]; then
+                    echo "Not repeated: the kill took wstest, but our echo server held ${srv_kib:-an unknown number of} KiB (a repeat allows ${oom_retry_server_max_mib} MiB) or had exited." >&2
+                fi
+                # The next attempt must not take this report for its own.
+                oom_before="$(printf '%s\n' "$oom" | head -n 1)"
             else
                 echo "no OOM report in the kernel log since the run started." >&2
             fi
@@ -367,6 +407,30 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
 
         docker rm -f "$container" >/dev/null 2>&1 || true
     }
+
+if [ "$client_oom" -eq 1 ] && [ "$attempt" -le "$oom_retries" ]; then
+    # The lost attempt's evidence goes aside, out of the next one's way:
+    # wstest writes its per-case files flat into the report directory.
+    keep="$repdir/attempt-$attempt"
+    mkdir -p "$keep"
+    for f in "$repdir"/*; do
+        case "${f##*/}" in
+            fuzzingclient.json|attempt-*) ;;
+            *) mv "$f" "$keep/" ;;
+        esac
+    done
+    lost="attempt $attempt was lost to the fuzzing client: the kernel OOM-killed wstest while our echo server held $(( srv_kib / 1024 )) MiB"
+    echo "RETRY: $lost. Running the whole suite once more; this attempt's evidence is in $keep." >&2
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::warning title=Autobahn run repeated::$lost (see attempt-$attempt/ in the autobahn-report artifact)"
+    fi
+    attempt=$(( attempt + 1 ))
+    continue
+elif [ "$client_oom" -eq 1 ]; then
+    echo "Not repeated: wstest's OOM kill lost attempt $attempt too, and $oom_retries repeat(s) is the limit." >&2
+fi
+break
+done
 
 # --- parse the report ------------------------------------------------------
 INDEXFILE="$repdir/index.json"
@@ -417,6 +481,10 @@ PYEOF
 echo
 echo "Autobahn: $passing/$total passing, $declined declined (UNIMPLEMENTED), $hard hard failures"
 echo "Full HTML report: $repdir/index.html"
+if [ "$attempt" -gt 1 ]; then
+    echo "NOTE: this verdict is attempt $attempt's. The $(( attempt - 1 )) before it lost to wstest's"
+    echo "      own OOM kill (see the RETRY line above and attempt-*/ beside the report)."
+fi
 echo
 
 if [ "$hard" -gt 0 ]; then

@@ -5676,6 +5676,98 @@ Medians of the per-round ratios, with the rounds the first arm was faster in:
 - **Nothing changed in the demo or in Hermod.** The knob stays at 0; at one
   stream it costs 8 %, and the demo serves its many-stream case better with it.
 
+## 2026-11-21 — The Autobahn kill of 2026-11-20 names its consumer: wstest, at 16.6 GiB, against 63 MiB for our echo server
+
+*The Autobahn nightly was a memory kill after all* (2026-10-29) left one
+question open: which process took the memory. `OOMKilled` names the victim, not
+the consumer. The kernel report that `tests/autobahn.sh` captures was to settle
+it "on the next night that dies". That night was **2026-11-20**: nightly run
+44727173478, at `3af379d` (pin `4b8be28a`, .NET 11.0.0). It was the first
+nightly since 2026-11-10, because GitHub's scheduler had started none in
+between. Its other five jobs were green: h2spec on both platforms, interop, and
+`against-hermod-master` on both.
+
+**The kill has the same signature as on 2026-10-10.** The fuzzing client died
+early in section 12.4, this time in **12.4.4**, which had run for **7.85 s**.
+The two green nights before it finished that case in 0.50 and 0.51 s. Up to
+12.4.3 the night ran at the usual pace.
+
+**The kernel's table answers the question:**
+
+| process | resident | swapped out | `oom_score_adj` |
+|---|---|---|---|
+| `wstest` (pid 3130, in the container) | **13.65 GiB** | **2.94 GiB** | 0 |
+| `dotnet`, our echo server (pid 2978) | **63 MiB** | 6 MiB | 500 |
+| `VBCSCompiler`, left over from the build | 425 MiB | 120 MiB | 500 |
+
+The runner's 3 GiB of swap was used up (220 kB free). **wstest took the
+memory.** The adjustment column closes the gap the 2026-10-29 entry pointed
+out. The hosted runner starts a step's processes, our echo server among them, at
+`oom_score_adj` 500, and the container's at 0. Had our server been the
+consumer, it would have been the kernel's first choice of victim, not the last.
+
+**Can our server cause the runaway without consuming the memory?** Not through
+what it sends, as far as can be seen. In 12.4.x the fuzzing client sends 1 000
+messages, each a slice of a 263 KB HTML file, and checks every echo against a
+SHA-1 of what it sent. One wrong echo ends the case at once. So our server can
+only send back what it was sent, a megabyte or so per case, not gigabytes.
+
+**Where wstest's memory goes, measured locally.** The image is PyPy 7.3.20
+(Python 2.7.18), digest `519915fb…`, as in the nightly. Two runs in the
+nightly's order up to 12.4.18 (`--cases '*' --exclude '12.5.*,13.*'`), in WSL
+(Debian, 62 GiB, 16 cores), at pin `4b8be28a` on .NET 11.0.0. One run was
+unrestricted. In the other, wstest was limited to one CPU (`--cpus=1`), to come
+closer to the runner's four cores shared with the build's leftovers. A scratch
+copy of `tools/autobahn-repro.sh` passed the Docker option through. Both runs:
+373 of 373 cases passed, exit 0, no runaway.
+
+| wstest's resident memory, MiB | unrestricted | one CPU |
+|---|---|---|
+| after section 9 | 298 | 275 |
+| after 12.1 (JSON, text) | 3 104 | 2 743 |
+| after 12.2 and 12.3 (binary) | 3 322 | 2 991 |
+| 12.4 (HTML, text), start → peak | 3 322 → 3 348 | 2 991 → 3 007 |
+| our echo server, peak in section 12 / overall | 71 / 222 (section 9) | 72 / 223 |
+
+12.4.4 took 0.66 and 0.63 s.
+
+- **wstest's own 3 GiB is built in 12.1, and it is its own.** Every case there
+  adds to it, 35 – 550 MiB, and **12.1.1** adds 93 – 94 MiB, where our server echoes 1 000
+  messages of 16 bytes, 16 KB in all. For text payloads, wstest's `sendOne`
+  decodes the *whole* test file into a Unicode string again for every message
+  it sends (`payload = payload.decode('utf-8')` in `case12_x_x.py`), so a case
+  allocates 1 000 copies of the file. PyPy keeps the pages it grew into, which
+  is why the resident size then stays put.
+- **12.4 is the other text section, and normally it runs flat.** It uses the
+  HTML file and decodes it per message in the same way, but it reuses the heap
+  12.1 left behind. Both deaths fell there, early in the section.
+- **One CPU did not provoke it.**
+
+**What remains open is inside wstest.** Something in PyPy's handling of 12.4's
+per-message garbage can stop keeping pace, and then it takes about 1.7 GB/s
+until the runner has nothing left. It happened in 2 of 53 nightly runs since the
+instrumentation went in on 2026-09-19. GitHub's run list no longer contains the
+run of 2026-10-10, so it shows 52 runs and one failure. Locally it has not
+happened: 2 runs in the nightly's order here, 1 on 2026-10-29, and 200 loops of
+12.4.5 → 12.4.6. That is not enough runs to settle the rate. At the nightly's
+rate, 3 clean runs in the nightly's order were to be expected. The loops were
+not a fair trial, because their wstest started fresh, at 330 MiB.
+
+### Not done
+
+- **The nightly is unchanged.** Three ways to keep wstest's runaway from
+  failing it, none chosen yet:
+  - when the kernel report names wstest and our echo server is small, run the
+    suite once more;
+  - give the container a `--memory` limit, so that a runaway kills only the
+    container, quickly, and leaves the runner with memory and swap;
+  - split the run so that section 12.4 starts in a fresh wstest.
+  The first keeps the gate meaningful only if the retry is a whole run, judged
+  as one.
+- **PyPy's GC knobs** (`PYPY_GC_MAJOR_COLLECT` and the like) were not tried.
+  Without a way to provoke the runaway, there is nothing to measure them
+  against.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

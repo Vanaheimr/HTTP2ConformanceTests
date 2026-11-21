@@ -249,9 +249,12 @@ like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since now and then it dies rather than reporting a result (4 of
-34 nights up to 2026-09-18, 1 of 43 runs since; the one the instrumentation
-caught was a kernel OOM kill inside case 12.4.6, the consumer still unknown, and
-200 local runs of that case by `tools/autobahn-repro.sh` stayed clean),
+34 nights up to 2026-09-18, 2 of 53 runs since; both were kernel OOM kills
+early in section 12.4, in 12.4.6 on 2026-10-10 and in 12.4.4 on 2026-11-20. The
+second named the consumer: **wstest itself**, the fuzzing client, at 16.6 GiB,
+against 63 MiB for our echo server. What makes wstest run away is not known,
+and local runs in the nightly's order with `tools/autobahn-repro.sh` stay
+clean),
 which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and

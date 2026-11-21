@@ -5685,7 +5685,10 @@ it "on the next night that dies". That night was **2026-11-20**: nightly run
 44727173478, at `3af379d` (pin `4b8be28a`, .NET 11.0.0). It was the first
 nightly since 2026-11-10, because GitHub's scheduler had started none in
 between. Its other five jobs were green: h2spec on both platforms, interop, and
-`against-hermod-master` on both.
+`against-hermod-master` on both. The run itself is gone from GitHub since
+2026-11-21, as the run of 2026-10-10 is. Its kernel report, the timestamped
+Autobahn step and the echo server's log are kept in
+[`docs/evidence/2026-11-20-autobahn-oom/`](evidence/2026-11-20-autobahn-oom/README.md).
 
 **The kill has the same signature as on 2026-10-10.** The fuzzing client died
 early in section 12.4, this time in **12.4.4**, which had run for **7.85 s**.

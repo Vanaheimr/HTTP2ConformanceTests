@@ -37,6 +37,7 @@
 #   tests/autobahn.sh --run-timeout 1200   # cap the fuzzingclient (seconds, 0 = off)
 #   tests/autobahn.sh --oom-retries 0      # never repeat a run wstest's OOM kill lost
 #   tests/autobahn.sh --split-off ''       # all cases in one wstest, 12.4 included
+#   tests/autobahn.sh --pypy-nursery ''    # let wstest's PyPy size its nursery itself
 #
 set -euo pipefail
 
@@ -136,6 +137,18 @@ oom_retry_server_max_mib=1024
 # pattern is wstest's: a trailing '*' works, '?' does not.
 split_off='12.4.*'
 
+# The nursery of wstest's PyPy, pinned. Measured locally on 2026-11-22 (see
+# docs/BUILD_LOG.md): how much wstest keeps grows with its nursery, and PyPy
+# sizes that from the host's CPU, as half the "cache size" in /proc/cpuinfo,
+# at least 4 MiB and without an upper bound. An AMD CPU reports its 512 KB L2
+# there, which gives 4 MiB. An Intel CPU reports its L3: 48 MB gives 24 MiB,
+# 480 MB gives 240 MiB. Through 12.3, wstest ended at 2.9 GiB with 4 MiB,
+# at 5.4 GiB with 24 MiB, and passed 8 GiB with 64 MiB (in 12.3.18) and with
+# 240 MiB (in 12.2.12). The runners this died on were killed at 13 - 17 GiB.
+# 4MB is what every clean local run had. '' leaves the choice to PyPy, and
+# the host line below says what it would choose.
+pypy_nursery='4MB'
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)        port="$2";        shift 2 ;;
@@ -144,6 +157,7 @@ while [ $# -gt 0 ]; do
         --min-pass)    min_pass="$2";    shift 2 ;;
         --oom-retries) oom_retries="$2"; shift 2 ;;
         --split-off)   split_off="$2";   shift 2 ;;
+        --pypy-nursery) pypy_nursery="$2"; shift 2 ;;
         --no-build)    nobuild=1;        shift ;;
         -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -310,6 +324,48 @@ else
 fi
 unset klog
 
+# What wstest's PyPy would choose for its nursery on this host, by PyPy's own
+# rule (see pypy_nursery above), printed on every run, so that each night
+# records the host it ran on. With the nursery pinned, PyPy does not read the
+# cache size at all, so this computes it the same way. Under Docker Desktop the
+# container's /proc/cpuinfo is the VM's, which reports the same CPU.
+host_cpu="$(awk -F': ' '/^model name/ { print $2; exit }' /proc/cpuinfo 2>/dev/null || true)"
+host_cache_kib="$(awk -F: '/^cache size/ { gsub(/[^0-9]/, "", $2); print $2; exit }' /proc/cpuinfo 2>/dev/null || true)"
+if [ -n "$host_cache_kib" ]; then
+    own_nursery=$(( host_cache_kib * 1024 / 2 ))
+    [ "$own_nursery" -ge 4194304 ] || own_nursery=4194304
+    own_nursery="$(( own_nursery / 1048576 )) MiB"
+else
+    own_nursery="unknown (no cache size in /proc/cpuinfo)"
+fi
+if [ -n "$pypy_nursery" ]; then
+    nursery_note="pinned to $pypy_nursery"
+else
+    nursery_note="not pinned"
+fi
+echo "Host CPU: ${host_cpu:-unknown}, cache size ${host_cache_kib:-?} KB. PyPy's own nursery here: $own_nursery; $nursery_note."
+
+# wstest's peak resident memory, read each second from its /proc status, into
+# FILE, until it exits. Its own VmHWM, so a peak between two reads still
+# counts; an OOM kill leaves the last value read before it. Linux only: under
+# Docker Desktop the container's pid is the VM's, and /proc here is another
+# machine's.
+#   wstest_peak_watch CONTAINER FILE
+wstest_peak_watch() {
+    local pid="" hwm
+    # The first run pulls the image first, about ten seconds on the runner.
+    for _ in $(seq 1 600); do
+        pid="$(docker inspect -f '{{.State.Pid}}' "$1" 2>/dev/null || true)"
+        [ -n "$pid" ] && [ "$pid" != 0 ] && break
+        sleep 0.5
+    done
+    { [ -n "$pid" ] && [ "$pid" != 0 ]; } || return 0
+    while hwm="$(awk '/^VmHWM:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)" && [ -n "$hwm" ]; do
+        echo "$hwm" >"$2"
+        sleep 1
+    done
+}
+
 # One part of the suite (see split_off above), in a wstest of its own, with its
 # own repeat. Its report goes to reports/<name>/. Sets attempt.
 #   run_part NAME CASES EXCLUDE   (CASES and EXCLUDE: JSON list bodies)
@@ -334,7 +390,6 @@ client_oom=0
 # The first real split run, on 2026-11-22, ended that way, with rc 125.
 docker rm -f "$container" >/dev/null 2>&1 || true
 echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port), part $name [$cases]${exclude:+ minus [$exclude]}, attempt $attempt..."
-# shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
 # Deliberately NOT --rm: an auto-removed container takes its exit status with
 # it, and "why did this die" is exactly the question. `docker inspect` below
 # distinguishes a kernel OOM kill from every other cause of the 137 seen on
@@ -347,7 +402,20 @@ echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port),
 # local run showed 12.3.3 sitting as the last flushed line for four
 # minutes while the suite ran on through 13.3. Unbuffered, the last line
 # is the truth, and a hang names itself.
+# PYPYLOG records the nursery and memory size PyPy settled on, into
+# <part>/pypy-gc.log beside the report; PYPY_GC_NURSERY pins the first (see
+# pypy_nursery above).
+pypy_env=(-e "PYPYLOG=gc-hardware,gc-set-nursery-size:/reports/$name/pypy-gc.log")
+[ -z "$pypy_nursery" ] || pypy_env+=(-e "PYPY_GC_NURSERY=$pypy_nursery")
+rm -f "$dir/wstest-peak-kib"
+watch_pid=""
+if [ "$(uname -s)" = Linux ]; then
+    wstest_peak_watch "$container" "$dir/wstest-peak-kib" &
+    watch_pid=$!
+fi
+# shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
 MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 $docker_net \
+    "${pypy_env[@]}" \
     -v "$mount_src:/config" \
     -v "$mount_src:/reports" \
     "$image" \
@@ -440,6 +508,21 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
 
         docker rm -f "$container" >/dev/null 2>&1 || true
     }
+
+# How the attempt went for wstest's memory, on success and failure alike: the
+# nursery PyPy used, and wstest's peak. A clean night says how close it came.
+if [ -n "$watch_pid" ]; then
+    kill "$watch_pid" 2>/dev/null || true
+    wait "$watch_pid" 2>/dev/null || true
+fi
+used_nursery="$(awk '/^nursery size:/ { n = $3 } END { if (n) printf "%d MiB", n / 1048576 }' "$dir/pypy-gc.log" 2>/dev/null || true)"
+peak_kib="$(cat "$dir/wstest-peak-kib" 2>/dev/null || true)"
+if [ -n "$peak_kib" ]; then
+    peak_txt="$(( peak_kib / 1024 )) MiB"
+else
+    peak_txt="not measured here"
+fi
+echo "wstest, part $name, attempt $attempt: PyPy nursery ${used_nursery:-unknown (no pypy-gc.log)}, peak resident $peak_txt."
 
 if [ "$client_oom" -eq 1 ] && [ "$attempt" -le "$oom_retries" ]; then
     # The lost attempt's evidence goes aside, out of the next one's way:

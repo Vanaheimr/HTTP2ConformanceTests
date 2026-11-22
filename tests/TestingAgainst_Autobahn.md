@@ -127,6 +127,17 @@ script counts `tests/autobahn/reports/index.json`, the two parts' reports
 merged. A case found in both ends the run. `--split-off ''` runs everything in
 one fuzzing client, as before.
 
+**wstest's PyPy runs with its nursery pinned to 4 MB** (`pypy_nursery` in the
+script, since 2026-11-22). Left to itself, PyPy sets the nursery to half the
+`cache size` that `/proc/cpuinfo` reports, which on an Intel CPU is the L3, and
+the bigger the nursery, the more memory wstest keeps. Locally, through 12.3,
+wstest ended at 2.9 GiB with 4 MiB and passed 8 GiB with 64 MiB. That is the
+best explanation so far of why only some runners lost wstest to the OOM killer.
+The script prints the host's CPU, the nursery PyPy would have chosen there, and
+for each part the nursery used and wstest's peak resident memory (Linux only).
+PyPy's own log goes to `<part>/pypy-gc.log` beside the report.
+`--pypy-nursery ''` leaves the choice to PyPy.
+
 **To chase a run that dies rather than fails,**
 [`tools/autobahn-repro.sh`](../tools/autobahn-repro.sh) (Linux/WSL) loops
 chosen cases against one long-lived echo server. It samples both processes'

@@ -6077,6 +6077,78 @@ and 91, `tests/h2interop/Program.cs` 147, and `tests/h2bench/Program.cs` 301,
 exactly this: the pin cannot advance until those callers do. The gate on the
 pin was green.
 
+## 2026-11-22 — What wstest keeps depends on its PyPy's nursery, and PyPy sizes that from the CPU; pinned to 4 MB
+
+The same day, measured locally, in answer to the entry before this one. Every
+earlier local run had stayed clean, so the question was what differs on the
+runners it dies on. The figures are in
+[`docs/evidence/2026-11-22-pypy-nursery/`](evidence/2026-11-22-pypy-nursery/README.md).
+
+**PyPy sizes its GC from the host.** The image's PyPy 7.3.20 logs its choices
+with `PYPYLOG=gc-hardware,gc-set-nursery-size`. In WSL here (AMD Ryzen 7 3700X,
+62.8 GiB) it read `L2cache = 524288` and `memtotal = 67389702144`, and chose
+a nursery of 4 MiB. With a `/proc/cpuinfo` whose `cache size` line was
+replaced, bind-mounted into the container, the rule showed itself: **half the
+reported cache size, at least 4 MiB, no upper bound.** 512 KB to 2 048 KB give
+4 MiB, 49 152 KB gives 24 MiB, 107 520 KB 52.5 MiB, 491 520 KB 240 MiB. An AMD
+CPU reports its L2 in that line, an Intel CPU its L3.
+
+**What wstest keeps grows with the nursery.** Five runs with
+`tools/autobahn-repro.sh` in the nightly's order up to the end of 12.3 (355
+cases), with wstest's resident memory sampled every 50 ms and the watchdog at
+8 GiB:
+
+| PyPy setting | after 12.1 | after 12.2 | at the end |
+|---|---|---|---|
+| default (nursery 4 MiB here) | 2 636 MiB | 2 835 MiB | 2 862 MiB, all passed |
+| `PYPY_GC_MAX_DELTA=2GB` (as on a 16 GiB runner) | 2 932 MiB | 3 067 MiB | 3 108 MiB, all passed |
+| `PYPY_GC_NURSERY=24MB` | 4 670 MiB | 5 055 MiB | 5 375 MiB, all passed |
+| `PYPY_GC_NURSERY=64MB` | 5 437 MiB | 7 429 MiB | **8 192 MiB in 12.3.18**, frozen |
+| `PYPY_GC_NURSERY=240MB` | 5 571 MiB | — | **8 198 MiB in 12.2.12**, frozen |
+
+With a large nursery the memory does not jump. It climbs case by case and is
+never given back, and 12.1 alone takes twice as much. The runner's RAM, which
+PyPy reads too, hardly matters: a `MAX_DELTA` as on 16 GiB added 250 MiB.
+
+**This corrects the entries before it.** They had wstest entering 12.4 with
+about 3 GiB, as it does locally, and then taking 13 GiB within two seconds, at
+1.7 GB/s or faster. That was inferred from local runs and never measured on a
+runner. On a runner with a large nursery, wstest was presumably at 8 – 13 GiB
+long before 12.4. The kill came where the curve crossed the runner's memory
+plus swap. That is early in 12.4 with 3 GiB of swap, and in 12.3 on the swapless
+EC2 runner of 2026-11-22. It would also explain why every attempt on such a
+runner died, why the split could not help, and why local runs never died.
+
+**What is not shown** is which CPUs the runners have. GitHub's logs do not name
+them, and the kernel's OOM reports name only the VM (`Microsoft Corporation
+Virtual Machine` three times, `Amazon EC2 m8id.xlarge` once). An m8id is an
+Intel Xeon 6, whose L3 is several hundred MB. A runner with an AMD EPYC
+reports 512 KB and would run as locally. That fits, but it is not evidence.
+
+### Built: the nursery pinned, and every night records its host
+
+- `tests/autobahn.sh` passes `-e PYPY_GC_NURSERY=4MB` to wstest's container
+  (`pypy_nursery`; `--pypy-nursery ''` leaves the choice to PyPy). 4 MiB is
+  what every clean local run had.
+- It prints, on every run, the host's CPU and `cache size` and the nursery
+  PyPy would have chosen there. It computes that by PyPy's rule, because with
+  the nursery pinned PyPy no longer reads the cache size.
+- Each part's container gets `PYPYLOG=gc-hardware,gc-set-nursery-size`, into
+  `<part>/pypy-gc.log` beside the report. A background reader takes wstest's
+  `VmHWM` from `/proc` once a second (Linux only). After each attempt, clean or
+  not, one line gives the nursery used and wstest's peak. A green night then
+  shows how close it came, and a red one what it had.
+
+**Verified.** The nine stand-in scenarios of the split end as before, with the
+new lines in each. A real run in WSL, at pin `4b8be28a` on .NET 11.0.0:
+**481/517 passing, 36 declined, no hard failures**, exit 0. PyPy logged
+`nursery size: 4194304` for both parts, and no `L2cache`, as expected with the
+nursery pinned. wstest peaked at 3 757 MiB over the 499 cases of `main`,
+13.x included, and at 1 049 MiB over the 18 of `12.4`. The run also found
+one defect, in the new summary line. With a peak measured, a `${x:+…}${x:-…}`
+pair printed the raw KiB after the MiB ("3757 MiB3848060"). It is now an
+`if`, checked with and without a measured peak.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

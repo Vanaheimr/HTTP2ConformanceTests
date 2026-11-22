@@ -199,6 +199,12 @@ jobs:
       # annotation; see oom_retries. A worst case stays inside the 45 minutes.
       # Such a kill comes within about four minutes, and each part is capped at
       # twenty like any run, so even both parts hanging stay under 42.
+      #
+      # Since the same day, wstest's PyPy runs with its nursery pinned to 4 MB
+      # (pypy_nursery in the script). PyPy sizes it from the host's CPU cache,
+      # and the more nursery, the more wstest keeps: measured locally, 2.9 GiB
+      # through 12.3 at 4 MiB and over 8 GiB at 64 MiB. The step prints the
+      # host's CPU, the nursery PyPy would have chosen, and wstest's peak.
       - name: Autobahn fuzzingclient (517 cases)
         timeout-minutes: 45
         shell: bash

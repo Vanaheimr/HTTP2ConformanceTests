@@ -255,8 +255,12 @@ nights; all were kernel OOM kills in section 12: in 12.4.6 on 2026-10-10, in
 later on the same runner, in 12.4.4, and on 2026-11-22, with 12.4 split off,
 in 12.3.11 and then 12.3.12. The kill reports name the consumer: **wstest
 itself**, the fuzzing client, at 13 – 17 GiB, against 55 – 75 MiB for our echo
-server. What makes wstest run away is not known, and local runs in the
-nightly's order with `tools/autobahn-repro.sh` stay clean. `tests/autobahn.sh`
+server. The best explanation, measured locally on 2026-11-22: wstest's PyPy
+sizes its nursery at half the CPU `cache size` (an Intel CPU's L3), and what
+wstest keeps grows with it. Through 12.3 that was 2.9 GiB at 4 MiB and over
+8 GiB at 64 MiB. Since then `tests/autobahn.sh` pins it to 4 MB and prints the
+host's CPU and wstest's peak each night. Which CPUs the dead runners had is not
+known. `tests/autobahn.sh`
 repeats a run lost that way once, as a whole run and with a warning, but only
 when the kernel's report names wstest and our server is under 1 GiB, and it
 runs 12.4 in a fresh wstest of its own, after the rest. Neither saves a night

@@ -124,9 +124,12 @@ oom_retry_server_max_mib=1024
 # again, and on 2026-11-21 it died the same way. So 12.4 now starts in a fresh
 # wstest, in a container of its own.
 #
-# This is a hypothesis, not a cure. Locally the runaway has never happened, in
-# this order or any other, so only the nights can show whether a fresh wstest
-# avoids it. The second container costs about a second to start. Each part has
+# It was a hypothesis, and the night of 2026-11-22 refuted it: with 12.4 split
+# off, wstest ran away in 12.3.11 and, in the repeat, in 12.3.12, while 12.4
+# alone was clean. 12.4 was where the runaway arrived, not its cause. The split
+# stays because it is cheap and still brings home 12.4's report on such a
+# night; it does not keep the night green. The second container costs about a
+# second to start. Each part has
 # its own report directory under reports/ and its own repeat. The verdict counts
 # the two reports merged, so the floor and the hard failures mean what they
 # meant for a single run. --split-off '' runs everything in one wstest. The

@@ -116,8 +116,11 @@ in the script (481).
 
 The suite runs in two parts, each in a fuzzing client of its own (since
 2026-11-22, `split_off` in the script): everything but section 12.4, then
-12.4. Every one of wstest's memory runaways in the nightly struck early in
-12.4, after 12.1 had left wstest holding about 3 GiB. Each part writes its
+12.4. Up to then, every one of wstest's memory runaways in the nightly had
+struck early in 12.4, after 12.1 had left wstest holding about 3 GiB. The
+split did not stop the runaway: on the night of 2026-11-22 it came in 12.3
+instead, and 12.4 alone was clean. It stays because it is cheap and keeps
+12.4's report on such a night. Each part writes its
 report to its own directory, `tests/autobahn/reports/main/` and
 `tests/autobahn/reports/12.4/`, each with an `index.html` to browse. The
 script counts `tests/autobahn/reports/index.json`, the two parts' reports

@@ -1,0 +1,127 @@
+[  507.929638] wstest invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+[  507.929649] CPU: 0 UID: 0 PID: 3657 Comm: wstest Not tainted 7.0.0-1016-aws #17-Ubuntu PREEMPTLAZY 
+[  507.929651] Hardware name: Amazon EC2 m8id.xlarge/, BIOS 1.0 10/16/2017
+[  507.929653] Call Trace:
+[  507.929655]  <TASK>
+[  507.929658]  show_stack+0x49/0x60
+[  507.929664]  dump_stack_lvl+0x5f/0x90
+[  507.929668]  dump_stack+0x10/0x18
+[  507.929670]  dump_header+0x48/0x1d6
+[  507.929672]  oom_kill_process.cold+0x8/0xb5
+[  507.929673]  out_of_memory+0xff/0x2b0
+[  507.929676]  __alloc_pages_may_oom+0x10a/0x1d0
+[  507.929679]  __alloc_pages_slowpath.constprop.0+0x401/0x9d0
+[  507.929681]  __alloc_frozen_pages_noprof+0x32c/0x340
+[  507.929684]  alloc_pages_mpol+0x88/0x1b0
+[  507.929687]  alloc_pages_noprof+0x59/0xe0
+[  507.929688]  skb_page_frag_refill+0xc2/0x120
+[  507.929691]  sk_page_frag_refill+0x21/0xc0
+[  507.929692]  tcp_sendmsg_locked+0x660/0x1320
+[  507.929696]  tcp_sendmsg+0x30/0x60
+[  507.929696]  inet_sendmsg+0x46/0x90
+[  507.929699]  __sys_sendto+0x219/0x230
+[  507.929703]  __x64_sys_sendto+0x24/0x40
+[  507.929704]  x64_sys_call+0x1d5d/0x2390
+[  507.929706]  do_syscall_64+0x105/0x580
+[  507.929709]  ? do_fault+0x16c/0x2a0
+[  507.929710]  ? pte_offset_map_rw_nolock+0x20/0xa0
+[  507.929712]  ? handle_pte_fault+0x9d/0x210
+[  507.929714]  ? pick_next_task_fair+0x1eb/0x270
+[  507.929716]  ? __handle_mm_fault+0x493/0x720
+[  507.929718]  ? count_memcg_events+0x103/0x250
+[  507.929720]  ? handle_mm_fault+0x1bb/0x2f0
+[  507.929721]  ? arch_exit_to_user_mode_prepare.isra.0+0xc3/0x100
+[  507.929724]  ? irqentry_exit+0x98/0x6f0
+[  507.929726]  ? exc_page_fault+0x94/0x1e0
+[  507.929728]  entry_SYSCALL_64_after_hwframe+0x76/0x7e
+[  507.929729] RIP: 0033:0x7ea0026c444c
+[  507.929740] Code: 89 02 48 c7 c0 ff ff ff ff eb b5 0f 1f 00 41 89 ca 64 8b 04 25 18 00 00 00 85 c0 75 19 45 31 c9 45 31 c0 b8 2c 00 00 00 0f 05 <48> 3d 00 f0 ff ff 77 64 c3 0f 1f 00 55 48 83 ec 20 48 89 54 24 10
+[  507.929741] RSP: 002b:00007ffeab494a48 EFLAGS: 00000246 ORIG_RAX: 000000000000002c
+[  507.929743] RAX: ffffffffffffffda RBX: 0000000000000000 RCX: 00007ea0026c444c
+[  507.929744] RDX: 0000000000001d2b RSI: 00007e9ff6a516f8 RDI: 0000000000000004
+[  507.929745] RBP: 00007e9ff6a516f8 R08: 0000000000000000 R09: 0000000000000000
+[  507.929745] R10: 0000000000000000 R11: 0000000000000246 R12: 0000000000001d2b
+[  507.929746] R13: 00007e9ff6a516f8 R14: 0000000000000004 R15: 00007e9ff6a53630
+[  507.929747]  </TASK>
+[  507.929748] Mem-Info:
+[  507.929752] active_anon:3428382 inactive_anon:451648 isolated_anon:0
+                active_file:119 inactive_file:1060 isolated_file:0
+                unevictable:2804 dirty:1 writeback:0
+                slab_reclaimable:11603 slab_unreclaimable:20932
+                mapped:90987 shmem:81110 pagetables:12853
+                sec_pagetables:0 bounce:0
+                kernel_misc_reclaimable:0
+                free:60484 free_pcp:1289 free_cma:9037
+[  507.929755] Node 0 active_anon:13713528kB inactive_anon:1806592kB active_file:476kB inactive_file:4240kB unevictable:11216kB isolated(anon):0kB isolated(file):0kB mapped:363948kB dirty:4kB writeback:0kB shmem:324440kB shmem_thp:0kB shmem_pmdmapped:0kB anon_thp:0kB kernel_stack:6656kB pagetables:51412kB sec_pagetables:0kB all_unreclaimable? yes Balloon:0kB gpu_active:0kB gpu_reclaim:0kB
+[  507.929759] Node 0 DMA free:13312kB boost:0kB min:72kB low:88kB high:104kB reserved_highatomic:0KB free_highatomic:0KB active_anon:0kB inactive_anon:0kB active_file:0kB inactive_file:0kB unevictable:0kB writepending:0kB zspages:0kB present:15996kB managed:15360kB mlocked:0kB bounce:0kB free_pcp:0kB local_pcp:0kB free_cma:0kB
+[  507.929762] lowmem_reserve[]: 0 2988 15685 15685 15685
+[  507.929765] Node 0 DMA32 free:64812kB boost:0kB min:12980kB low:16224kB high:19468kB reserved_highatomic:0KB free_highatomic:0KB active_anon:2968392kB inactive_anon:18132kB active_file:0kB inactive_file:492kB unevictable:0kB writepending:0kB zspages:0kB present:3125680kB managed:3060028kB mlocked:0kB bounce:0kB free_pcp:1128kB local_pcp:0kB free_cma:32388kB
+[  507.929768] lowmem_reserve[]: 0 0 12697 12697 12697
+[  507.929770] Node 0 Normal free:163812kB boost:110592kB min:165120kB low:178752kB high:192384kB reserved_highatomic:0KB free_highatomic:0KB active_anon:10745136kB inactive_anon:1788460kB active_file:420kB inactive_file:3736kB unevictable:11216kB writepending:4kB zspages:0kB present:13336576kB managed:13002160kB mlocked:9340kB bounce:0kB free_pcp:4028kB local_pcp:0kB free_cma:3760kB
+[  507.929773] lowmem_reserve[]: 0 0 0 0 0
+[  507.929776] Node 0 DMA: 0*4kB 0*8kB 0*16kB 0*32kB 0*64kB 0*128kB 0*256kB 0*512kB 1*1024kB (U) 2*2048kB (UM) 2*4096kB (M) = 13312kB
+[  507.929783] Node 0 DMA32: 10*4kB (UM) 21*8kB (UMC) 47*16kB (UMC) 27*32kB (UMC) 13*64kB (UMC) 8*128kB (UM) 6*256kB (UM) 8*512kB (UM) 4*1024kB (UC) 5*2048kB (UC) 10*4096kB (UMC) = 64608kB
+[  507.929793] Node 0 Normal: 1875*4kB (UMEC) 1656*8kB (UEC) 1934*16kB (UMEC) 1117*32kB (UMEC) 437*64kB (UMEC) 187*128kB (UMEC) 43*256kB (UEC) 24*512kB (UME) 1*1024kB (M) 0*2048kB 0*4096kB = 163660kB
+[  507.929803] Node 0 hugepages_total=0 hugepages_free=0 hugepages_surp=0 hugepages_size=1048576kB
+[  507.929804] Node 0 hugepages_total=0 hugepages_free=0 hugepages_surp=0 hugepages_size=2048kB
+[  507.929805] 84167 total pagecache pages
+[  507.929806] 0 pages in swap cache
+[  507.929807] Free swap  = 0kB
+[  507.929807] Total swap = 0kB
+[  507.929808] 4119563 pages RAM
+[  507.929808] 0 pages HighMem/MovableOnly
+[  507.929809] 100176 pages reserved
+[  507.929809] 0 pages cma reserved
+[  507.929810] 0 pages hwpoisoned
+[  507.929811] Memory cgroup min protection 0kB -- low protection 0kB
+[  507.929811] Tasks state (memory values in pages):
+[  507.929812] [  pid  ]   uid  tgid total_vm      rss rss_anon rss_file rss_shmem pgtables_bytes swapents oom_score_adj name
+[  507.929826] [    639]     0   639    16661      923      352      569         2   118784        0          -250 systemd-journal
+[  507.929829] [    676]     0   676    71851     2342      518     1824         0    81920        0         -1000 multipathd
+[  507.929831] [    688]   989   688     5624     1303      668      635         0    90112        0             0 systemd-resolve
+[  507.929834] [    692]     0   692     9916     1951     1228      723         0   102400        0         -1000 systemd-udevd
+[  507.929836] [   1115]   998  1115     6165     1276      398      878         0    90112        0             0 systemd-network
+[  507.929838] [   1212]     0  1212      706      494       36      458         0    49152        0             0 acpid
+[  507.929840] [   1213]     0  1213      727      473       31      442         0    49152        0             0 chronyd-starter
+[  507.929842] [   1215]     0  1215     1872      634       63      571         0    57344        0             0 cron
+[  507.929844] [   1216]   995  1216     2191      995      235      760         0    57344        0          -900 dbus-daemon
+[  507.929846] [   1226]     0  1226    22279      730       88      642         0    65536        0             0 irqbalance
+[  507.929847] [   1234]     0  1234    11731     4683     3831      852         0   126976        0             0 networkd-dispat
+[  507.929849] [   1236]     0  1236    78330     4628     3001      902       725   299008        0             0 php-fpm8.5
+[  507.929851] [   1239]   983  1239   105685     1550      636      914         0   122880        0             0 polkitd
+[  507.929852] [   1292]     0  1292   509365     4389     3931      458         0   286720        0          -900 snapd
+[  507.929854] [   1305]     0  1305     4544      944      316      628         0    77824        0             0 systemd-logind
+[  507.929860] [   1309]     0  1309   150160     1547      596      951         0   172032        0             0 udisksd
+[  507.929862] [   1334]     0  1334     2070      593       49      544         0    57344        0             0 agetty
+[  507.929864] [   1336]     0  1336     2680      798      292      506         0    69632        0         -1000 sshd
+[  507.929866] [   1364]   988  1364     7142      890      212      678         0    69632        0             0 chronyd
+[  507.929868] [   1388]   100  1388    57124     1220      513      707         0    90112        0             0 rsyslogd
+[  507.929870] [   1399]     0  1399     2059      568       46      522         0    61440        0             0 agetty
+[  507.929872] [   1471]     0  1471   552882     5688     5243      440         5   397312        0          -999 containerd
+[  507.929874] [   1478]  1001  1478     5459     1281      544      737         0    86016        0           100 systemd
+[  507.929876] [   1498]     0  1498    87535     1272      489      783         0   114688        0             0 ModemManager
+[  507.929878] [   1500]  1001  1500     5693      760      504      256         0    77824        0           100 (sd-pam)
+[  507.929880] [   1536]   988  1536     2984      510      161      349         0    61440        0             0 chronyd
+[  507.929881] [   1647]     0  1647   560699     7788     7202      586         0   466944        0          -500 dockerd
+[  507.929883] [   1672]    33  1672    78480     3521     3015      505         1   270336        0             0 php-fpm8.5
+[  507.929885] [   1673]    33  1673    78480     3521     3015      505         1   270336        0             0 php-fpm8.5
+[  507.929886] [   2149]  1001  2149   317761     1481     1479        2         0   135168        0             0 hosted-compute-
+[  507.929888] [   2189]  1001  2189     3145      834      193      641         0    69632        0             0 sudo
+[  507.929890] [   2194]     0  2194   360192    25663     8959    16704         0   401408        0             0 provjobd4270274
+[  507.929891] [   2223]  1001  2223 68587875    11126     6081      707      4338   581632        0             0 Runner.Listener
+[  507.929894] [   2241]  1001  2241 68688499    37284    29836      829      6619   843776        0             0 Runner.Worker
+[  507.929896] [   2875]  1001  2875  9275744    67013    52305      830     13878  1355776        0           500 MSBuild
+[  507.929898] [   2901]  1001  2901  9134621    37525    29135      700      7690   983040        0           500 MSBuild
+[  507.929899] [   2902]  1001  2902  9036434    29206    22188      826      6192   864256        0           500 MSBuild
+[  507.929901] [   2903]  1001  2903  9134668    36594    27600      820      8174   966656        0           500 MSBuild
+[  507.929902] [   3011]  1001  3011 68857712   138317   106252      826     31239  1933312        0           500 VBCSCompiler
+[  507.929904] [   3180]  1001  3180     1991      516       74      442         0    53248        0           500 bash
+[  507.929906] [   3182]  1001  3182     2066      601      159      442         0    61440        0           500 bash
+[  507.929908] [   3183]  1001  3183     4352      899      327      572         0    81920        0           500 tee
+[  507.929909] [   3200]  1001  3200  8965124    19233    16941      824      1468   630784        0           500 dotnet
+[  507.929912] [   3616]  1001  3616     4385      958      325      633         0    73728        0           500 timeout
+[  507.929913] [   3617]  1001  3617   503846     2751     2342      409         0   253952        0           500 docker
+[  507.929915] [   3633]     0  3633   317012      921      919        2         0   126976        0          -998 containerd-shim
+[  507.929916] [   3657]     0  3657  4734465  3462387  3462264      123         0 37994496        0             0 wstest
+[  507.929918] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=docker-8ab1bbae65f2a0960ecca2ab000552aaf5a712868696d3914d3d5bf7ded4861d.scope,mems_allowed=0,global_oom,task_memcg=/system.slice/docker-8ab1bbae65f2a0960ecca2ab000552aaf5a712868696d3914d3d5bf7ded4861d.scope,task=wstest,pid=3657,uid=0
+[  507.929932] Out of memory: Killed process 3657 (wstest) total-vm:18937860kB, anon-rss:13849056kB, file-rss:492kB, shmem-rss:0kB, UID:0 pgtables:37104kB oom_score_adj:0

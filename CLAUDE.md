@@ -249,19 +249,19 @@ like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since now and then it dies rather than reporting a result (4 of
-34 nights up to 2026-09-18, three times since against at least 52 green
-nights; all were kernel OOM kills early in section 12.4: in 12.4.6 on
-2026-10-10, in 12.4.4 on 2026-11-20, and on 2026-11-21 in 12.4.3 and, in the
-repeat three minutes later on the same runner, in 12.4.4. The kill reports name
-the consumer: **wstest itself**, the fuzzing client, at 14 – 17 GiB, against
-55 – 63 MiB for our echo server. What makes wstest run away is not known, and
-local runs in the nightly's order with `tools/autobahn-repro.sh` stay clean.
-`tests/autobahn.sh` repeats a run lost that way once, as a whole run and with a
-warning, but only when the kernel's report names wstest and our server is under
-1 GiB. Since 2026-11-22 it also runs 12.4 in a fresh wstest of its own, after
-the rest, and merges the two reports. That is a hypothesis: every kill came
-after 12.1 had left wstest holding about 3 GiB, and repeating the same sequence
-did not help on 2026-11-21),
+34 nights up to 2026-09-18, four times since against at least 52 green
+nights; all were kernel OOM kills in section 12: in 12.4.6 on 2026-10-10, in
+12.4.4 on 2026-11-20, on 2026-11-21 in 12.4.3 and, in the repeat three minutes
+later on the same runner, in 12.4.4, and on 2026-11-22, with 12.4 split off,
+in 12.3.11 and then 12.3.12. The kill reports name the consumer: **wstest
+itself**, the fuzzing client, at 13 – 17 GiB, against 55 – 75 MiB for our echo
+server. What makes wstest run away is not known, and local runs in the
+nightly's order with `tools/autobahn-repro.sh` stay clean. `tests/autobahn.sh`
+repeats a run lost that way once, as a whole run and with a warning, but only
+when the kernel's report names wstest and our server is under 1 GiB, and it
+runs 12.4 in a fresh wstest of its own, after the rest. Neither saves a night
+on which the runaway happens: both nights with a second attempt lost it too, and
+without 12.4 it came in 12.3),
 which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and

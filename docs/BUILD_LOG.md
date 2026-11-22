@@ -6008,6 +6008,75 @@ cases, and its `reportfile` entries point into `main/` and `12.4/`.
   12.4 holding about 3 GiB, as it does locally, it took some 13 GiB within
   them, faster than the 1.7 GB/s of 2026-11-20.
 
+## 2026-11-22 — The split did not save the night either: without 12.4, wstest ran away in 12.3
+
+The nightly of **2026-11-22**, at `0a406dc` (pin `4b8be28a`, .NET 11.0.0),
+was the first with 12.4 in a wstest of its own (see the entry before this
+one). Autobahn failed again, and the split is why it is worth writing down. It
+worked as built: two parts, each with its own repeat. And it refuted its own
+hypothesis. GitHub removes failed runs, so the evidence is kept in
+[`docs/evidence/2026-11-22-autobahn-oom/`](evidence/2026-11-22-autobahn-oom/README.md):
+both kernel reports, the timestamped step, both configurations and the echo
+server's log.
+
+| | part `main`, attempt 1 | part `main`, attempt 2 | part `12.4` |
+|---|---|---|---|
+| last case started | **12.3.11** | **12.3.12** | all 18 |
+| killed after the case started | 1.03 s | 1.80 s | — |
+| wstest resident at the kill | 13 360 MiB | 13 525 MiB | — |
+| our echo server | 58 MiB | 75 MiB | — |
+| result | OOM kill, no report | OOM kill, no report | 18 × OK in 22.4 s |
+
+The script did what it was built to do. It repeated `main` once, stopped after
+the second kill ("1 repeat(s) is the limit"), still ran `12.4`, and failed
+naming the missing part. Up to the kill both attempts kept the green run's
+pace. Measured against the green run of `a67eae8` on 2026-11-21, 12.1 took
+16.9 s (green 19.5) and 12.2 66.8 / 67.3 s (green 63.9). 12.3.7 – 12.3.10,
+the cases that take 1 – 12 s, ran within 5 % of green case by case.
+12.3.11 took 1.03 and 0.89 s, where green needed 0.58 s.
+
+**The runner was not the one of the earlier kills.** The kernel reports name
+`Amazon EC2 m8id.xlarge`, kernel `7.0.0-1016-aws`, 15.7 GiB of RAM and **no
+swap**. The kills of 2026-11-20 and 2026-11-21 ran on Hyper-V
+(`Microsoft Corporation Virtual Machine`), kernel `7.0.0-1020-azure`, with
+3 GiB of swap. Runner image `ubuntu-26.04`, `20261116.88.1`.
+
+**What this changes.**
+
+- **12.4 is not the trigger.** Without it the same runaway came in 12.3, a
+  section green nights pass through. 12.4 alone in a fresh wstest was clean
+  and ran at green pace. The four kills before this night all fell early in
+  12.4, and that was the one thing they had in common. It was where the
+  runaway arrived, not what caused it.
+- **On a night it happens, it happens to every attempt.** The two attempts died
+  one case apart, as on 2026-11-21 (12.4.3, 12.4.4). Both nights that had a
+  second attempt lost it the same way as the first. Neither the repeat
+  nor the split can save such a night, because both start the same wstest on
+  the same runner again.
+- **It came earlier without swap.** The Azure runners had about 3 GiB of swap
+  to fill before the kill. That alone could move the kill forward by a section,
+  but this night does not show that it did.
+- **Red nights since 2026-09-19: four**, against at least 52 green:
+  2026-10-10, 2026-11-20, 2026-11-21, 2026-11-22.
+
+**The split stays for now.** It costs a second and gives a night like this one
+a report for 12.4 at least. It does not keep a night green, and the comment in
+`tests/autobahn.sh` that calls it a hypothesis is now answered: the
+hypothesis was wrong. What to do with the split depends on what drives wstest's
+growth. The next step is to measure that locally: wstest's resident memory
+over time through 12.3, under PyPy GC settings matched to other hosts. The
+image's PyPy sizes its GC from the host. In WSL here it reads
+`L2cache = 524288` and `memtotal` of 62.8 GiB, and it sets the nursery to
+4 MiB. A 16 GiB runner with a different CPU sizes it differently.
+
+**`against-hermod-master` failed the same night, for an unrelated reason.**
+Hermod master's `86b8b083` hands ports over as `IPPort` from their source on.
+Seven call sites here still pass an `int`: `Demo/Program.cs` lines 83, 84, 90
+and 91, `tests/h2interop/Program.cs` 147, and `tests/h2bench/Program.cs` 301,
+324 and 503 (CS1503, on Windows and Debian alike). That job exists to report
+exactly this: the pin cannot advance until those callers do. The gate on the
+pin was green.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

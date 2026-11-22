@@ -190,8 +190,9 @@ jobs:
       # offers are the gap to 517; see min_pass in tests/autobahn.sh.
       #
       # Since 2026-11-22 the suite runs in two parts, each in a wstest of its
-      # own: everything but section 12.4, and then 12.4, where every one of
-      # wstest's memory runaways has struck so far. The script merges the two
+      # own: everything but section 12.4, and then 12.4, where wstest's memory
+      # runaways struck until 2026-11-22 (that night, with 12.4 split off, it
+      # struck in 12.3). The script merges the two
       # reports before it counts; see split_off in the script. A part lost to
       # such a runaway (the kernel OOM-kills the fuzzing client while our echo
       # server is small) is repeated once, as a whole part, with a warning

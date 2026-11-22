@@ -1,0 +1,928 @@
+2026-11-22T11:08:12.7037779Z Kernel log readable: an OOM kill would be reported with the kernel's task table.
+2026-11-22T11:08:14.3348137Z Running Autobahn fuzzingclient (Docker image crossbario/autobahn-testsuite, ws://127.0.0.1:9010), part main ["*"] minus ["12.4.*"], attempt 1...
+2026-11-22T11:08:14.3495883Z Unable to find image 'crossbario/autobahn-testsuite:latest' locally
+2026-11-22T11:08:14.7997621Z latest: Pulling from crossbario/autobahn-testsuite
+2026-11-22T11:08:15.1342552Z 19b7237e9447: Pulling fs layer
+2026-11-22T11:08:15.1346287Z 8ba5f0ae87b9: Pulling fs layer
+2026-11-22T11:08:15.1347682Z 632ef5283d0f: Pulling fs layer
+2026-11-22T11:08:15.1349406Z 2be42d221bda: Pulling fs layer
+2026-11-22T11:08:15.1349701Z 54d1704eb717: Pulling fs layer
+2026-11-22T11:08:15.1350178Z f0f51ee5c79e: Pulling fs layer
+2026-11-22T11:08:15.1350421Z e7f707acf267: Pulling fs layer
+2026-11-22T11:08:15.1350621Z 7fffc0dc6bc2: Pulling fs layer
+2026-11-22T11:08:15.1350864Z 33523de0a6ab: Pulling fs layer
+2026-11-22T11:08:15.1351062Z d9b05e8829fe: Pulling fs layer
+2026-11-22T11:08:15.1351268Z d12c4f6eb5ea: Pulling fs layer
+2026-11-22T11:08:15.1351479Z 987dbf4b181e: Pulling fs layer
+2026-11-22T11:08:15.1351698Z 9a2715fb541b: Pulling fs layer
+2026-11-22T11:08:15.1351892Z 257ddc2bf9fe: Pulling fs layer
+2026-11-22T11:08:15.1352085Z 63390957f768: Pulling fs layer
+2026-11-22T11:08:15.3526762Z 19b7237e9447: Download complete
+2026-11-22T11:08:15.3529680Z 8ba5f0ae87b9: Download complete
+2026-11-22T11:08:15.3530890Z 2be42d221bda: Download complete
+2026-11-22T11:08:15.3544640Z 33523de0a6ab: Download complete
+2026-11-22T11:08:15.3552658Z 987dbf4b181e: Download complete
+2026-11-22T11:08:15.4532224Z 257ddc2bf9fe: Download complete
+2026-11-22T11:08:15.4593386Z 63390957f768: Download complete
+2026-11-22T11:08:15.4600920Z e7f707acf267: Download complete
+2026-11-22T11:08:15.4604671Z d12c4f6eb5ea: Download complete
+2026-11-22T11:08:15.4614699Z 9a2715fb541b: Download complete
+2026-11-22T11:08:15.5554468Z d9b05e8829fe: Download complete
+2026-11-22T11:08:15.7529355Z 7fffc0dc6bc2: Download complete
+2026-11-22T11:08:15.8524924Z 54d1704eb717: Download complete
+2026-11-22T11:08:15.8533217Z 632ef5283d0f: Download complete
+2026-11-22T11:08:16.3522589Z f0f51ee5c79e: Download complete
+2026-11-22T11:08:16.7690056Z 632ef5283d0f: Pull complete
+2026-11-22T11:08:16.9542479Z 2be42d221bda: Pull complete
+2026-11-22T11:08:17.6651599Z 54d1704eb717: Pull complete
+2026-11-22T11:08:20.0649543Z f0f51ee5c79e: Pull complete
+2026-11-22T11:08:20.1599489Z e7f707acf267: Pull complete
+2026-11-22T11:08:20.5549804Z 8ba5f0ae87b9: Pull complete
+2026-11-22T11:08:20.5659871Z 7fffc0dc6bc2: Pull complete
+2026-11-22T11:08:20.6572884Z 257ddc2bf9fe: Pull complete
+2026-11-22T11:08:20.6597957Z d12c4f6eb5ea: Pull complete
+2026-11-22T11:08:20.7532750Z 33523de0a6ab: Pull complete
+2026-11-22T11:08:20.7572626Z 63390957f768: Pull complete
+2026-11-22T11:08:20.9555966Z 987dbf4b181e: Pull complete
+2026-11-22T11:08:20.9565134Z 9a2715fb541b: Pull complete
+2026-11-22T11:08:20.9572635Z d9b05e8829fe: Pull complete
+2026-11-22T11:08:21.0120154Z 19b7237e9447: Pull complete
+2026-11-22T11:08:21.0121112Z Digest: sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
+2026-11-22T11:08:21.0121929Z Status: Downloaded newer image for crossbario/autobahn-testsuite:latest
+2026-11-22T11:08:26.0090450Z Using explicit spec file '/config/main/fuzzingclient.json'
+2026-11-22T11:08:26.0090820Z Loading spec from /config/main/fuzzingclient.json
+2026-11-22T11:08:26.0090993Z 
+2026-11-22T11:08:26.0091268Z Using Twisted reactor class <class 'twisted.internet.epollreactor.EPollReactor'>
+2026-11-22T11:08:26.0091725Z Using UTF8 Validator class <class 'autobahn.websocket.utf8validator.Utf8Validator'>
+2026-11-22T11:08:26.0092155Z Using XOR Masker classes <class 'autobahn.websocket.xormasker.XorMaskerNull'>
+2026-11-22T11:08:26.0092403Z 
+2026-11-22T11:08:26.0153292Z Autobahn Fuzzing WebSocket Client (Autobahn Testsuite Version 25.10.1 / Autobahn Version 0.10.9)
+2026-11-22T11:08:26.0153745Z Ok, will run 499 test cases against 1 servers
+2026-11-22T11:08:26.0163131Z Cases = ['1.1.1', '1.1.2', '1.1.3', '1.1.4', '1.1.5', '1.1.6', '1.1.7', '1.1.8', '1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5', '1.2.6', '1.2.7', '1.2.8', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '2.9', '2.10', '2.11', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '4.1.1', '4.1.2', '4.1.3', '4.1.4', '4.1.5', '4.2.1', '4.2.2', '4.2.3', '4.2.4', '4.2.5', '5.1', '5.2', '5.3', '5.4', '5.5', '5.6', '5.7', '5.8', '5.9', '5.10', '5.11', '5.12', '5.13', '5.14', '5.15', '5.16', '5.17', '5.18', '5.19', '5.20', '6.1.1', '6.1.2', '6.1.3', '6.2.1', '6.2.2', '6.2.3', '6.2.4', '6.3.1', '6.3.2', '6.4.1', '6.4.2', '6.4.3', '6.4.4', '6.5.1', '6.5.2', '6.5.3', '6.5.4', '6.5.5', '6.6.1', '6.6.2', '6.6.3', '6.6.4', '6.6.5', '6.6.6', '6.6.7', '6.6.8', '6.6.9', '6.6.10', '6.6.11', '6.7.1', '6.7.2', '6.7.3', '6.7.4', '6.8.1', '6.8.2', '6.9.1', '6.9.2', '6.9.3', '6.9.4', '6.10.1', '6.10.2', '6.10.3', '6.11.1', '6.11.2', '6.11.3', '6.11.4', '6.11.5', '6.12.1', '6.12.2', '6.12.3', '6.12.4', '6.12.5', '6.12.6', '6.12.7', '6.12.8', '6.13.1', '6.13.2', '6.13.3', '6.13.4', '6.13.5', '6.14.1', '6.14.2', '6.14.3', '6.14.4', '6.14.5', '6.14.6', '6.14.7', '6.14.8', '6.14.9', '6.14.10', '6.15.1', '6.16.1', '6.16.2', '6.16.3', '6.17.1', '6.17.2', '6.17.3', '6.17.4', '6.17.5', '6.18.1', '6.18.2', '6.18.3', '6.18.4', '6.18.5', '6.19.1', '6.19.2', '6.19.3', '6.19.4', '6.19.5', '6.20.1', '6.20.2', '6.20.3', '6.20.4', '6.20.5', '6.20.6', '6.20.7', '6.21.1', '6.21.2', '6.21.3', '6.21.4', '6.21.5', '6.21.6', '6.21.7', '6.21.8', '6.22.1', '6.22.2', '6.22.3', '6.22.4', '6.22.5', '6.22.6', '6.22.7', '6.22.8', '6.22.9', '6.22.10', '6.22.11', '6.22.12', '6.22.13', '6.22.14', '6.22.15', '6.22.16', '6.22.17', '6.22.18', '6.22.19', '6.22.20', '6.22.21', '6.22.22', '6.22.23', '6.22.24', '6.22.25', '6.22.26', '6.22.27', '6.22.28', '6.22.29', '6.22.30', '6.22.31', '6.22.32', '6.22.33', '6.22.34', '6.23.1', '6.23.2', '6.23.3', '6.23.4', '6.23.5', '6.23.6', '6.23.7', '7.1.1', '7.1.2', '7.1.3', '7.1.4', '7.1.5', '7.1.6', '7.3.1', '7.3.2', '7.3.3', '7.3.4', '7.3.5', '7.3.6', '7.5.1', '7.7.1', '7.7.2', '7.7.3', '7.7.4', '7.7.5', '7.7.6', '7.7.7', '7.7.8', '7.7.9', '7.7.10', '7.7.11', '7.7.12', '7.7.13', '7.9.1', '7.9.2', '7.9.3', '7.9.4', '7.9.5', '7.9.6', '7.9.7', '7.9.8', '7.9.9', '7.13.1', '7.13.2', '9.1.1', '9.1.2', '9.1.3', '9.1.4', '9.1.5', '9.1.6', '9.2.1', '9.2.2', '9.2.3', '9.2.4', '9.2.5', '9.2.6', '9.3.1', '9.3.2', '9.3.3', '9.3.4', '9.3.5', '9.3.6', '9.3.7', '9.3.8', '9.3.9', '9.4.1', '9.4.2', '9.4.3', '9.4.4', '9.4.5', '9.4.6', '9.4.7', '9.4.8', '9.4.9', '9.5.1', '9.5.2', '9.5.3', '9.5.4', '9.5.5', '9.5.6', '9.6.1', '9.6.2', '9.6.3', '9.6.4', '9.6.5', '9.6.6', '9.7.1', '9.7.2', '9.7.3', '9.7.4', '9.7.5', '9.7.6', '9.8.1', '9.8.2', '9.8.3', '9.8.4', '9.8.5', '9.8.6', '10.1.1', '12.1.1', '12.1.2', '12.1.3', '12.1.4', '12.1.5', '12.1.6', '12.1.7', '12.1.8', '12.1.9', '12.1.10', '12.1.11', '12.1.12', '12.1.13', '12.1.14', '12.1.15', '12.1.16', '12.1.17', '12.1.18', '12.2.1', '12.2.2', '12.2.3', '12.2.4', '12.2.5', '12.2.6', '12.2.7', '12.2.8', '12.2.9', '12.2.10', '12.2.11', '12.2.12', '12.2.13', '12.2.14', '12.2.15', '12.2.16', '12.2.17', '12.2.18', '12.3.1', '12.3.2', '12.3.3', '12.3.4', '12.3.5', '12.3.6', '12.3.7', '12.3.8', '12.3.9', '12.3.10', '12.3.11', '12.3.12', '12.3.13', '12.3.14', '12.3.15', '12.3.16', '12.3.17', '12.3.18', '12.5.1', '12.5.2', '12.5.3', '12.5.4', '12.5.5', '12.5.6', '12.5.7', '12.5.8', '12.5.9', '12.5.10', '12.5.11', '12.5.12', '12.5.13', '12.5.14', '12.5.15', '12.5.16', '12.5.17', '12.5.18', '13.1.1', '13.1.2', '13.1.3', '13.1.4', '13.1.5', '13.1.6', '13.1.7', '13.1.8', '13.1.9', '13.1.10', '13.1.11', '13.1.12', '13.1.13', '13.1.14', '13.1.15', '13.1.16', '13.1.17', '13.1.18', '13.2.1', '13.2.2', '13.2.3', '13.2.4', '13.2.5', '13.2.6', '13.2.7', '13.2.8', '13.2.9', '13.2.10', '13.2.11', '13.2.12', '13.2.13', '13.2.14', '13.2.15', '13.2.16', '13.2.17', '13.2.18', '13.3.1', '13.3.2', '13.3.3', '13.3.4', '13.3.5', '13.3.6', '13.3.7', '13.3.8', '13.3.9', '13.3.10', '13.3.11', '13.3.12', '13.3.13', '13.3.14', '13.3.15', '13.3.16', '13.3.17', '13.3.18', '13.4.1', '13.4.2', '13.4.3', '13.4.4', '13.4.5', '13.4.6', '13.4.7', '13.4.8', '13.4.9', '13.4.10', '13.4.11', '13.4.12', '13.4.13', '13.4.14', '13.4.15', '13.4.16', '13.4.17', '13.4.18', '13.5.1', '13.5.2', '13.5.3', '13.5.4', '13.5.5', '13.5.6', '13.5.7', '13.5.8', '13.5.9', '13.5.10', '13.5.11', '13.5.12', '13.5.13', '13.5.14', '13.5.15', '13.5.16', '13.5.17', '13.5.18', '13.6.1', '13.6.2', '13.6.3', '13.6.4', '13.6.5', '13.6.6', '13.6.7', '13.6.8', '13.6.9', '13.6.10', '13.6.11', '13.6.12', '13.6.13', '13.6.14', '13.6.15', '13.6.16', '13.6.17', '13.6.18', '13.7.1', '13.7.2', '13.7.3', '13.7.4', '13.7.5', '13.7.6', '13.7.7', '13.7.8', '13.7.9', '13.7.10', '13.7.11', '13.7.12', '13.7.13', '13.7.14', '13.7.15', '13.7.16', '13.7.17', '13.7.18']
+2026-11-22T11:08:26.0171662Z Servers = [u'ws://127.0.0.1:9010']
+2026-11-22T11:08:26.0249783Z Running test case ID 1.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0302311Z Running test case ID 1.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0322770Z Running test case ID 1.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0339355Z Running test case ID 1.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0354707Z Running test case ID 1.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0369477Z Running test case ID 1.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0417611Z Running test case ID 1.1.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0447212Z Running test case ID 1.1.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0508152Z Running test case ID 1.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0521950Z Running test case ID 1.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0536020Z Running test case ID 1.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0550029Z Running test case ID 1.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0564180Z Running test case ID 1.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0578571Z Running test case ID 1.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0626386Z Running test case ID 1.2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0675189Z Running test case ID 1.2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0751887Z Running test case ID 2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0767944Z Running test case ID 2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0784834Z Running test case ID 2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0799593Z Running test case ID 2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0814597Z Running test case ID 2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0838055Z Running test case ID 2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0959669Z Running test case ID 2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0972028Z Running test case ID 2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.0985495Z Running test case ID 2.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1000201Z Running test case ID 2.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1036385Z Running test case ID 2.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1131881Z Running test case ID 3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1144543Z Running test case ID 3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1158803Z Running test case ID 3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1174435Z Running test case ID 3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1202083Z Running test case ID 3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1214641Z Running test case ID 3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1226847Z Running test case ID 3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1239410Z Running test case ID 4.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1251442Z Running test case ID 4.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1263381Z Running test case ID 4.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1276495Z Running test case ID 4.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1289916Z Running test case ID 4.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1324438Z Running test case ID 4.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1336536Z Running test case ID 4.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1348540Z Running test case ID 4.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1362649Z Running test case ID 4.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1377747Z Running test case ID 4.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1431690Z Running test case ID 5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1444210Z Running test case ID 5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1457410Z Running test case ID 5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1479615Z Running test case ID 5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1518273Z Running test case ID 5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1563129Z Running test case ID 5.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1588036Z Running test case ID 5.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1604282Z Running test case ID 5.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1643988Z Running test case ID 5.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1656004Z Running test case ID 5.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1672736Z Running test case ID 5.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1699508Z Running test case ID 5.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1712819Z Running test case ID 5.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1725145Z Running test case ID 5.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1756933Z Running test case ID 5.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1771636Z Running test case ID 5.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1784976Z Running test case ID 5.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1798039Z Running test case ID 5.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:26.1810822Z Running test case ID 5.19 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:27.1845483Z Running test case ID 5.20 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1883392Z Running test case ID 6.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1902917Z Running test case ID 6.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1921450Z Running test case ID 6.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1939190Z Running test case ID 6.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1956554Z Running test case ID 6.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.1991982Z Running test case ID 6.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.2014065Z Running test case ID 6.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.2031180Z Running test case ID 6.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.2061756Z Running test case ID 6.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:28.2079399Z Running test case ID 6.4.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:29.2124591Z Running test case ID 6.4.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:30.2155320Z Running test case ID 6.4.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:32.2218688Z Running test case ID 6.4.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2249421Z Running test case ID 6.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2270124Z Running test case ID 6.5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2288189Z Running test case ID 6.5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2305620Z Running test case ID 6.5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2330142Z Running test case ID 6.5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2345736Z Running test case ID 6.6.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2358663Z Running test case ID 6.6.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2374806Z Running test case ID 6.6.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2386955Z Running test case ID 6.6.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2399134Z Running test case ID 6.6.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2413592Z Running test case ID 6.6.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2426092Z Running test case ID 6.6.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2442695Z Running test case ID 6.6.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2455667Z Running test case ID 6.6.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2470296Z Running test case ID 6.6.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2483688Z Running test case ID 6.6.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2499316Z Running test case ID 6.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2514381Z Running test case ID 6.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2528270Z Running test case ID 6.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2547304Z Running test case ID 6.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2561508Z Running test case ID 6.8.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2575919Z Running test case ID 6.8.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2588872Z Running test case ID 6.9.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2622355Z Running test case ID 6.9.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2646633Z Running test case ID 6.9.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2663212Z Running test case ID 6.9.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2678788Z Running test case ID 6.10.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2691373Z Running test case ID 6.10.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2705245Z Running test case ID 6.10.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2717814Z Running test case ID 6.11.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2734772Z Running test case ID 6.11.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2749187Z Running test case ID 6.11.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2764507Z Running test case ID 6.11.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2828535Z Running test case ID 6.11.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2842631Z Running test case ID 6.12.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2855590Z Running test case ID 6.12.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2919920Z Running test case ID 6.12.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2933426Z Running test case ID 6.12.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2946476Z Running test case ID 6.12.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2959858Z Running test case ID 6.12.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2976317Z Running test case ID 6.12.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.2988356Z Running test case ID 6.12.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3003532Z Running test case ID 6.13.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3014650Z Running test case ID 6.13.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3027760Z Running test case ID 6.13.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3040493Z Running test case ID 6.13.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3054668Z Running test case ID 6.13.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3067220Z Running test case ID 6.14.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3084675Z Running test case ID 6.14.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3097995Z Running test case ID 6.14.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3113503Z Running test case ID 6.14.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3127102Z Running test case ID 6.14.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3141202Z Running test case ID 6.14.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3153750Z Running test case ID 6.14.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3166762Z Running test case ID 6.14.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3179880Z Running test case ID 6.14.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3193686Z Running test case ID 6.14.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3205798Z Running test case ID 6.15.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3225412Z Running test case ID 6.16.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3238396Z Running test case ID 6.16.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3252307Z Running test case ID 6.16.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3270194Z Running test case ID 6.17.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3283330Z Running test case ID 6.17.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3295824Z Running test case ID 6.17.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3307575Z Running test case ID 6.17.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3386801Z Running test case ID 6.17.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3402009Z Running test case ID 6.18.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3415213Z Running test case ID 6.18.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3427547Z Running test case ID 6.18.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3441463Z Running test case ID 6.18.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3454145Z Running test case ID 6.18.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3466638Z Running test case ID 6.19.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3479246Z Running test case ID 6.19.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3491319Z Running test case ID 6.19.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3503543Z Running test case ID 6.19.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3517277Z Running test case ID 6.19.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3529326Z Running test case ID 6.20.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3542224Z Running test case ID 6.20.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3554581Z Running test case ID 6.20.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3568281Z Running test case ID 6.20.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3581229Z Running test case ID 6.20.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3597192Z Running test case ID 6.20.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3611603Z Running test case ID 6.20.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3625771Z Running test case ID 6.21.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3645016Z Running test case ID 6.21.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3656956Z Running test case ID 6.21.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3669902Z Running test case ID 6.21.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3681886Z Running test case ID 6.21.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3700319Z Running test case ID 6.21.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3712586Z Running test case ID 6.21.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3725637Z Running test case ID 6.21.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3740495Z Running test case ID 6.22.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3757076Z Running test case ID 6.22.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3771526Z Running test case ID 6.22.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3789514Z Running test case ID 6.22.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3804163Z Running test case ID 6.22.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3843573Z Running test case ID 6.22.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3859609Z Running test case ID 6.22.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3873984Z Running test case ID 6.22.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3890280Z Running test case ID 6.22.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3904701Z Running test case ID 6.22.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3920404Z Running test case ID 6.22.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3934493Z Running test case ID 6.22.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.3951066Z Running test case ID 6.22.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4111852Z Running test case ID 6.22.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4126252Z Running test case ID 6.22.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4143627Z Running test case ID 6.22.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4158493Z Running test case ID 6.22.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4172473Z Running test case ID 6.22.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4187007Z Running test case ID 6.22.19 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4203872Z Running test case ID 6.22.20 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4218781Z Running test case ID 6.22.21 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4240062Z Running test case ID 6.22.22 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4253522Z Running test case ID 6.22.23 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4276321Z Running test case ID 6.22.24 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4308114Z Running test case ID 6.22.25 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4327342Z Running test case ID 6.22.26 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4349496Z Running test case ID 6.22.27 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4364771Z Running test case ID 6.22.28 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4380278Z Running test case ID 6.22.29 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4393948Z Running test case ID 6.22.30 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4408270Z Running test case ID 6.22.31 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4423191Z Running test case ID 6.22.32 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4449277Z Running test case ID 6.22.33 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4463749Z Running test case ID 6.22.34 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4477531Z Running test case ID 6.23.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4491769Z Running test case ID 6.23.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4507909Z Running test case ID 6.23.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4522249Z Running test case ID 6.23.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4536477Z Running test case ID 6.23.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4552669Z Running test case ID 6.23.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4567092Z Running test case ID 6.23.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4582314Z Running test case ID 7.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4596740Z Running test case ID 7.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4610780Z Running test case ID 7.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4623243Z Running test case ID 7.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4634896Z Running test case ID 7.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4647124Z Running test case ID 7.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4722176Z Running test case ID 7.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4733439Z Running test case ID 7.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4744900Z Running test case ID 7.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4757361Z Running test case ID 7.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4769127Z Running test case ID 7.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4781395Z Running test case ID 7.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4793880Z Running test case ID 7.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4805849Z Running test case ID 7.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4817816Z Running test case ID 7.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4829428Z Running test case ID 7.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4852063Z Running test case ID 7.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4864163Z Running test case ID 7.7.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4875754Z Running test case ID 7.7.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4887502Z Running test case ID 7.7.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4899137Z Running test case ID 7.7.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4911056Z Running test case ID 7.7.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4922877Z Running test case ID 7.7.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4935324Z Running test case ID 7.7.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4947032Z Running test case ID 7.7.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4958730Z Running test case ID 7.7.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4971265Z Running test case ID 7.9.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4983277Z Running test case ID 7.9.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.4995478Z Running test case ID 7.9.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5007018Z Running test case ID 7.9.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5019472Z Running test case ID 7.9.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5037043Z Running test case ID 7.9.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5049137Z Running test case ID 7.9.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5061099Z Running test case ID 7.9.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5072738Z Running test case ID 7.9.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5083925Z Running test case ID 7.13.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5110952Z Running test case ID 7.13.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5123068Z Running test case ID 9.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5189393Z Running test case ID 9.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5245393Z Running test case ID 9.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5450093Z Running test case ID 9.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.5991929Z Running test case ID 9.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.7159800Z Running test case ID 9.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.9478008Z Running test case ID 9.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.9497740Z Running test case ID 9.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.9536965Z Running test case ID 9.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:34.9671518Z Running test case ID 9.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.0167275Z Running test case ID 9.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.1159815Z Running test case ID 9.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.3005744Z Running test case ID 9.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.4473063Z Running test case ID 9.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.5242769Z Running test case ID 9.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.5765041Z Running test case ID 9.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.6282984Z Running test case ID 9.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.6881123Z Running test case ID 9.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.7551025Z Running test case ID 9.3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.8091176Z Running test case ID 9.3.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.8679966Z Running test case ID 9.3.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:35.9166714Z Running test case ID 9.4.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.0205018Z Running test case ID 9.4.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.0692095Z Running test case ID 9.4.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.1077072Z Running test case ID 9.4.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.1450606Z Running test case ID 9.4.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.1756578Z Running test case ID 9.4.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.2198134Z Running test case ID 9.4.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.2522295Z Running test case ID 9.4.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.2867850Z Running test case ID 9.4.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.3187442Z Running test case ID 9.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.5750591Z Running test case ID 9.5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.7236461Z Running test case ID 9.5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.7819262Z Running test case ID 9.5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.8260659Z Running test case ID 9.5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.8766276Z Running test case ID 9.5.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:36.9008422Z Running test case ID 9.6.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.1072871Z Running test case ID 9.6.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.2356397Z Running test case ID 9.6.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.2915107Z Running test case ID 9.6.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.3305887Z Running test case ID 9.6.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.3515187Z Running test case ID 9.6.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.3674718Z Running test case ID 9.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.4723699Z Running test case ID 9.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.5634342Z Running test case ID 9.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.5979499Z Running test case ID 9.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.6852501Z Running test case ID 9.7.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.7418080Z Running test case ID 9.7.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.8566009Z Running test case ID 9.8.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.9263770Z Running test case ID 9.8.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:37.9828590Z Running test case ID 9.8.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.0175674Z Running test case ID 9.8.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.0884693Z Running test case ID 9.8.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.1433334Z Running test case ID 9.8.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.2493743Z Running test case ID 10.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.2543458Z Running test case ID 12.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.5101828Z Running test case ID 12.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.7849087Z Running test case ID 12.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:38.9975675Z Running test case ID 12.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:39.2043076Z Running test case ID 12.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:39.4654247Z Running test case ID 12.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:39.7622551Z Running test case ID 12.1.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:40.1941066Z Running test case ID 12.1.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:40.8490843Z Running test case ID 12.1.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:42.0571908Z Running test case ID 12.1.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:44.1295181Z Running test case ID 12.1.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:44.4897406Z Running test case ID 12.1.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:44.9332501Z Running test case ID 12.1.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:45.6200488Z Running test case ID 12.1.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:46.8253113Z Running test case ID 12.1.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:48.9368718Z Running test case ID 12.1.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:51.0189438Z Running test case ID 12.1.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:53.0771474Z Running test case ID 12.1.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:55.1496042Z Running test case ID 12.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:55.2808105Z Running test case ID 12.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:55.3987902Z Running test case ID 12.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:55.5617530Z Running test case ID 12.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:55.7735124Z Running test case ID 12.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:56.1189942Z Running test case ID 12.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:56.6664240Z Running test case ID 12.2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:57.6286695Z Running test case ID 12.2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:08:59.5877435Z Running test case ID 12.2.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:03.9871785Z Running test case ID 12.2.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:13.3830536Z Running test case ID 12.2.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:14.0383281Z Running test case ID 12.2.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:15.1581093Z Running test case ID 12.2.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:17.4162873Z Running test case ID 12.2.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:22.4536064Z Running test case ID 12.2.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:33.0323160Z Running test case ID 12.2.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:42.8683686Z Running test case ID 12.2.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:09:52.4866275Z Running test case ID 12.2.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:01.9991683Z Running test case ID 12.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:02.1125226Z Running test case ID 12.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:02.2295920Z Running test case ID 12.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:02.3768837Z Running test case ID 12.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:02.5600842Z Running test case ID 12.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:02.9650188Z Running test case ID 12.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:03.5412915Z Running test case ID 12.3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:04.6443732Z Running test case ID 12.3.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:07.0075535Z Running test case ID 12.3.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:12.4980074Z Running test case ID 12.3.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:24.1570908Z Running test case ID 12.3.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:25.1876690Z fuzzingclient was killed (SIGKILL, exit 137) before the 1200s cap.
+2026-11-22T11:10:25.1877103Z echo server (pid 3200) was still alive at this point.
+2026-11-22T11:10:25.1917416Z --- sockets on :9010 at the time of failure ---
+2026-11-22T11:10:25.3377602Z   (no sockets on this port)
+2026-11-22T11:10:25.4870754Z container state: exit=137 oom-killed=true error=""
+2026-11-22T11:10:25.5722695Z --- the kernel's OOM report (in full: main/kernel-oom.log beside the report) ---
+2026-11-22T11:10:25.5787728Z   .NET TP Worker invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=500
+2026-11-22T11:10:25.5800842Z   oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=hosted-compute-agent.service,mems_allowed=0,global_oom,task_memcg=/system.slice/docker-4be3178a58f2e6363cac643dea735746e5028ee7bca179c0df1d6178b20dcab1.scope,task=wstest,pid=3348,uid=0
+2026-11-22T11:10:25.5802599Z   Out of memory: Killed process 3348 (wstest) total-vm:18636212kB, anon-rss:13677652kB, file-rss:2452kB, shmem-rss:0kB, UID:0 pgtables:36516kB oom_score_adj:0
+2026-11-22T11:10:25.5803269Z   largest tasks by resident memory:
+2026-11-22T11:10:25.5890412Z      13359 MiB  pid 3348    oom_score_adj     0  wstest
+2026-11-22T11:10:25.5890929Z        784 MiB  pid 3011    oom_score_adj   500  VBCSCompiler
+2026-11-22T11:10:25.5891413Z        262 MiB  pid 2875    oom_score_adj   500  MSBuild
+2026-11-22T11:10:25.5891764Z        147 MiB  pid 2901    oom_score_adj   500  MSBuild
+2026-11-22T11:10:25.5892074Z        145 MiB  pid 2241    oom_score_adj     0  Runner.Worker
+2026-11-22T11:10:25.6862428Z RETRY: part main, attempt 1, was lost to the fuzzing client: the kernel OOM-killed wstest while our echo server held 58 MiB. Running this part once more, whole; the lost attempt's evidence is in /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/tests/autobahn/reports/main/attempt-1.
+2026-11-22T11:10:25.6881423Z ##[warning]part main, attempt 1, was lost to the fuzzing client: the kernel OOM-killed wstest while our echo server held 58 MiB (see main/attempt-1/ in the autobahn-report artifact)
+2026-11-22T11:10:25.6970309Z Running Autobahn fuzzingclient (Docker image crossbario/autobahn-testsuite, ws://127.0.0.1:9010), part main ["*"] minus ["12.4.*"], attempt 2...
+2026-11-22T11:10:26.4982570Z Using explicit spec file '/config/main/fuzzingclient.json'
+2026-11-22T11:10:26.4982956Z Loading spec from /config/main/fuzzingclient.json
+2026-11-22T11:10:26.4983127Z 
+2026-11-22T11:10:26.4983333Z Using Twisted reactor class <class 'twisted.internet.epollreactor.EPollReactor'>
+2026-11-22T11:10:26.4983771Z Using UTF8 Validator class <class 'autobahn.websocket.utf8validator.Utf8Validator'>
+2026-11-22T11:10:26.4984572Z Using XOR Masker classes <class 'autobahn.websocket.xormasker.XorMaskerNull'>
+2026-11-22T11:10:26.4984801Z 
+2026-11-22T11:10:26.5045853Z Autobahn Fuzzing WebSocket Client (Autobahn Testsuite Version 25.10.1 / Autobahn Version 0.10.9)
+2026-11-22T11:10:26.5046280Z Ok, will run 499 test cases against 1 servers
+2026-11-22T11:10:26.5054290Z Cases = ['1.1.1', '1.1.2', '1.1.3', '1.1.4', '1.1.5', '1.1.6', '1.1.7', '1.1.8', '1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5', '1.2.6', '1.2.7', '1.2.8', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8', '2.9', '2.10', '2.11', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '4.1.1', '4.1.2', '4.1.3', '4.1.4', '4.1.5', '4.2.1', '4.2.2', '4.2.3', '4.2.4', '4.2.5', '5.1', '5.2', '5.3', '5.4', '5.5', '5.6', '5.7', '5.8', '5.9', '5.10', '5.11', '5.12', '5.13', '5.14', '5.15', '5.16', '5.17', '5.18', '5.19', '5.20', '6.1.1', '6.1.2', '6.1.3', '6.2.1', '6.2.2', '6.2.3', '6.2.4', '6.3.1', '6.3.2', '6.4.1', '6.4.2', '6.4.3', '6.4.4', '6.5.1', '6.5.2', '6.5.3', '6.5.4', '6.5.5', '6.6.1', '6.6.2', '6.6.3', '6.6.4', '6.6.5', '6.6.6', '6.6.7', '6.6.8', '6.6.9', '6.6.10', '6.6.11', '6.7.1', '6.7.2', '6.7.3', '6.7.4', '6.8.1', '6.8.2', '6.9.1', '6.9.2', '6.9.3', '6.9.4', '6.10.1', '6.10.2', '6.10.3', '6.11.1', '6.11.2', '6.11.3', '6.11.4', '6.11.5', '6.12.1', '6.12.2', '6.12.3', '6.12.4', '6.12.5', '6.12.6', '6.12.7', '6.12.8', '6.13.1', '6.13.2', '6.13.3', '6.13.4', '6.13.5', '6.14.1', '6.14.2', '6.14.3', '6.14.4', '6.14.5', '6.14.6', '6.14.7', '6.14.8', '6.14.9', '6.14.10', '6.15.1', '6.16.1', '6.16.2', '6.16.3', '6.17.1', '6.17.2', '6.17.3', '6.17.4', '6.17.5', '6.18.1', '6.18.2', '6.18.3', '6.18.4', '6.18.5', '6.19.1', '6.19.2', '6.19.3', '6.19.4', '6.19.5', '6.20.1', '6.20.2', '6.20.3', '6.20.4', '6.20.5', '6.20.6', '6.20.7', '6.21.1', '6.21.2', '6.21.3', '6.21.4', '6.21.5', '6.21.6', '6.21.7', '6.21.8', '6.22.1', '6.22.2', '6.22.3', '6.22.4', '6.22.5', '6.22.6', '6.22.7', '6.22.8', '6.22.9', '6.22.10', '6.22.11', '6.22.12', '6.22.13', '6.22.14', '6.22.15', '6.22.16', '6.22.17', '6.22.18', '6.22.19', '6.22.20', '6.22.21', '6.22.22', '6.22.23', '6.22.24', '6.22.25', '6.22.26', '6.22.27', '6.22.28', '6.22.29', '6.22.30', '6.22.31', '6.22.32', '6.22.33', '6.22.34', '6.23.1', '6.23.2', '6.23.3', '6.23.4', '6.23.5', '6.23.6', '6.23.7', '7.1.1', '7.1.2', '7.1.3', '7.1.4', '7.1.5', '7.1.6', '7.3.1', '7.3.2', '7.3.3', '7.3.4', '7.3.5', '7.3.6', '7.5.1', '7.7.1', '7.7.2', '7.7.3', '7.7.4', '7.7.5', '7.7.6', '7.7.7', '7.7.8', '7.7.9', '7.7.10', '7.7.11', '7.7.12', '7.7.13', '7.9.1', '7.9.2', '7.9.3', '7.9.4', '7.9.5', '7.9.6', '7.9.7', '7.9.8', '7.9.9', '7.13.1', '7.13.2', '9.1.1', '9.1.2', '9.1.3', '9.1.4', '9.1.5', '9.1.6', '9.2.1', '9.2.2', '9.2.3', '9.2.4', '9.2.5', '9.2.6', '9.3.1', '9.3.2', '9.3.3', '9.3.4', '9.3.5', '9.3.6', '9.3.7', '9.3.8', '9.3.9', '9.4.1', '9.4.2', '9.4.3', '9.4.4', '9.4.5', '9.4.6', '9.4.7', '9.4.8', '9.4.9', '9.5.1', '9.5.2', '9.5.3', '9.5.4', '9.5.5', '9.5.6', '9.6.1', '9.6.2', '9.6.3', '9.6.4', '9.6.5', '9.6.6', '9.7.1', '9.7.2', '9.7.3', '9.7.4', '9.7.5', '9.7.6', '9.8.1', '9.8.2', '9.8.3', '9.8.4', '9.8.5', '9.8.6', '10.1.1', '12.1.1', '12.1.2', '12.1.3', '12.1.4', '12.1.5', '12.1.6', '12.1.7', '12.1.8', '12.1.9', '12.1.10', '12.1.11', '12.1.12', '12.1.13', '12.1.14', '12.1.15', '12.1.16', '12.1.17', '12.1.18', '12.2.1', '12.2.2', '12.2.3', '12.2.4', '12.2.5', '12.2.6', '12.2.7', '12.2.8', '12.2.9', '12.2.10', '12.2.11', '12.2.12', '12.2.13', '12.2.14', '12.2.15', '12.2.16', '12.2.17', '12.2.18', '12.3.1', '12.3.2', '12.3.3', '12.3.4', '12.3.5', '12.3.6', '12.3.7', '12.3.8', '12.3.9', '12.3.10', '12.3.11', '12.3.12', '12.3.13', '12.3.14', '12.3.15', '12.3.16', '12.3.17', '12.3.18', '12.5.1', '12.5.2', '12.5.3', '12.5.4', '12.5.5', '12.5.6', '12.5.7', '12.5.8', '12.5.9', '12.5.10', '12.5.11', '12.5.12', '12.5.13', '12.5.14', '12.5.15', '12.5.16', '12.5.17', '12.5.18', '13.1.1', '13.1.2', '13.1.3', '13.1.4', '13.1.5', '13.1.6', '13.1.7', '13.1.8', '13.1.9', '13.1.10', '13.1.11', '13.1.12', '13.1.13', '13.1.14', '13.1.15', '13.1.16', '13.1.17', '13.1.18', '13.2.1', '13.2.2', '13.2.3', '13.2.4', '13.2.5', '13.2.6', '13.2.7', '13.2.8', '13.2.9', '13.2.10', '13.2.11', '13.2.12', '13.2.13', '13.2.14', '13.2.15', '13.2.16', '13.2.17', '13.2.18', '13.3.1', '13.3.2', '13.3.3', '13.3.4', '13.3.5', '13.3.6', '13.3.7', '13.3.8', '13.3.9', '13.3.10', '13.3.11', '13.3.12', '13.3.13', '13.3.14', '13.3.15', '13.3.16', '13.3.17', '13.3.18', '13.4.1', '13.4.2', '13.4.3', '13.4.4', '13.4.5', '13.4.6', '13.4.7', '13.4.8', '13.4.9', '13.4.10', '13.4.11', '13.4.12', '13.4.13', '13.4.14', '13.4.15', '13.4.16', '13.4.17', '13.4.18', '13.5.1', '13.5.2', '13.5.3', '13.5.4', '13.5.5', '13.5.6', '13.5.7', '13.5.8', '13.5.9', '13.5.10', '13.5.11', '13.5.12', '13.5.13', '13.5.14', '13.5.15', '13.5.16', '13.5.17', '13.5.18', '13.6.1', '13.6.2', '13.6.3', '13.6.4', '13.6.5', '13.6.6', '13.6.7', '13.6.8', '13.6.9', '13.6.10', '13.6.11', '13.6.12', '13.6.13', '13.6.14', '13.6.15', '13.6.16', '13.6.17', '13.6.18', '13.7.1', '13.7.2', '13.7.3', '13.7.4', '13.7.5', '13.7.6', '13.7.7', '13.7.8', '13.7.9', '13.7.10', '13.7.11', '13.7.12', '13.7.13', '13.7.14', '13.7.15', '13.7.16', '13.7.17', '13.7.18']
+2026-11-22T11:10:26.5060802Z Servers = [u'ws://127.0.0.1:9010']
+2026-11-22T11:10:26.5083265Z Running test case ID 1.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5100455Z Running test case ID 1.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5114748Z Running test case ID 1.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5130093Z Running test case ID 1.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5144464Z Running test case ID 1.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5163624Z Running test case ID 1.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5273902Z Running test case ID 1.1.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5302146Z Running test case ID 1.1.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5357725Z Running test case ID 1.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5371213Z Running test case ID 1.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5385000Z Running test case ID 1.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5402127Z Running test case ID 1.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5414510Z Running test case ID 1.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5428176Z Running test case ID 1.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5476942Z Running test case ID 1.2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5524922Z Running test case ID 1.2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5600740Z Running test case ID 2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5613859Z Running test case ID 2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5627063Z Running test case ID 2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5644410Z Running test case ID 2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5661202Z Running test case ID 2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5677185Z Running test case ID 2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5797254Z Running test case ID 2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5808624Z Running test case ID 2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5822147Z Running test case ID 2.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5835830Z Running test case ID 2.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5872345Z Running test case ID 2.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5966440Z Running test case ID 3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5979152Z Running test case ID 3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.5992194Z Running test case ID 3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6005698Z Running test case ID 3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6028013Z Running test case ID 3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6039696Z Running test case ID 3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6051217Z Running test case ID 3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6062918Z Running test case ID 4.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6076828Z Running test case ID 4.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6088174Z Running test case ID 4.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6101262Z Running test case ID 4.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6114402Z Running test case ID 4.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6147187Z Running test case ID 4.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6160444Z Running test case ID 4.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6172590Z Running test case ID 4.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6185587Z Running test case ID 4.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6198509Z Running test case ID 4.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6237330Z Running test case ID 5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6249301Z Running test case ID 5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6262101Z Running test case ID 5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6275391Z Running test case ID 5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6312986Z Running test case ID 5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6355627Z Running test case ID 5.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6380083Z Running test case ID 5.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6429371Z Running test case ID 5.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6477835Z Running test case ID 5.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6490328Z Running test case ID 5.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6502892Z Running test case ID 5.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6527349Z Running test case ID 5.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6539665Z Running test case ID 5.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6551393Z Running test case ID 5.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6585013Z Running test case ID 5.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6598867Z Running test case ID 5.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6611908Z Running test case ID 5.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6625052Z Running test case ID 5.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:26.6636758Z Running test case ID 5.19 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:27.6694658Z Running test case ID 5.20 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6727435Z Running test case ID 6.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6744262Z Running test case ID 6.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6761221Z Running test case ID 6.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6776373Z Running test case ID 6.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6791927Z Running test case ID 6.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6806813Z Running test case ID 6.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6825470Z Running test case ID 6.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6884119Z Running test case ID 6.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6908174Z Running test case ID 6.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:28.6936097Z Running test case ID 6.4.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:29.6964441Z Running test case ID 6.4.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:30.6991809Z Running test case ID 6.4.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:32.7042186Z Running test case ID 6.4.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7073581Z Running test case ID 6.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7089217Z Running test case ID 6.5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7108172Z Running test case ID 6.5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7125154Z Running test case ID 6.5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7142514Z Running test case ID 6.5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7157825Z Running test case ID 6.6.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7171412Z Running test case ID 6.6.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7185593Z Running test case ID 6.6.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7197916Z Running test case ID 6.6.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7210591Z Running test case ID 6.6.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7224834Z Running test case ID 6.6.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7247993Z Running test case ID 6.6.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7263809Z Running test case ID 6.6.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7277727Z Running test case ID 6.6.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7293116Z Running test case ID 6.6.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7305563Z Running test case ID 6.6.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7319764Z Running test case ID 6.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7334450Z Running test case ID 6.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7348509Z Running test case ID 6.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7365016Z Running test case ID 6.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7380030Z Running test case ID 6.8.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7391926Z Running test case ID 6.8.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7425250Z Running test case ID 6.9.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7441457Z Running test case ID 6.9.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7467176Z Running test case ID 6.9.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7482182Z Running test case ID 6.9.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7497666Z Running test case ID 6.10.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7510305Z Running test case ID 6.10.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7523277Z Running test case ID 6.10.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7537768Z Running test case ID 6.11.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7552757Z Running test case ID 6.11.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7567223Z Running test case ID 6.11.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7584692Z Running test case ID 6.11.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7599251Z Running test case ID 6.11.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7610959Z Running test case ID 6.12.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7623775Z Running test case ID 6.12.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7636658Z Running test case ID 6.12.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7760109Z Running test case ID 6.12.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7773427Z Running test case ID 6.12.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7786091Z Running test case ID 6.12.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7798770Z Running test case ID 6.12.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7813722Z Running test case ID 6.12.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7826254Z Running test case ID 6.13.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7841834Z Running test case ID 6.13.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7854729Z Running test case ID 6.13.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7871322Z Running test case ID 6.13.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7885213Z Running test case ID 6.13.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7899456Z Running test case ID 6.14.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7913503Z Running test case ID 6.14.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7937986Z Running test case ID 6.14.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7941688Z Running test case ID 6.14.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7960585Z Running test case ID 6.14.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7973654Z Running test case ID 6.14.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.7986544Z Running test case ID 6.14.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8003530Z Running test case ID 6.14.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8020568Z Running test case ID 6.14.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8043214Z Running test case ID 6.14.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8059540Z Running test case ID 6.15.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8077435Z Running test case ID 6.16.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8091357Z Running test case ID 6.16.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8103812Z Running test case ID 6.16.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8116459Z Running test case ID 6.17.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8129770Z Running test case ID 6.17.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8148773Z Running test case ID 6.17.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8218795Z Running test case ID 6.17.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8232337Z Running test case ID 6.17.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8245439Z Running test case ID 6.18.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8258894Z Running test case ID 6.18.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8273558Z Running test case ID 6.18.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8286166Z Running test case ID 6.18.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8298295Z Running test case ID 6.18.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8311292Z Running test case ID 6.19.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8323839Z Running test case ID 6.19.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8342356Z Running test case ID 6.19.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8356449Z Running test case ID 6.19.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8369123Z Running test case ID 6.19.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8381196Z Running test case ID 6.20.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8393322Z Running test case ID 6.20.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8405885Z Running test case ID 6.20.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8417563Z Running test case ID 6.20.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8431574Z Running test case ID 6.20.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8450200Z Running test case ID 6.20.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8465383Z Running test case ID 6.20.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8479136Z Running test case ID 6.21.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8492152Z Running test case ID 6.21.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8504608Z Running test case ID 6.21.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8516511Z Running test case ID 6.21.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8528149Z Running test case ID 6.21.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8541784Z Running test case ID 6.21.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8554315Z Running test case ID 6.21.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8568495Z Running test case ID 6.21.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8582070Z Running test case ID 6.22.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8597579Z Running test case ID 6.22.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8615457Z Running test case ID 6.22.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8629990Z Running test case ID 6.22.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8643788Z Running test case ID 6.22.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8657860Z Running test case ID 6.22.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8693280Z Running test case ID 6.22.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8707064Z Running test case ID 6.22.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8721415Z Running test case ID 6.22.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8735252Z Running test case ID 6.22.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8899780Z Running test case ID 6.22.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8916775Z Running test case ID 6.22.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8932731Z Running test case ID 6.22.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8946347Z Running test case ID 6.22.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8960640Z Running test case ID 6.22.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8977024Z Running test case ID 6.22.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.8992705Z Running test case ID 6.22.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9008898Z Running test case ID 6.22.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9024821Z Running test case ID 6.22.19 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9041519Z Running test case ID 6.22.20 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9056307Z Running test case ID 6.22.21 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9088368Z Running test case ID 6.22.22 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9103831Z Running test case ID 6.22.23 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9117097Z Running test case ID 6.22.24 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9130798Z Running test case ID 6.22.25 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9144802Z Running test case ID 6.22.26 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9158074Z Running test case ID 6.22.27 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9171764Z Running test case ID 6.22.28 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9185770Z Running test case ID 6.22.29 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9204369Z Running test case ID 6.22.30 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9218865Z Running test case ID 6.22.31 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9232216Z Running test case ID 6.22.32 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9247125Z Running test case ID 6.22.33 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9262850Z Running test case ID 6.22.34 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9278884Z Running test case ID 6.23.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9292938Z Running test case ID 6.23.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9306840Z Running test case ID 6.23.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9324612Z Running test case ID 6.23.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9338712Z Running test case ID 6.23.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9354262Z Running test case ID 6.23.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9368593Z Running test case ID 6.23.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9382839Z Running test case ID 7.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9398096Z Running test case ID 7.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9410129Z Running test case ID 7.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9422110Z Running test case ID 7.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9433836Z Running test case ID 7.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9446375Z Running test case ID 7.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9520223Z Running test case ID 7.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9532334Z Running test case ID 7.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9544110Z Running test case ID 7.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9564569Z Running test case ID 7.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9577444Z Running test case ID 7.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9590481Z Running test case ID 7.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9602374Z Running test case ID 7.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9614272Z Running test case ID 7.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9626065Z Running test case ID 7.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9637378Z Running test case ID 7.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9649492Z Running test case ID 7.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9661787Z Running test case ID 7.7.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9673493Z Running test case ID 7.7.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9684699Z Running test case ID 7.7.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9696492Z Running test case ID 7.7.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9707876Z Running test case ID 7.7.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9720414Z Running test case ID 7.7.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9732614Z Running test case ID 7.7.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9783609Z Running test case ID 7.7.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9795273Z Running test case ID 7.7.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9807038Z Running test case ID 7.9.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9820687Z Running test case ID 7.9.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9832811Z Running test case ID 7.9.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9846215Z Running test case ID 7.9.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9858161Z Running test case ID 7.9.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9918862Z Running test case ID 7.9.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9931476Z Running test case ID 7.9.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9955713Z Running test case ID 7.9.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9967833Z Running test case ID 7.9.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9980180Z Running test case ID 7.13.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:34.9993979Z Running test case ID 7.13.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.0006617Z Running test case ID 9.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.0028118Z Running test case ID 9.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.0080987Z Running test case ID 9.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.0234161Z Running test case ID 9.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.0802809Z Running test case ID 9.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.2038227Z Running test case ID 9.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.4203111Z Running test case ID 9.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.4224169Z Running test case ID 9.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.4264815Z Running test case ID 9.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.4393844Z Running test case ID 9.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.4843020Z Running test case ID 9.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.5901032Z Running test case ID 9.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.7661317Z Running test case ID 9.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.9059911Z Running test case ID 9.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:35.9860860Z Running test case ID 9.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.0358049Z Running test case ID 9.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.0810015Z Running test case ID 9.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.1311261Z Running test case ID 9.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.1864806Z Running test case ID 9.3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.2386142Z Running test case ID 9.3.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.2876587Z Running test case ID 9.3.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.3250041Z Running test case ID 9.4.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.4245349Z Running test case ID 9.4.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.4823491Z Running test case ID 9.4.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.5203962Z Running test case ID 9.4.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.5561205Z Running test case ID 9.4.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.5906897Z Running test case ID 9.4.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.6233227Z Running test case ID 9.4.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.6644439Z Running test case ID 9.4.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.7145527Z Running test case ID 9.4.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.7434724Z Running test case ID 9.5.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:36.9995092Z Running test case ID 9.5.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.1512132Z Running test case ID 9.5.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.2087487Z Running test case ID 9.5.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.2449516Z Running test case ID 9.5.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.2918615Z Running test case ID 9.5.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.3174059Z Running test case ID 9.6.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.5284349Z Running test case ID 9.6.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.6314481Z Running test case ID 9.6.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.6970507Z Running test case ID 9.6.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.7275015Z Running test case ID 9.6.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.7550645Z Running test case ID 9.6.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.7695718Z Running test case ID 9.7.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.8681998Z Running test case ID 9.7.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.9256454Z Running test case ID 9.7.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:37.9594415Z Running test case ID 9.7.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.0239696Z Running test case ID 9.7.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.0806718Z Running test case ID 9.7.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.1949973Z Running test case ID 9.8.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.2447311Z Running test case ID 9.8.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.2881571Z Running test case ID 9.8.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.3256288Z Running test case ID 9.8.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.3743118Z Running test case ID 9.8.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.4304327Z Running test case ID 9.8.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.5391108Z Running test case ID 10.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.5432447Z Running test case ID 12.1.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:38.7917217Z Running test case ID 12.1.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:39.0880701Z Running test case ID 12.1.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:39.2890905Z Running test case ID 12.1.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:39.4988701Z Running test case ID 12.1.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:39.7544291Z Running test case ID 12.1.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:40.0624421Z Running test case ID 12.1.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:40.4920564Z Running test case ID 12.1.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:41.1428123Z Running test case ID 12.1.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:42.3449108Z Running test case ID 12.1.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:44.3966617Z Running test case ID 12.1.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:44.7800138Z Running test case ID 12.1.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:45.2085048Z Running test case ID 12.1.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:45.9042336Z Running test case ID 12.1.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:47.1592533Z Running test case ID 12.1.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:49.2701455Z Running test case ID 12.1.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:51.3629299Z Running test case ID 12.1.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:53.4286671Z Running test case ID 12.1.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:55.4683409Z Running test case ID 12.2.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:55.5994766Z Running test case ID 12.2.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:55.7257105Z Running test case ID 12.2.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:55.8856564Z Running test case ID 12.2.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:56.0922465Z Running test case ID 12.2.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:56.4441474Z Running test case ID 12.2.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:56.9764615Z Running test case ID 12.2.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:57.9423424Z Running test case ID 12.2.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:10:59.9068917Z Running test case ID 12.2.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:04.3246717Z Running test case ID 12.2.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:13.7709577Z Running test case ID 12.2.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:14.3760549Z Running test case ID 12.2.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:15.5309809Z Running test case ID 12.2.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:17.8521107Z Running test case ID 12.2.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:22.8355502Z Running test case ID 12.2.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:33.3621150Z Running test case ID 12.2.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:43.3668548Z Running test case ID 12.2.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:11:53.0996336Z Running test case ID 12.2.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:02.7770583Z Running test case ID 12.3.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:02.8981729Z Running test case ID 12.3.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:03.0286128Z Running test case ID 12.3.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:03.1693072Z Running test case ID 12.3.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:03.4217365Z Running test case ID 12.3.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:03.7758910Z Running test case ID 12.3.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:04.4191673Z Running test case ID 12.3.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:05.5201710Z Running test case ID 12.3.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:07.8773513Z Running test case ID 12.3.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:13.3291099Z Running test case ID 12.3.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:25.1458084Z Running test case ID 12.3.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:26.0400373Z Running test case ID 12.3.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:27.8355801Z fuzzingclient was killed (SIGKILL, exit 137) before the 1200s cap.
+2026-11-22T11:12:27.8356764Z echo server (pid 3200) was still alive at this point.
+2026-11-22T11:12:27.8357063Z --- sockets on :9010 at the time of failure ---
+2026-11-22T11:12:27.8892377Z   (no sockets on this port)
+2026-11-22T11:12:28.1032899Z container state: exit=137 oom-killed=true error=""
+2026-11-22T11:12:28.2145315Z --- the kernel's OOM report (in full: main/kernel-oom.log beside the report) ---
+2026-11-22T11:12:28.2226508Z   wstest invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+2026-11-22T11:12:28.2227999Z   oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=docker-8ab1bbae65f2a0960ecca2ab000552aaf5a712868696d3914d3d5bf7ded4861d.scope,mems_allowed=0,global_oom,task_memcg=/system.slice/docker-8ab1bbae65f2a0960ecca2ab000552aaf5a712868696d3914d3d5bf7ded4861d.scope,task=wstest,pid=3657,uid=0
+2026-11-22T11:12:28.2244645Z   Out of memory: Killed process 3657 (wstest) total-vm:18937860kB, anon-rss:13849056kB, file-rss:492kB, shmem-rss:0kB, UID:0 pgtables:37104kB oom_score_adj:0
+2026-11-22T11:12:28.2249735Z   largest tasks by resident memory:
+2026-11-22T11:12:28.2345305Z      13525 MiB  pid 3657    oom_score_adj     0  wstest
+2026-11-22T11:12:28.2345753Z        540 MiB  pid 3011    oom_score_adj   500  VBCSCompiler
+2026-11-22T11:12:28.2346112Z        262 MiB  pid 2875    oom_score_adj   500  MSBuild
+2026-11-22T11:12:28.2346379Z        147 MiB  pid 2901    oom_score_adj   500  MSBuild
+2026-11-22T11:12:28.2346653Z        146 MiB  pid 2241    oom_score_adj     0  Runner.Worker
+2026-11-22T11:12:28.4868812Z Not repeated: wstest's OOM kill lost part main's attempt 2 too, and 1 repeat(s) is the limit.
+2026-11-22T11:12:28.5116709Z Running Autobahn fuzzingclient (Docker image crossbario/autobahn-testsuite, ws://127.0.0.1:9010), part 12.4 ["12.4.*"], attempt 1...
+2026-11-22T11:12:29.3453606Z Using explicit spec file '/config/12.4/fuzzingclient.json'
+2026-11-22T11:12:29.3454094Z Loading spec from /config/12.4/fuzzingclient.json
+2026-11-22T11:12:29.3454334Z 
+2026-11-22T11:12:29.3454628Z Using Twisted reactor class <class 'twisted.internet.epollreactor.EPollReactor'>
+2026-11-22T11:12:29.3455282Z Using UTF8 Validator class <class 'autobahn.websocket.utf8validator.Utf8Validator'>
+2026-11-22T11:12:29.3455893Z Using XOR Masker classes <class 'autobahn.websocket.xormasker.XorMaskerNull'>
+2026-11-22T11:12:29.3456248Z 
+2026-11-22T11:12:29.3477313Z Autobahn Fuzzing WebSocket Client (Autobahn Testsuite Version 25.10.1 / Autobahn Version 0.10.9)
+2026-11-22T11:12:29.3477736Z Ok, will run 18 test cases against 1 servers
+2026-11-22T11:12:29.3478220Z Cases = ['12.4.1', '12.4.2', '12.4.3', '12.4.4', '12.4.5', '12.4.6', '12.4.7', '12.4.8', '12.4.9', '12.4.10', '12.4.11', '12.4.12', '12.4.13', '12.4.14', '12.4.15', '12.4.16', '12.4.17', '12.4.18']
+2026-11-22T11:12:29.3478623Z Servers = [u'ws://127.0.0.1:9010']
+2026-11-22T11:12:29.3568617Z Running test case ID 12.4.1 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:29.8560162Z Running test case ID 12.4.2 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:30.3071304Z Running test case ID 12.4.3 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:30.7366887Z Running test case ID 12.4.4 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:31.1149857Z Running test case ID 12.4.5 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:31.5500036Z Running test case ID 12.4.6 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:32.0335651Z Running test case ID 12.4.7 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:32.6385234Z Running test case ID 12.4.8 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:33.5417635Z Running test case ID 12.4.9 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:35.0125384Z Running test case ID 12.4.10 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:37.5363454Z Running test case ID 12.4.11 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:38.0872436Z Running test case ID 12.4.12 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:38.7555573Z Running test case ID 12.4.13 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:39.6405527Z Running test case ID 12.4.14 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:41.1322129Z Running test case ID 12.4.15 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:43.8361742Z Running test case ID 12.4.16 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:46.4076486Z Running test case ID 12.4.17 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:48.9667243Z Running test case ID 12.4.18 for agent Hermod.HTTP2 from peer tcp4:127.0.0.1:9010
+2026-11-22T11:12:51.7136771Z No Autobahn report for part(s): main (see above; did the container reach the server?)
+2026-11-22T11:12:51.7682123Z ##[error]Process completed with exit code 1.
+2026-11-22T11:12:51.7955987Z ##[group]Run actions/upload-artifact@v7
+2026-11-22T11:12:51.7956215Z with:
+2026-11-22T11:12:51.7956372Z   name: autobahn-report
+2026-11-22T11:12:51.7956589Z   path: tests/autobahn/reports/
+artifacts/autobahn.txt
+
+2026-11-22T11:12:51.7956875Z   if-no-files-found: warn
+2026-11-22T11:12:51.7957055Z   compression-level: 6
+2026-11-22T11:12:51.7957220Z   overwrite: false
+2026-11-22T11:12:51.7957390Z   include-hidden-files: false
+2026-11-22T11:12:51.7957568Z   archive: true
+2026-11-22T11:12:51.7957712Z env:
+2026-11-22T11:12:51.7957946Z   H2SPEC_VERSION: 2.6.0
+2026-11-22T11:12:51.7958118Z   DOTNET_ROOT: /usr/share/dotnet
+2026-11-22T11:12:51.7958297Z ##[endgroup]
+2026-11-22T11:12:52.4404675Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-22T11:12:52.4405990Z The least common ancestor is /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests. This will be the root directory of the artifact
+2026-11-22T11:12:52.4406638Z With the provided path, there will be 44 files uploaded
+2026-11-22T11:12:52.4409427Z Artifact name is valid!
+2026-11-22T11:12:52.4409681Z Root directory input is valid!
+2026-11-22T11:12:52.9588086Z Uploading artifact: autobahn-report.zip
+2026-11-22T11:12:52.9614551Z Beginning upload of artifact content to blob storage
+2026-11-22T11:12:53.8024799Z Uploaded bytes 270796
+2026-11-22T11:12:53.8890491Z Finished uploading artifact content to blob storage!
+2026-11-22T11:12:53.8891074Z SHA256 digest of uploaded artifact is 288e1bacd8fecdd91ea05a6ad4257c8466e8f8fb426a05ddf6902cc873427b37
+2026-11-22T11:12:53.8891671Z Finalizing artifact upload
+2026-11-22T11:12:54.4416812Z Artifact autobahn-report successfully finalized. Artifact ID 14752230595
+2026-11-22T11:12:54.4417577Z Artifact autobahn-report has been successfully uploaded! Final size is 270796 bytes. Artifact ID is 14752230595
+2026-11-22T11:12:54.4574169Z Post job cleanup.
+2026-11-22T11:12:54.5249934Z [command]/usr/bin/git version
+2026-11-22T11:12:54.5421260Z git version 2.56.1
+2026-11-22T11:12:54.5448684Z Temporarily overriding HOME='/home/runner/work/_temp/df87e66e-f980-45d8-9a44-ee3b8c8f2efb' before making global git config changes
+2026-11-22T11:12:54.5449723Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-22T11:12:54.5453332Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests
+2026-11-22T11:12:54.5554030Z Removing SSH command configuration
+2026-11-22T11:12:54.5559613Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-22T11:12:54.5587191Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-22T11:12:54.6105395Z Entering 'libs/Hermod'
+2026-11-22T11:12:54.6167224Z Entering 'libs/Styx'
+2026-11-22T11:12:54.6212311Z Removing HTTP extra header
+2026-11-22T11:12:54.6216492Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-22T11:12:54.6242792Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-22T11:12:54.6411774Z Entering 'libs/Hermod'
+2026-11-22T11:12:54.6445427Z Entering 'libs/Styx'
+2026-11-22T11:12:54.6482202Z Removing includeIf entries pointing to credentials config files
+2026-11-22T11:12:54.6486313Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-22T11:12:54.6505843Z includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git.path
+2026-11-22T11:12:54.6507239Z includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/worktrees/*.path
+2026-11-22T11:12:54.6507817Z includeif.gitdir:/github/workspace/.git.path
+2026-11-22T11:12:54.6508215Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-22T11:12:54.6512155Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git.path
+2026-11-22T11:12:54.6527508Z /home/runner/work/_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.6536088Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.6558541Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/worktrees/*.path
+2026-11-22T11:12:54.6573258Z /home/runner/work/_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.6585574Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.6607553Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-22T11:12:54.6621614Z /github/runner_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.6626521Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.6646273Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-22T11:12:54.6660668Z /github/runner_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.6665388Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.6686342Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-22T11:12:54.6853711Z Entering 'libs/Hermod'
+2026-11-22T11:12:54.6872491Z file:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config	remote.origin.url
+2026-11-22T11:12:54.6887834Z Entering 'libs/Styx'
+2026-11-22T11:12:54.6902822Z file:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config	remote.origin.url
+2026-11-22T11:12:54.6924581Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-22T11:12:54.6942565Z includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod.path
+2026-11-22T11:12:54.6943084Z includeif.gitdir:/github/workspace/.git/modules/libs/Hermod.path
+2026-11-22T11:12:54.6947047Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config --get-all includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod.path
+2026-11-22T11:12:54.6962448Z /home/runner/work/_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.6967798Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config --unset includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod.path \/home\/runner\/work\/_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.6988848Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config --get-all includeif.gitdir:/github/workspace/.git/modules/libs/Hermod.path
+2026-11-22T11:12:54.7005202Z /github/runner_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.7010731Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Hermod/config --unset includeif.gitdir:/github/workspace/.git/modules/libs/Hermod.path \/github\/runner_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.7034345Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-22T11:12:54.7050183Z includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx.path
+2026-11-22T11:12:54.7050884Z includeif.gitdir:/github/workspace/.git/modules/libs/Styx.path
+2026-11-22T11:12:54.7055464Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config --get-all includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx.path
+2026-11-22T11:12:54.7071330Z /home/runner/work/_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.7076333Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config --unset includeif.gitdir:/home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx.path \/home\/runner\/work\/_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.7098760Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config --get-all includeif.gitdir:/github/workspace/.git/modules/libs/Styx.path
+2026-11-22T11:12:54.7115181Z /github/runner_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config
+2026-11-22T11:12:54.7120973Z [command]/usr/bin/git config --file /home/runner/work/HTTP2ConformanceTests/HTTP2ConformanceTests/.git/modules/libs/Styx/config --unset includeif.gitdir:/github/workspace/.git/modules/libs/Styx.path \/github\/runner_temp\/git\-credentials\-febc8612\-b3f1\-422a\-a97a\-e5fde737ff49\.config
+2026-11-22T11:12:54.7140914Z Removing credentials config '/home/runner/work/_temp/git-credentials-febc8612-b3f1-422a-a97a-e5fde737ff49.config'
+2026-11-22T11:12:54.7263208Z Cleaning up orphan processes
+2026-11-22T11:12:54.7539178Z Terminate orphan process: pid (2875) (MSBuild)
+2026-11-22T11:12:54.7556372Z Terminate orphan process: pid (2901) (MSBuild)
+2026-11-22T11:12:54.7572845Z Terminate orphan process: pid (2902) (MSBuild)
+2026-11-22T11:12:54.7588583Z Terminate orphan process: pid (2903) (MSBuild)
+2026-11-22T11:12:54.7604854Z Terminate orphan process: pid (3011) (VBCSCompiler)

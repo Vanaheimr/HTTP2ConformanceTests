@@ -1,0 +1,7 @@
+{
+    "outdir": "/reports/main",
+    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://127.0.0.1:9010" }],
+    "cases": ["*"],
+    "exclude-cases": ["12.4.*"],
+    "exclude-agent-cases": {}
+}

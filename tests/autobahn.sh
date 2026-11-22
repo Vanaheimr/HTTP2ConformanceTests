@@ -36,6 +36,7 @@
 #   tests/autobahn.sh --port 9010 --image crossbario/autobahn-testsuite
 #   tests/autobahn.sh --run-timeout 1200   # cap the fuzzingclient (seconds, 0 = off)
 #   tests/autobahn.sh --oom-retries 0      # never repeat a run wstest's OOM kill lost
+#   tests/autobahn.sh --split-off ''       # all cases in one wstest, 12.4 included
 #
 set -euo pipefail
 
@@ -113,6 +114,25 @@ min_pass=481
 oom_retries=1
 oom_retry_server_max_mib=1024
 
+# The cases that run in a fuzzing client of their own, after all the others.
+#
+# Every OOM kill so far fell early in section 12.4: in 12.4.6 on 2026-10-10,
+# in 12.4.4 on 2026-11-20, and on 2026-11-21 in 12.4.3 and then, in the repeat
+# three minutes later on the same runner, in 12.4.4. Each time wstest had run
+# 12.1 first, which leaves it holding about 3 GiB it never gives back
+# (docs/BUILD_LOG.md, 2026-11-21). The repeat above runs exactly that sequence
+# again, and on 2026-11-21 it died the same way. So 12.4 now starts in a fresh
+# wstest, in a container of its own.
+#
+# This is a hypothesis, not a cure. Locally the runaway has never happened, in
+# this order or any other, so only the nights can show whether a fresh wstest
+# avoids it. The second container costs about a second to start. Each part has
+# its own report directory under reports/ and its own repeat. The verdict counts
+# the two reports merged, so the floor and the hard failures mean what they
+# meant for a single run. --split-off '' runs everything in one wstest. The
+# pattern is wstest's: a trailing '*' works, '?' does not.
+split_off='12.4.*'
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)        port="$2";        shift 2 ;;
@@ -120,6 +140,7 @@ while [ $# -gt 0 ]; do
         --run-timeout) run_timeout="$2"; shift 2 ;;
         --min-pass)    min_pass="$2";    shift 2 ;;
         --oom-retries) oom_retries="$2"; shift 2 ;;
+        --split-off)   split_off="$2";   shift 2 ;;
         --no-build)    nobuild=1;        shift ;;
         -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -249,22 +270,11 @@ else
 fi
 
 rm -rf "$repdir"; mkdir -p "$repdir"
-cfg="$repdir/fuzzingclient.json"
-cat >"$cfg" <<JSON
-{
-    "outdir": "/reports",
-    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://$ws_host:$port" }],
-    "cases": ["*"],
-    "exclude-cases": [],
-    "exclude-agent-cases": {}
-}
-JSON
 
 # --name, so the timeout below has something to stop: killing the `docker run`
 # client detaches from the container, it does not end it, and a container left
 # running would hold the report directory and the port.
 container="autobahn-wstest-$port"
-docker rm -f "$container" >/dev/null 2>&1 || true
 
 # `timeout` is GNU coreutils and is present on Linux, macOS (as gtimeout under
 # a different name) and Git Bash alike; if it is missing, or the cap is 0, run
@@ -297,10 +307,30 @@ else
 fi
 unset klog
 
+# One part of the suite (see split_off above), in a wstest of its own, with its
+# own repeat. Its report goes to reports/<name>/. Sets attempt.
+#   run_part NAME CASES EXCLUDE   (CASES and EXCLUDE: JSON list bodies)
+run_part() {
+local name="$1" cases="$2" exclude="$3"
+local dir="$repdir/$name"
+mkdir -p "$dir"
+cat >"$dir/fuzzingclient.json" <<JSON
+{
+    "outdir": "/reports/$name",
+    "servers": [{ "agent": "Hermod.HTTP2", "url": "ws://$ws_host:$port" }],
+    "cases": [$cases],
+    "exclude-cases": [$exclude],
+    "exclude-agent-cases": {}
+}
+JSON
 attempt=1
 while :; do
 client_oom=0
-echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port), attempt $attempt..."
+# Before EVERY attempt: a container that finished cleanly is still there (it
+# is not --rm, see below), and the next part's run would refuse its name.
+# The first real split run, on 2026-11-22, ended that way, with rc 125.
+docker rm -f "$container" >/dev/null 2>&1 || true
+echo "Running Autobahn fuzzingclient (Docker image $image, ws://$ws_host:$port), part $name [$cases]${exclude:+ minus [$exclude]}, attempt $attempt..."
 # shellcheck disable=SC2086  # $runner and $docker_net are fixed literals or empty, on purpose
 # Deliberately NOT --rm: an auto-removed container takes its exit status with
 # it, and "why did this die" is exactly the question. `docker inspect` below
@@ -318,7 +348,7 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
     -v "$mount_src:/config" \
     -v "$mount_src:/reports" \
     "$image" \
-    wstest -m fuzzingclient -s /config/fuzzingclient.json || {
+    wstest -m fuzzingclient -s "/config/$name/fuzzingclient.json" || {
         rc=$?
 
         # 124 is `timeout` firing; 137 is the container's own process dying on
@@ -382,8 +412,8 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
         if [ "$kernel_readable" -eq 1 ]; then
             oom="$(kernel_log | kernel_oom_last || true)"
             if [ -n "$oom" ] && [ "$(printf '%s\n' "$oom" | head -n 1)" != "$oom_before" ]; then
-                printf '%s\n' "$oom" >"$repdir/kernel-oom.log"
-                echo "--- the kernel's OOM report (in full: kernel-oom.log beside the report) ---" >&2
+                printf '%s\n' "$oom" >"$dir/kernel-oom.log"
+                echo "--- the kernel's OOM report (in full: $name/kernel-oom.log beside the report) ---" >&2
                 printf '%s\n' "$oom" | kernel_oom_summary >&2 || true
 
                 # Lost to wstest's own runaway? See oom_retries above. Every
@@ -411,30 +441,78 @@ MSYS_NO_PATHCONV=1 $runner docker run --name "$container" -e PYTHONUNBUFFERED=1 
 if [ "$client_oom" -eq 1 ] && [ "$attempt" -le "$oom_retries" ]; then
     # The lost attempt's evidence goes aside, out of the next one's way:
     # wstest writes its per-case files flat into the report directory.
-    keep="$repdir/attempt-$attempt"
+    keep="$dir/attempt-$attempt"
     mkdir -p "$keep"
-    for f in "$repdir"/*; do
+    for f in "$dir"/*; do
         case "${f##*/}" in
             fuzzingclient.json|attempt-*) ;;
             *) mv "$f" "$keep/" ;;
         esac
     done
-    lost="attempt $attempt was lost to the fuzzing client: the kernel OOM-killed wstest while our echo server held $(( srv_kib / 1024 )) MiB"
-    echo "RETRY: $lost. Running the whole suite once more; this attempt's evidence is in $keep." >&2
+    lost="part $name, attempt $attempt, was lost to the fuzzing client: the kernel OOM-killed wstest while our echo server held $(( srv_kib / 1024 )) MiB"
+    echo "RETRY: $lost. Running this part once more, whole; the lost attempt's evidence is in $keep." >&2
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
-        echo "::warning title=Autobahn run repeated::$lost (see attempt-$attempt/ in the autobahn-report artifact)"
+        echo "::warning title=Autobahn run repeated::$lost (see $name/attempt-$attempt/ in the autobahn-report artifact)"
     fi
     attempt=$(( attempt + 1 ))
     continue
 elif [ "$client_oom" -eq 1 ]; then
-    echo "Not repeated: wstest's OOM kill lost attempt $attempt too, and $oom_retries repeat(s) is the limit." >&2
+    echo "Not repeated: wstest's OOM kill lost part $name's attempt $attempt too, and $oom_retries repeat(s) is the limit." >&2
 fi
 break
 done
+}
+
+# --- run the parts ---------------------------------------------------------
+# A part that brings back no report does not stop the next one: the night's
+# evidence should cover both, and the verdict below fails either way.
+if [ -n "$split_off" ]; then
+    split_name="$(printf '%s' "$split_off" | sed 's/[^A-Za-z0-9.]//g; s/\.*$//')"
+    parts=("main|\"*\"|\"$split_off\"" "${split_name:-split}|\"$split_off\"|")
+else
+    parts=("main|\"*\"|")
+fi
+reports=()
+missing=()
+repeated=()
+for p in "${parts[@]}"; do
+    IFS='|' read -r pname pcases pexclude <<<"$p"
+    run_part "$pname" "$pcases" "$pexclude"
+    if [ -f "$repdir/$pname/index.json" ]; then
+        reports+=("$repdir/$pname/index.json")
+    else
+        missing+=("$pname")
+    fi
+    [ "$attempt" -gt 1 ] && repeated+=("$pname (attempt $attempt)")
+done
 
 # --- parse the report ------------------------------------------------------
+[ "${#missing[@]}" -eq 0 ] || {
+    echo "No Autobahn report for part(s): ${missing[*]} (see above; did the container reach the server?)" >&2
+    exit 1
+}
+
+# The parts' reports merged into one, which the counting below reads. The
+# parts are disjoint by construction; a case found in two would be counted
+# twice, so that ends the run rather than the count. Each case's report file
+# is named relative to its part's directory, so the merged copy prefixes it.
 INDEXFILE="$repdir/index.json"
-[ -f "$INDEXFILE" ] || { echo "No Autobahn report at $INDEXFILE (did the container reach the server?)" >&2; exit 1; }
+# shellcheck disable=SC2086  # $python may be "py -3", see above
+$python - "$INDEXFILE" "${reports[@]}" <<'PYEOF'
+import json, os, sys
+out = {}
+for path in sys.argv[2:]:
+    part = os.path.basename(os.path.dirname(path))
+    for agent, cases in json.load(open(path, encoding="utf-8")).items():
+        dst = out.setdefault(agent, {})
+        for cid, r in cases.items():
+            if cid in dst:
+                sys.exit(f"case {cid} ran in two parts; the split is not disjoint")
+            if "reportfile" in r:
+                r["reportfile"] = f"{part}/{r['reportfile']}"
+            dst[cid] = r
+json.dump(out, open(sys.argv[1], "w", encoding="utf-8"), indent=1)
+PYEOF
 
 # Three buckets rather than two, because "not passing" is not one thing here.
 #
@@ -480,10 +558,13 @@ PYEOF
 
 echo
 echo "Autobahn: $passing/$total passing, $declined declined (UNIMPLEMENTED), $hard hard failures"
-echo "Full HTML report: $repdir/index.html"
-if [ "$attempt" -gt 1 ]; then
-    echo "NOTE: this verdict is attempt $attempt's. The $(( attempt - 1 )) before it lost to wstest's"
-    echo "      own OOM kill (see the RETRY line above and attempt-*/ beside the report)."
+for p in "${parts[@]}"; do
+    echo "Full HTML report: $repdir/${p%%|*}/index.html"
+done
+if [ "${#repeated[@]}" -gt 0 ]; then
+    echo "NOTE: repeated after wstest's own OOM kill: ${repeated[*]}. This verdict counts"
+    echo "      the last attempt of each part (see the RETRY lines above and"
+    echo "      <part>/attempt-*/ beside the report)."
 fi
 echo
 

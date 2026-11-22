@@ -5909,6 +5909,105 @@ thread pool. A small reflection probe confirmed `UseWindowsThreadPool` as
   need more rounds than eight. The demo stays at 0, which is level at 64 streams
   and costs one stream 7 %.
 
+## 2026-11-22 — The repeat did not save the night of 2026-11-21; 12.4 now starts in a fresh wstest
+
+The nightly of **2026-11-21**, at `d2d9aea` (pin `4b8be28a`, .NET 11.0.0),
+was the first scheduled night with the repeat that `a67eae8` added (see *The
+first of the three, built the same day* above). Five jobs were green. Autobahn
+failed, and the repeat is why it is worth writing down: it worked as built,
+and it did not help. GitHub removes failed runs, so the run is gone. Its
+kernel reports for both attempts, the timestamped step and the echo server's
+log are kept in
+[`docs/evidence/2026-11-21-autobahn-oom/`](evidence/2026-11-21-autobahn-oom/README.md).
+
+| | attempt 1 | attempt 2, three minutes later |
+|---|---|---|
+| died in | **12.4.3**, 1.93 s into it | **12.4.4**, 2.21 s into it |
+| the same case in the green run of `a67eae8` that day | 0.44 s | 0.48 s |
+| wstest, resident / swapped out | 13.52 / 2.98 GiB | 14.81 / 1.80 GiB |
+| our echo server, resident / swapped out | 63 / 6 MiB | 55 / 8 MiB |
+| free swap, of 3 GiB | 0 kB | 144 kB |
+
+Both attempts ran on the same runner, against the same echo server. The kernel
+named wstest as the victim both times, so the script repeated once and then
+stopped, as it should ("wstest's OOM kill lost attempt 2 too").
+Up to 12.4 both attempts kept the green run's pace or ran faster. Sections
+12.1 / 12.2 / 12.3 took 16.5 / 62.2 / 79.2 s and 16.3 / 62.0 / 80.4 s, against
+19.5 / 63.9 / 79.5 s. Nothing in the log announces the runaway. The runner
+image cannot be all of it either: `ubuntu-26.04`, `20261116.202.1`, kernel
+`7.0.0-1020-azure`, the same image the green run of `a67eae8` had used at
+01:17 that day.
+
+**What this changes.** The repeat assumed that a kill is rare and independent
+of the attempt before it. On this runner the second attempt died the same way
+three minutes later. Counting the nights that died gives three since
+2026-09-19, against at least 52 green ones: 2026-10-10 (12.4.6), 2026-11-20
+(12.4.4) and 2026-11-21 (12.4.3, then 12.4.4). All four kills fell **early in
+12.4**, and each time wstest had run 12.1 first. 12.1 leaves wstest holding
+about 3 GiB that PyPy never gives back (measured locally, see *names its
+consumer* above). 12.4 is the only other section that decodes its whole test
+file again for every message.
+
+### The third of the three: 12.4 in a wstest of its own
+
+`tests/autobahn.sh` now runs the suite in two parts, each in a fresh container
+(`split_off='12.4.*'`, `--split-off ''` turns it off):
+
+- **`main`**: `"cases": ["*"]`, `"exclude-cases": ["12.4.*"]`, 499 cases;
+- **`12.4`**: `"cases": ["12.4.*"]`, 18 cases, after `main`.
+
+Each part has its own report directory, `reports/main/` and `reports/12.4/`,
+its own `fuzzingclient.json` and its own repeat. A lost attempt goes to
+`<part>/attempt-<n>/`, and the warning names the part. A part that brings back
+no report does not stop the next one, because the night's evidence should cover
+both. The verdict then fails and names the missing part. Otherwise the two
+`index.json` are merged into `reports/index.json`, and the counting reads that
+file unchanged, so the floor of 481 and "no hard failures" mean what they meant
+for one run. Each case's `reportfile` gets its part's directory as a prefix.
+A case found in both parts ends the run. Counting it twice would let the
+floor pass on a duplicate.
+
+**It is a hypothesis.** The runaway has never happened locally, in this order
+or any other, so there is nothing local to show the split prevents it. What it
+removes is the one thing all four kills had in common: 12.4 running in a wstest
+that 12.1 had already grown. The nights will show whether that was the cause.
+The cost is one more container start, about a second on the runner (attempt 2's
+"Ok, will run" came 1.1 s after its `docker run`).
+
+**Verified.** The docker stand-in from 2026-11-21 now reads the part's
+configuration, reports exactly the cases it selects, and refuses a second run
+under a container name that has not been removed, as docker does:
+
+| scenario (one entry per `docker run`) | outcome |
+|---|---|
+| pass, pass | 481/517, exit 0 |
+| OOM, pass, pass | `main` repeated, 481/517, exit 0, NOTE names `main` |
+| pass, OOM, pass | `12.4` repeated, 481/517, exit 0 |
+| pass, OOM, OOM | `12.4` lost twice, `main` kept, exit 1, "No Autobahn report for part(s): 12.4" |
+| OOM, OOM, pass | `main` lost twice, `12.4` still runs, exit 1 |
+| OOM with the echo server at 1.6 GB, pass | not repeated, reason printed, exit 1 |
+| all 517 cases in `main`, pass | exit 1, "case 12.4.1 ran in two parts" |
+| `--split-off ''`: pass, then OOM, pass | one part, 481/517, exit 0, and the repeat as before |
+
+The stand-in learned the name conflict from a **real run**, which found the
+one defect. The container is deliberately not `--rm` (`docker inspect` has to
+read the dead one's state), and a clean `main` left it standing. The
+`12.4` part's `docker run` was then refused, rc 125, "Conflict. The container
+name … is already in use". The removal that used to run once before the
+loop now runs before every attempt. The second real run, with Docker in WSL
+at pin `4b8be28a` on .NET 11.0.0, ran 499 and then 18 cases: **481/517
+passing, 36 declined, no hard failures**, exit 0. The merged report holds 517
+cases, and its `reportfile` entries point into `main/` and `12.4/`.
+
+### Not done
+
+- **A `--memory` limit for the container**, the second of the three, is still
+  not built. It would not make a night pass, only make it die faster and leave
+  the runner its memory.
+- **What wstest does in those two seconds** is still unknown. If it entered
+  12.4 holding about 3 GiB, as it does locally, it took some 13 GiB within
+  them, faster than the 1.7 GB/s of 2026-11-20.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

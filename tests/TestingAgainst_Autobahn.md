@@ -112,8 +112,17 @@ whichever actually runs. The script looks for it **before** the run and exits
 App Installer stub, which only prints "Python was not found", so the script
 tries each candidate rather than trusting `PATH`. The script exits non-zero and
 lists the case IDs if any case fails outright, or if fewer pass than the floor
-in the script (481). The full human-readable report is written to
-`tests/autobahn/reports/index.html`.
+in the script (481).
+
+The suite runs in two parts, each in a fuzzing client of its own (since
+2026-11-22, `split_off` in the script): everything but section 12.4, then
+12.4. Every one of wstest's memory runaways in the nightly struck early in
+12.4, after 12.1 had left wstest holding about 3 GiB. Each part writes its
+report to its own directory, `tests/autobahn/reports/main/` and
+`tests/autobahn/reports/12.4/`, each with an `index.html` to browse. The
+script counts `tests/autobahn/reports/index.json`, the two parts' reports
+merged. A case found in both ends the run. `--split-off ''` runs everything in
+one fuzzing client, as before.
 
 **To chase a run that dies rather than fails,**
 [`tools/autobahn-repro.sh`](../tools/autobahn-repro.sh) (Linux/WSL) loops

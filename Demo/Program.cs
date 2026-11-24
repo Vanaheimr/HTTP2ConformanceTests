@@ -44,13 +44,13 @@ namespace org.GraphDefined.Vanaheimr.Hermod.HTTP2
             // as "our server cannot bind" rather than "something else has it".
             //
             //   dotnet run --project Demo -- --port 9443 --cleartext-port 9080
-            var port  = 8443;   // HTTP/2 over TLS ("h2")
-            var portC = 8080;   // cleartext HTTP/2 with prior knowledge ("h2c")
+            var port  = IPPort.Parse(8443);   // HTTP/2 over TLS ("h2")
+            var portC = IPPort.Parse(8080);   // cleartext HTTP/2 with prior knowledge ("h2c")
 
             for (var i = 0; i < args.Length - 1; i++)
             {
-                if (args[i] == "--port"           && Int32.TryParse(args[i + 1], out var p))  port  = p;
-                if (args[i] == "--cleartext-port" && Int32.TryParse(args[i + 1], out var pc)) portC = pc;
+                if (args[i] == "--port"           && IPPort.TryParse(args[i + 1], out var p))  port  = p;
+                if (args[i] == "--cleartext-port" && IPPort.TryParse(args[i + 1], out var pc)) portC = pc;
             }
 
             var cert  = CreateSelfSignedCertificate("localhost");

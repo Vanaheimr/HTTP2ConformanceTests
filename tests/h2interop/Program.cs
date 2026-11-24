@@ -46,6 +46,7 @@
 using System.Diagnostics;
 using System.Net.Security;
 
+using org.GraphDefined.Vanaheimr.Hermod;
 using org.GraphDefined.Vanaheimr.Hermod.DNS;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
@@ -144,7 +145,7 @@ static async Task<Probed> Probe(String Host, IDNSClient DNSClient, TimeSpan Time
         // accept a chain we would not accept in production.
         var connection = await HTTP2Client.ConnectAsync(
                                    Host,
-                                   443,
+                                   IPPort.HTTPS,
                                    (_, _, _, sslPolicyErrors) => sslPolicyErrors == SslPolicyErrors.None,
                                    Options:           new HTTP2ClientOptions { DNSClient = DNSClient },
                                    CancellationToken: cts.Token

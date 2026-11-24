@@ -9,7 +9,7 @@ direction-neutral framing, HPACK, stream layer, settings, HTTP semantics —,
 `Server`, `Client` and `WebSocket`). This repo adds the `Demo/` host,
 the `tests/` live-host raw-frame harnesses, the `h2bench` benchmark, and the
 h2spec/Autobahn drivers; the
-702 NUnit unit + integration tests live with the stack in Hermod
+708 NUnit unit + integration tests live with the stack in Hermod
 (`HermodTests/HTTP2/`).
 
 This is a learning/reference implementation in the spirit of the Vanaheimr
@@ -55,7 +55,7 @@ falls back to HTTP/1.1 — use a curl with nghttp2, or .NET's `HttpClient`.
 Target framework is `net11.0` (since 2026-11-19, with Hermod and Styx). Uses a
 self-signed cert generated at startup.
 
-**Tests:** most coverage is the **702 NUnit tests** in
+**Tests:** most coverage is the **708 NUnit tests** in
 `libs/Hermod/HermodTests/HTTP2/` — run `dotnet test HTTP2.slnx --filter
 "FullyQualifiedName~Tests.HTTP2"`. The remaining **49** live-host harness runs
 (demo-driven raw-frame scenarios) run via `tests/run-tests.sh`; conformance via
@@ -104,16 +104,12 @@ WebSocket value types, and the auth schemes are each their own file).
 | `HTTP2EarlyData.cs` | RFC 8470: the `Early-Data` field and the safe-method policy behind 425. We terminate no 0-RTT (`SslStream` has no early-data API), so this is about what an *intermediary* forwards to us |
 | `HTTP2CipherSuites.cs` | RFC 9113 §9.2.2 / Appendix A: which TLS 1.2 cipher suites may carry HTTP/2 (ephemeral key exchange + AEAD), used by both roles after the handshake |
 | `HTTP2EventSource.cs` (+ `HTTP2Diagnostics.cs`) | The observability seam: structured events + counters via `EventSource`, connection/request spans via `ActivitySource` — both BCL, so no logging dependency. The stack writes nothing to the console itself |
-| `HTTPRedirect.cs` | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin |
-| `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives both roles share: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the server evaluates preconditions with them, the client builds them |
-| `HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the validating schemes, which now live in Hermod's shared `HTTP/Authentication/Schemes/` |
 | `HTTP2RequestHandler.cs` | The app-logic request-handler delegate (produced by `HTTPSemantics`, consumed by the server) |
 | `IHTTP2RequestStream.cs` (+ `HTTP2StreamingHandler` delegate) / `IHTTP2ResponseStream.cs` | The streaming seam (incremental body + trailers + 1xx interim responses, for gRPC-style bidi and 103 Early Hints) |
 | `IHTTP2Tunnel.cs` | Transport-agnostic byte-tunnel interface, so `WebSocketConnection.cs` doesn't depend on the server's concrete tunnel |
 | `WebSocketConnection.cs` (+ `WebSocketDeflate.cs`, `WebSocketOpcode.cs`, `WebSocketMessage.cs`, `WebSocketRole.cs`, `WebSocketProtocolException.cs`) | RFC 6455 WebSocket framing (masking, opcodes, fragmentation, close handshake) + RFC 7692 permessage-deflate over an `IHTTP2Tunnel`, direction-aware via `WebSocketRole` |
-| `HTTPSemantics.cs` (+ `HTTPResource.cs`) | RFC 9110 semantics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate) — version-independent, never touches frames/streams/HPACK |
+| `HTTPSemantics.cs` | RFC 9110 semantics as an `HTTP2RequestHandler`: reads `:method` and `:path` and hands the rest to the version-independent `HTTPResourceSemantics` (moved to Hermod's `HTTP/`, below) — never touches frames/streams/HPACK |
 | `HTTPAuthentication.cs` | The HTTP/2 side of the RFC 9110 §11 authentication framework (401/WWW-Authenticate/Authorization). The framework itself and the Basic (RFC 7617) / Bearer (RFC 6750) / Digest (RFC 7616) / Token schemes moved **out** of `HTTP2/` on 2026-10-01 into Hermod's version-independent `HTTP/Authentication/` — see the pin-bump note in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) |
-| `HTTPCache.cs` (+ `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs`) | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral |
 
 **Moved out of `HTTP2/` into Hermod's version-independent `HTTP/`**, so that
 the HTTP/1.x stack shares them — the HTTP/2 stack still uses each of them,
@@ -125,6 +121,11 @@ under `org.GraphDefined.Vanaheimr.Hermod.HTTP`:
 | `HTTPAlternativeService.cs` | RFC 7838: the `Alt-Svc` field-value grammar (protocol id, alt-authority, `ma`/`persist`, `clear`) in both directions — carried by the ALTSVC frame or the header field | 2026-10-28 |
 | `HTTPDigest.cs` (+ `HTTPDigestVerification.cs`, `HTTPDigestMismatchException.cs`) | RFC 9530 digest fields: `Content-Digest` (the octets of this message) vs. `Repr-Digest` (the whole representation), the `Want-…` preference grammar, and verification — sha-256/sha-512 only, computed over the *encoded* bytes, so both roles digest what actually crosses the wire. Parsed strictly as RFC 9651 structured fields since the move | 2026-10-28 |
 | `HTTPAuthority.cs` | Which origins a connection is authoritative for: `:authority` parsing, RFC 6125 name matching, and the certificate- / Origin-Set-derived predicates behind 421. Moved because RFC 9110 §7.4 asks the question whatever the version: the HTTP/1.1 server now answers a `Host` its certificate does not cover with 421 too, through the same predicate. For HTTP/2 only the namespace changed | 2026-10-29 |
+| `HTTPResourceSemantics.cs` (+ `HTTPResource.cs`, `HTTPResourceHandler.cs`) | RFC 9110's core mechanics: GET/HEAD/OPTIONS, conditional requests, Range requests, proactive content negotiation (Accept*/Vary), opt-in on-the-fly content coding (gzip/br/deflate), QUERY. Knows no HTTP version; the HTTP/1.x server reaches it through `AddResource`, HTTP/2 through the thin `HTTPSemantics` in `Core` | 2026-11-20 |
+| `HTTPRedirect.cs` (+ `HTTPRedirectTarget.cs`) | RFC 9110 §15.4: `Location` resolution (RFC 3986 §5) plus the per-status method/body rewriting rules, and whether the target is the same origin — moved when the HTTP/1.x client began to follow redirects | 2026-11-20 |
+| `HTTPValidators.cs` (+ `HTTPContentRange.cs`) | RFC 9110 §8.8/§13/§14 primitives: HTTP-date parse *and* format, entity-tag lists, strong/weak comparison, and `Content-Range` parse *and* format — the servers evaluate preconditions with them, the clients build them; moved when the HTTP/1.x client began to resume downloads | 2026-11-20 |
+| `Authentication/HTTPClientAuthenticator.cs` (+ `HTTPClientCredentials.cs`) | The client half of RFC 9110 §11: parse a `WWW-Authenticate` challenge and compute the `Authorization` credential (Digest/Bearer/Token/Basic) — the mirror of the validating schemes beside it; moved when the HTTP/1.x client began to answer a 401 | 2026-11-20 |
+| `Caching/` (`HTTPCache.cs` + `HTTPCacheControl.cs`, `HTTPStoredResponse.cs`, `HTTPCacheStatus.cs`, `HTTPCacheMode.cs`, `HTTPCacheUsability.cs`, `HTTPCacheDecision.cs`) | RFC 9111 caching *logic*: Cache-Control parsing, age/freshness computation, storability, revalidation, Vary keying — store-agnostic, direction-neutral. `HTTP2CachingClient` stays in `Client/`; the HTTP/1.x client has a cache of its own on the same logic | 2026-11-21 |
 
 **`Server/`** — references `Core`:
 
@@ -209,7 +210,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   `HTTP2ClientStream.CompleteRequestAsync(Trailers)` on the client),
   interop-tested against `Grpc.Net.Client` and — for the client's request
   trailers — against Kestrel's `Request.GetTrailer`.
-- **HTTP semantics (Core, version-independent, never touches framing):** RFC 9110
+- **HTTP semantics (version-independent, never touches framing; since 2026-11-20 in Hermod's `HTTP/`, shared with HTTP/1.x):** RFC 9110
   methods / conditional requests / Range (single + multi `multipart/byteranges`) /
   proactive content negotiation / on-the-fly gzip-brotli-deflate; the QUERY method
   (RFC 10008); 1xx interim responses (`Expect: 100-continue`, 103 Early Hints);
@@ -239,7 +240,7 @@ of the wire (our server ↔ .NET `HttpClient`/curl; our client ↔ .NET Kestrel)
   within this connection's own origin, since pooling is single-origin by design.
   A cookie jar remains open — see the task list.
 
-**Verification:** **702/702** NUnit tests and **49/49** harness runs on *both*
+**Verification:** **708/708** NUnit tests and **49/49** harness runs on *both*
 platforms — one `tests/run-tests.sh`, run under Git Bash on Windows and bash on
 Debian 13 — all gated per push by `.github/workflows/ci.yml`. The
 Linux leg is a real gate as of 2026-08-13; the three scenarios that used to
@@ -636,7 +637,7 @@ survives and they stop being re-proposed as "what comes next":
 
 | Item | Why it is parked |
 |---|---|
-| **Server-side shared cache** (RFC 9111 reverse-proxy mode) | Would reuse the direction-neutral `HTTPCache` and exercise what is dead today (`s-maxage`, `must-revalidate`, shared-vs-private storability, origin-side `Vary`). The strongest argument for it is architectural — a second consumer proving `Core`'s direction-neutrality — rather than a missing capability. |
+| **Server-side shared cache** (RFC 9111 reverse-proxy mode) | Would reuse the direction-neutral `HTTPCache` and exercise what is dead today (`s-maxage`, `must-revalidate`, shared-vs-private storability, origin-side `Vary`). Its old architectural argument, a second consumer proving the cache logic direction- and version-neutral, is partly met since 2026-11-21: the HTTP/1.x client now uses the same logic from Hermod's `HTTP/`. A server-side consumer would still be the first in the other direction. |
 | **RFC 9421** — HTTP Message Signatures | The most expensive of the batch, and the cost is not the crypto: it needs a full RFC 9651 structured-fields implementation, because the signature base must be byte-identical on both ends and the `sf` parameter demands strict re-serialization. We only ever built the slices we needed. Also, `Ed25519` is absent from the BCL on .NET 10 (verified), so the algorithm the RFC's own examples use is unreachable without breaking the no-NuGet rule. Composes well with the RFC 9530 digests already in place — signatures cover `Content-Digest`, not the body. |
 | **RFC 9298** — CONNECT-UDP | Mostly reuse (extended CONNECT + `IHTTP2Tunnel` exist; add `:protocol = connect-udp` and RFC 9297 capsules), but over HTTP/2 it is the *degraded* path. MASQUE's point is HTTP/3 datagrams, so the natural home is the sibling project, not here. |
 

@@ -62,6 +62,10 @@ using Microsoft.Extensions.Logging;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP;
 using org.GraphDefined.Vanaheimr.Hermod.HTTP2;
 
+// By alias: the whole namespace would bring Hermod's IPAddress, and with it an
+// ambiguity with System.Net.IPAddress, which Kestrel and the probes here need.
+using IPPort = org.GraphDefined.Vanaheimr.Hermod.IPPort;
+
 
 #region Arguments
 
@@ -777,23 +781,23 @@ async Task ReportLoad(String Name, Int32 Concurrency, Int32 Total, Func<Task> Re
 
 #region Plumbing
 
-static Int32 FreePort()
+static IPPort FreePort()
 {
     var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
     listener.Start();
     var port = ((IPEndPoint) listener.LocalEndpoint).Port;
     listener.Stop();
-    return port;
+    return IPPort.Parse(port);
 }
 
-static async Task WaitUntilListening(Int32 Port)
+static async Task WaitUntilListening(IPPort Port)
 {
     for (var i = 0; i < 100; i++)
     {
         try
         {
             using var probe = new System.Net.Sockets.TcpClient();
-            await probe.ConnectAsync(IPAddress.Loopback, Port);
+            await probe.ConnectAsync(IPAddress.Loopback, Port.ToInt32());
             return;
         }
         catch
@@ -825,7 +829,7 @@ static HttpClient DotNetHttpClient()
 /// It listens on 127.0.0.1 alone, as our server does: ListenLocalhost would add
 /// ::1, and the two servers would then be reached over different loopbacks.
 /// </summary>
-static async Task<(WebApplication Kestrel, Int32 Port)> StartKestrel(Boolean Cleartext)
+static async Task<(WebApplication Kestrel, IPPort Port)> StartKestrel(Boolean Cleartext)
 {
 
     var port    = FreePort();
@@ -833,7 +837,7 @@ static async Task<(WebApplication Kestrel, Int32 Port)> StartKestrel(Boolean Cle
 
     builder.Logging.ClearProviders();
     builder.WebHost.ConfigureKestrel(options =>
-        options.Listen(IPAddress.Loopback, port, listen =>
+        options.Listen(IPAddress.Loopback, port.ToInt32(), listen =>
         {
             listen.Protocols = HttpProtocols.Http2;
             if (!Cleartext)

@@ -6149,6 +6149,84 @@ one defect, in the new summary line. With a peak measured, a `${x:+…}${x:-…}
 pair printed the raw KiB after the MiB ("3757 MiB3848060"). It is now an
 `if`, checked with and without a measured peak.
 
+## 2026-11-24 — Advance the pins to 6f81c917 / ff807a46: ports are `IPPort`, the RFC 9110 mechanics moved to `HTTP/`, and a rejected TLS 1.2 connection waits for the preface
+
+Hermod `4b8be28a` → `6f81c917`, Styx `a6b9f9fb` → `ff807a46`. 52
+first-parent commits in Hermod, mostly SMTP, SSH and the HTTP/1.x client; one
+in Styx (`ConcurrentList` copied on write).
+
+**Seven call sites had to follow Hermod `86b8b083`**, in which a port handed
+over is an `IPPort` from its source on. `against-hermod-master` went red at
+Build on both legs on the nights of 2026-11-22 and 2026-11-23, with
+`CS1503: cannot convert from 'int' to 'IPPort'` at exactly these seven. Following the same rule here, the ports
+are `IPPort` where they arise, not converted at the call:
+
+- `Demo/Program.cs`: the defaults are `IPPort.Parse(8443)` and
+  `IPPort.Parse(8080)`, and `--port` / `--cleartext-port` are read with
+  `IPPort.TryParse`. That covers the four `new HTTP2Server(…)`;
+- `tests/h2bench`: `FreePort()` and `StartKestrel()` return an `IPPort`, and
+  `WaitUntilListening` takes one. `.ToInt32()` only where .NET itself wants a
+  number, Kestrel's `Listen` and the probe's `ConnectAsync`. `IPPort` comes in
+  by alias: the whole namespace would bring Hermod's new `IPAddress`, and with
+  it an ambiguity with `System.Net.IPAddress`;
+- `tests/h2interop`: `IPPort.HTTPS` in place of `443`.
+
+**What reaches `HTTP2/` or `HTTP/`:**
+
+- `0f135385`, `5cc31f8f`, `5d8b5c11`, `5ec44a02` (2026-11-20) and
+  `0df6e721` (2026-11-21): the HTTP/1.x client follows redirects, answers a 401, resumes
+  a download and caches, and server-side `AddResource` gives HTTP/1.x RFC
+  9110's core mechanics. For that, `HTTPRedirect`, `HTTPValidators` /
+  `HTTPContentRange`, `HTTPClientAuthenticator` / `HTTPClientCredentials`,
+  `HTTPResource`, the semantics and the whole RFC 9111 cache logic moved out
+  of `HTTP2/Core` into Hermod's `HTTP/` (the cache into `HTTP/Caching/`).
+  `HTTP2/Core/HTTPSemantics.cs` stays as a thin `HTTP2RequestHandler` over the
+  version-independent `HTTPResourceSemantics`. The architecture tables in
+  `CLAUDE.md` follow;
+- `9d9f1147` (Hermod#296): a 200 to a HEAD updates the stored GET or makes it
+  stale (RFC 9111 §4.3.5), in `HTTP2CachingClient` too;
+- `86b8b083`: the `IPPort` change above;
+- `d1bed559` (Hermod#299): below.
+
+**Hermod#299: a rejected TLS 1.2 connection waits for the client's
+preface.** Found while checking this range. At `4b8be28a`,
+`TLS12Handshake_Rejected_SendsGoAwayInadequateSecurity` failed in 2 of 2 runs
+of the whole HTTP/2 suite and in 1 of 5 runs of its fixture, with
+`SocketException 10053 ConnectionAborted` on the test's own write of its
+preface. At `21fe948d` it passed 11 of 11, with the test and the server
+unchanged. The flake was not the test's. After GOAWAY(INADEQUATE_SECURITY),
+`RejectInadequateSecurityAsync` drained for 250 ms, counted from its own
+GOAWAY, and closed. But the client sends its preface only once its own
+handshake has completed, at the earliest one round trip after that GOAWAY. A
+preface later than 250 ms met a closed socket, the client's write was
+aborted, and the RST could take the GOAWAY with it. With a 300 ms delay in
+front of the test's preface it failed 3 of 3. On any link with a round trip
+above 250 ms, every such connection would have. The drain now waits for the
+client's preface (24 octets and the SETTINGS frame) for up to
+`HTTP2Timeouts.Preface`, as long as any connection is given, then allows the
+250 ms for the rest. Two new tests fail against the old drain: a preface
+1 s late still gets SETTINGS and GOAWAY, and a client that sends nothing is
+let go after the preface timeout, not after ~0.4 s.
+
+**708 tests, not 702.** `FullyQualifiedName~Tests.HTTP2` counts 708; the gate's
+`~Hermod.Tests.HTTP2` counts 703 (697 at the old pin), the difference being
+the five key-pin tests named `HTTP2_…` (see 2026-11-19). The six new ones:
+`Head_NotAnsweredFromAStoredGet`, `OnlyIfCached_Stale_504_WithoutOrigin` and
+`Revalidation_304ForAnotherETag_NotApplied` (`0df6e721`),
+`Head_200UpdatesTheStoredGet` (`9d9f1147`), and the two of Hermod#299.
+
+### Verified at the new pin
+
+- build: 0 errors, Debug and Release
+- `Tests.HTTP2`: 708/708 on Windows; `Hermod.Tests.HTTP2`: 703/703
+- `run-tests.sh`: 49/49
+- h2spec: 146/146 over h2 and over h2c
+- `h2interop`: 8/8
+- h2bench: `requests` and `control` run (Kestrel included); not measured
+  against the old pin
+- `TLSCipherSuiteTests` alone: 20 of 20 green with Hermod#299, before its merge
+- not re-run here: browsers, h2load, Autobahn (the nightly runs it on the pin)
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

@@ -250,7 +250,7 @@ like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since now and then it dies rather than reporting a result (4 of
-34 nights up to 2026-09-18, five times since against at least 52 green
+34 nights up to 2026-09-18, five times since against at least 53 green
 nights; all were kernel OOM kills in section 12: in 12.4.6 on 2026-10-10, in
 12.4.4 on 2026-11-20, on 2026-11-21 in 12.4.3 and, in the repeat three minutes
 later on the same runner, in 12.4.4, on 2026-11-22, with 12.4 split off,
@@ -267,7 +267,11 @@ repeats a run lost that way once, as a whole run and with a warning, but only
 when the kernel's report names wstest and our server is under 1 GiB, and it
 runs 12.4 in a fresh wstest of its own, after the rest. Neither saves a night
 on which the runaway happens: all three nights with a second attempt lost it
-too, and without 12.4 it came in 12.3. The pin arrived after 2026-11-23),
+too, and without 12.4 it came in 12.3. The pin arrived after 2026-11-23.
+Its first night, 2026-11-24, was clean, but on an AMD EPYC 7763 with a
+`cache size` of 512 KB, where PyPy picks 4 MiB anyway. There wstest peaked
+at 3 605 MiB in `main` and 1 072 MiB in `12.4`. Whether the pin holds on an
+Intel runner is still open),
 which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and

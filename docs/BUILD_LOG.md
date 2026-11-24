@@ -6243,6 +6243,34 @@ the five key-pin tests named `HTTP2_…` (see 2026-11-19). The six new ones:
 - `TLSCipherSuiteTests` alone: 20 of 20 green with Hermod#299, before its merge
 - not re-run here: browsers, h2load, Autobahn (the nightly runs it on the pin)
 
+## 2026-11-24 — The first pinned night: clean, on an AMD runner, so the pin is not tested yet
+
+The nightly of 2026-11-24 ran `6d73e14`, the first commit with the 4 MB
+nursery pin (`c323c98`) and the new pins (`3d33d9e`). All six jobs green:
+`against-hermod-master` builds and passes again on Windows and Debian 13, and
+Autobahn gave **481/517 passing, 36 declined, no hard failures**, in one
+attempt.
+
+The lines `c323c98` added say what kind of night it was:
+
+| | |
+|---|---|
+| host | GitHub's own runner (Azure), image `ubuntu-26.04` `20261111.635` |
+| CPU | AMD EPYC 7763, `cache size` 512 KB |
+| PyPy's own nursery there | 4 MiB, pinned to 4 MB |
+| wstest's peak, part `main` (499 cases) | 3 605 MiB |
+| wstest's peak, part `12.4` (18 cases) | 1 072 MiB |
+
+That matches the local run of 2026-11-22 (3 757 and 1 049 MiB), and is far
+from the 13 – 17 GiB at the kills. But it **tests nothing yet**: on this CPU
+PyPy would have chosen 4 MiB without the pin, as on every runner whose
+`cache size` is an AMD L2. The question is answered by the first night on an
+Intel runner such as EC2 `m8id`. If it is clean there, near these peaks, the
+explanation of 2026-11-22 stands. If wstest still runs away with the nursery
+at 4 MiB, it is wrong, and the evidence goes to `docs/evidence/` as before.
+
+That makes at least 53 green nights since 2026-09-18 against five red.
+
 ## Roadmap — candidate next tracks (planning only)
 
 Ordered by value-per-effort. Tracks A–C stay in the "from scratch on

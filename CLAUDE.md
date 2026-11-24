@@ -250,13 +250,14 @@ like. **h2spec 146/146** and
 **Autobahn 481/517** (full RFC 6455 + permessage-deflate) are no longer "as last
 run": `.github/workflows/nightly.yml` re-measures both every night — Autobahn
 with a caveat, since now and then it dies rather than reporting a result (4 of
-34 nights up to 2026-09-18, four times since against at least 52 green
+34 nights up to 2026-09-18, five times since against at least 52 green
 nights; all were kernel OOM kills in section 12: in 12.4.6 on 2026-10-10, in
 12.4.4 on 2026-11-20, on 2026-11-21 in 12.4.3 and, in the repeat three minutes
-later on the same runner, in 12.4.4, and on 2026-11-22, with 12.4 split off,
-in 12.3.11 and then 12.3.12. The kill reports name the consumer: **wstest
-itself**, the fuzzing client, at 13 – 17 GiB, against 55 – 75 MiB for our echo
-server. The best explanation, measured locally on 2026-11-22: wstest's PyPy
+later on the same runner, in 12.4.4, on 2026-11-22, with 12.4 split off,
+in 12.3.11 and then 12.3.12, and on 2026-11-23 in 12.3.12 twice. The last two
+nights ran on EC2 `m8id` runners without swap, an Intel type. The kill reports
+name the consumer: **wstest itself**, the fuzzing client, at 13 – 17 GiB,
+against 55 – 106 MiB for our echo server. The best explanation, measured locally on 2026-11-22: wstest's PyPy
 sizes its nursery at half the CPU `cache size` (an Intel CPU's L3), and what
 wstest keeps grows with it. Through 12.3 that was 2.9 GiB at 4 MiB and over
 8 GiB at 64 MiB. Since then `tests/autobahn.sh` pins it to 4 MB and prints the
@@ -265,8 +266,8 @@ known. `tests/autobahn.sh`
 repeats a run lost that way once, as a whole run and with a warning, but only
 when the kernel's report names wstest and our server is under 1 GiB, and it
 runs 12.4 in a fresh wstest of its own, after the rest. Neither saves a night
-on which the runaway happens: both nights with a second attempt lost it too, and
-without 12.4 it came in 12.3),
+on which the runaway happens: all three nights with a second attempt lost it
+too, and without 12.4 it came in 12.3. The pin arrived after 2026-11-23),
 which is written up in [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) (alongside a
 **`against-hermod-master`** job — named as in the DNS/NTS conformance repos,
 which grew the same thing independently — that runs the gate's own build and

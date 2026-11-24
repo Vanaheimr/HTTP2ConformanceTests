@@ -6149,6 +6149,22 @@ one defect, in the new summary line. With a peak measured, a `${x:+…}${x:-…}
 pair printed the raw KiB after the MiB ("3757 MiB3848060"). It is now an
 `if`, checked with and without a measured peak.
 
+## 2026-11-23 — The last unpinned night: wstest died in 12.3.12 twice, on EC2 `m8id` again
+
+The nightly of 2026-11-23 still ran `0a406dc`, before the 4 MB nursery pin
+(`c323c98`, pushed on 2026-11-24). Part `main` was OOM-killed in both
+attempts, each time in 12.3.12, wstest at 13 584 and 13 665 MiB, our echo
+server at 106 and 65 MiB. Part `12.4`, alone in its own wstest, ran all 18
+cases in 22.5 s. The runner was the same kind as the night before:
+`Amazon EC2 m8id.xlarge`, kernel `7.0.0-1016-aws`, no swap, 15.7 GiB.
+
+That makes five red nights since 2026-09-18 against at least 52 green, and
+two in a row on `m8id`, each with two kills in 12.3.11 or 12.3.12. The `i` in
+`m8id` marks an Intel processor, whose `/proc/cpuinfo` reports its L3 as the
+`cache size` PyPy sizes its nursery from. How large it is on that runner is
+not in the reports; the first pinned night prints it. Evidence:
+`docs/evidence/2026-11-23-autobahn-oom/`.
+
 ## 2026-11-24 — Advance the pins to 6f81c917 / ff807a46: ports are `IPPort`, the RFC 9110 mechanics moved to `HTTP/`, and a rejected TLS 1.2 connection waits for the preface
 
 Hermod `4b8be28a` → `6f81c917`, Styx `a6b9f9fb` → `ff807a46`. 52
